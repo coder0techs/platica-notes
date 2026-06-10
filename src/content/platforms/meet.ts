@@ -85,6 +85,7 @@ async function main(): Promise<void> {
     let blockSeq = 0
     let lastSpeaker = ""
     let lastText = ""
+    let firstCaptureLogged = false
 
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
@@ -120,6 +121,10 @@ async function main(): Promise<void> {
             text,
             at: new Date().toISOString(),
           })
+          if (!firstCaptureLogged) {
+            firstCaptureLogged = true
+            console.log("[platica-notes] captions are flowing")
+          }
           session.transcript = collector.snapshot()
           writer.requestWrite()
           pulseActivity()
@@ -219,8 +224,11 @@ function setCaptionsHidden(hidden: boolean): void {
   if (existing) return
   const style = document.createElement("style")
   style.id = HIDE_CAPTIONS_STYLE_ID
-  // opacity (not display:none): Meet must keep writing caption text into the DOM.
-  style.textContent = `${CAPTIONS_REGION} { opacity: 0 !important; pointer-events: none !important; }`
+  // opacity + collapsed height (not display:none): Meet must keep writing caption
+  // text into the DOM, but the region must not occupy screen space either.
+  style.textContent =
+    `${CAPTIONS_REGION} { opacity: 0 !important; height: 0 !important; ` +
+    `min-height: 0 !important; overflow: hidden !important; pointer-events: none !important; }`
   document.documentElement.appendChild(style)
 }
 

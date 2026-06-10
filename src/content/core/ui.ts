@@ -23,7 +23,7 @@ export function showToast(message: string): void {
     "padding:10px 16px;border-radius:8px;font:14px system-ui;z-index:2147483647;" +
     "box-shadow:0 4px 16px rgba(0,0,0,.3);"
   document.documentElement.appendChild(toast)
-  setTimeout(() => toast.remove(), 5000)
+  setTimeout(() => toast.remove(), 8000)
 }
 
 /** Per-meeting privacy control: private (sibling folder) vs sync folder. */
