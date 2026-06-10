@@ -1,19 +1,23 @@
 import type { ActiveSession, Meeting } from "../shared/types"
 import { getLocal, getSettings, removeLocal, sessionKey, setLocal } from "../shared/storage"
-import { addMeeting } from "./store"
+import { addMeeting, enqueue } from "./store"
 
 const finalizing = new Set<number>()
 
-export async function trackTab(tabId: number): Promise<void> {
-  const tabs = (await getLocal<number[]>("activeSessionTabs")) ?? []
-  if (!tabs.includes(tabId)) {
-    await setLocal({ activeSessionTabs: [...tabs, tabId] })
-  }
+export function trackTab(tabId: number): Promise<void> {
+  return enqueue(async () => {
+    const tabs = (await getLocal<number[]>("activeSessionTabs")) ?? []
+    if (!tabs.includes(tabId)) {
+      await setLocal({ activeSessionTabs: [...tabs, tabId] })
+    }
+  })
 }
 
-async function untrackTab(tabId: number): Promise<void> {
-  const tabs = (await getLocal<number[]>("activeSessionTabs")) ?? []
-  await setLocal({ activeSessionTabs: tabs.filter(id => id !== tabId) })
+function untrackTab(tabId: number): Promise<void> {
+  return enqueue(async () => {
+    const tabs = (await getLocal<number[]>("activeSessionTabs")) ?? []
+    await setLocal({ activeSessionTabs: tabs.filter(id => id !== tabId) })
+  })
 }
 
 export async function finalizeSession(tabId: number): Promise<Meeting | null> {
@@ -23,6 +27,7 @@ export async function finalizeSession(tabId: number): Promise<Meeting | null> {
     const session = await getLocal<ActiveSession>(sessionKey(tabId))
     if (!session || (session.transcript.length === 0 && session.chat.length === 0)) {
       await removeLocal(sessionKey(tabId))
+      await untrackTab(tabId)
       return null
     }
     const meeting: Meeting = {
@@ -39,10 +44,12 @@ export async function finalizeSession(tabId: number): Promise<Meeting | null> {
     const settings = await getSettings()
     await addMeeting(meeting, settings.retentionLimit)
     await removeLocal(sessionKey(tabId))
+    // Untrack only after the session key is gone — a failed finalization must
+    // keep the tab tracked so the update-deferral guard still sees it.
+    await untrackTab(tabId)
     return meeting
   } finally {
     finalizing.delete(tabId)
-    await untrackTab(tabId)
   }
 }
 

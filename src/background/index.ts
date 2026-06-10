@@ -59,7 +59,9 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   void finalizeAndProcess(tabId)
 })
 
-// Postpone extension updates while a meeting is being recorded.
+// Postpone extension updates while a meeting is being recorded. Best-effort:
+// if meetings are active we simply skip the reload — the pending update
+// applies on the next natural service worker restart.
 chrome.runtime.onUpdateAvailable.addListener(() => {
   void chrome.storage.local.get("activeSessionTabs").then((result) => {
     const tabs = (result.activeSessionTabs as number[] | undefined) ?? []
