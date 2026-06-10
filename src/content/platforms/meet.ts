@@ -51,6 +51,7 @@ async function main(): Promise<void> {
   }
   const collector = new TranscriptCollector()
   const chatLog = new ChatLog()
+  const observers: MutationObserver[] = []
   const writer = new SessionWriter<ActiveSession>(
     (snapshot) => setLocal({ [sessionKey(tabId)]: snapshot }),
     () => session,
@@ -128,6 +129,7 @@ async function main(): Promise<void> {
       }
     })
     observer.observe(region, { childList: true, subtree: true, characterData: true })
+    observers.push(observer)
   }
 
   async function observeChat(): Promise<void> {
@@ -159,6 +161,7 @@ async function main(): Promise<void> {
         }
       })
       observer.observe(list, { childList: true, subtree: true, characterData: true })
+      observers.push(observer)
     } catch (error) {
       console.error("[platica-notes] chat observer not registered:", error)
     }
@@ -194,6 +197,9 @@ async function main(): Promise<void> {
   }
 
   async function endMeeting(): Promise<void> {
+    // Stop observing first: a caption mutation arriving after finalization
+    // would re-create the session key the background just cleaned up.
+    for (const observer of observers) observer.disconnect()
     collector.closeCurrent()
     session.transcript = collector.snapshot()
     await writer.writeNow()
