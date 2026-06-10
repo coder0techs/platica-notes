@@ -1,6 +1,7 @@
 export class SessionWriter<T> {
   private timer: ReturnType<typeof setTimeout> | null = null
   private pending = false
+  private chain: Promise<void> = Promise.resolve()
 
   constructor(
     private readonly write: (snapshot: T) => Promise<void>,
@@ -13,7 +14,7 @@ export class SessionWriter<T> {
       this.pending = true
       return
     }
-    void this.writeNow()
+    void this.enqueueWrite()
     this.timer = setTimeout(() => {
       this.timer = null
       if (this.pending) {
@@ -23,7 +24,23 @@ export class SessionWriter<T> {
     }, this.intervalMs)
   }
 
+  /** Final write: cancels any armed trailing write, then persists after all in-flight writes. */
   async writeNow(): Promise<void> {
-    await this.write(this.getSnapshot())
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+    this.pending = false
+    await this.enqueueWrite()
+  }
+
+  /** Writes are serialized so an older snapshot can never overwrite a newer one. */
+  private enqueueWrite(): Promise<void> {
+    this.chain = this.chain
+      .then(() => this.write(this.getSnapshot()))
+      .catch((error) => {
+        console.error("[platica-notes] session write failed:", error)
+      })
+    return this.chain
   }
 }
