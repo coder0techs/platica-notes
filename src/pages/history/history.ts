@@ -34,15 +34,23 @@ function actionsCell(meeting: Meeting): HTMLTableCellElement {
   const td = document.createElement("td")
   td.append(
     button("Download", () => {
-      void sendToBackground({ kind: "downloadMeeting", meetingId: meeting.id })
+      void request({ kind: "downloadMeeting", meetingId: meeting.id }, "Download failed")
     }),
     button("Delete", () => {
       if (confirm(`Delete "${meeting.title}"?`)) {
-        void sendToBackground({ kind: "deleteMeeting", meetingId: meeting.id })
+        void request({ kind: "deleteMeeting", meetingId: meeting.id }, "Delete failed")
       }
     }),
   )
   return td
+}
+
+async function request(
+  message: Parameters<typeof sendToBackground>[0],
+  failureLabel: string,
+): Promise<void> {
+  const response = await sendToBackground(message)
+  if (!response.ok) alert(`${failureLabel}: ${response.error}`)
 }
 
 function button(label: string, onClick: () => void): HTMLButtonElement {
@@ -52,5 +60,7 @@ function button(label: string, onClick: () => void): HTMLButtonElement {
   return el
 }
 
-chrome.storage.onChanged.addListener(() => { void load() })
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.meetings) void load()
+})
 void load()
