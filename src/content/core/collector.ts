@@ -53,15 +53,24 @@ export class TranscriptCollector {
   }
 }
 
+/**
+ * ChatLog collects chat messages with consecutive deduplication.
+ *
+ * The DOM mutation observer fires multiple times for the same last message
+ * (e.g. when attributes change on an existing node), so we drop a message
+ * that is identical to the immediately preceding one. Non-consecutive repeats
+ * (e.g. the same sender writing "+1" twice during a meeting) are real messages
+ * and must be kept.
+ */
 export class ChatLog {
   private messages: ChatMessage[] = []
-  private seen = new Set<string>()
+  private lastKey: string | null = null
 
   add(message: ChatMessage): boolean {
     const key = `${message.sender}\u0000${message.text}`
-    if (this.seen.has(key)) return false
-    this.seen.add(key)
+    if (key === this.lastKey) return false
     this.messages.push(message)
+    this.lastKey = key
     return true
   }
 
