@@ -16,12 +16,10 @@ export interface ActiveSession {
   platform: PlatformId
   title: string
   startedAt: string
-  localOnly: boolean
+  isPrivate: boolean
   transcript: Utterance[]
   chat: ChatMessage[]
 }
-
-export type DriveStatus = "none" | "uploaded" | "failed"
 
 export interface Meeting {
   id: string
@@ -29,21 +27,19 @@ export interface Meeting {
   title: string
   startedAt: string
   endedAt: string
-  localOnly: boolean
+  isPrivate: boolean
   transcript: Utterance[]
   chat: ChatMessage[]
-  driveStatus: DriveStatus
-  driveFileUrl?: string
 }
 
 export interface Settings {
   hideCaptionsOverlay: boolean
-  uploadToDriveByDefault: boolean
+  privateByDefault: boolean
   retentionLimit: number
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   hideCaptionsOverlay: true,
-  uploadToDriveByDefault: false,
+  privateByDefault: false,
   retentionLimit: 30,
 }

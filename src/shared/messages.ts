@@ -4,8 +4,6 @@ export type BackgroundRequest =
   | { kind: "meetingEnded" }
   | { kind: "downloadMeeting"; meetingId: string }
   | { kind: "deleteMeeting"; meetingId: string }
-  | { kind: "uploadMeetingToDrive"; meetingId: string }
-  | { kind: "connectDrive" }
 
 export type BackgroundResponse<T = unknown> =
   | { ok: true; data: T }

@@ -45,7 +45,7 @@ async function main(): Promise<void> {
     platform: "meet",
     title: document.title,
     startedAt: new Date().toISOString(),
-    localOnly: !settings.uploadToDriveByDefault,
+    isPrivate: settings.privateByDefault,
     transcript: [],
     chat: [],
   }
@@ -58,8 +58,8 @@ async function main(): Promise<void> {
   )
   writer.requestWrite()
 
-  mountPrivacyPill(session.localOnly, (localOnly) => {
-    session.localOnly = localOnly
+  mountPrivacyPill(session.isPrivate, (isPrivate) => {
+    session.isPrivate = isPrivate
     writer.requestWrite()
   })
 

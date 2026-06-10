@@ -36,10 +36,9 @@ export async function finalizeSession(tabId: number): Promise<Meeting | null> {
       title: session.title,
       startedAt: session.startedAt,
       endedAt: new Date().toISOString(),
-      localOnly: session.localOnly,
+      isPrivate: session.isPrivate,
       transcript: session.transcript,
       chat: session.chat,
-      driveStatus: "none",
     }
     const settings = await getSettings()
     await addMeeting(meeting, settings.retentionLimit)

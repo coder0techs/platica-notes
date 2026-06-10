@@ -35,6 +35,5 @@ button {
 }
 button:hover { border-color: var(--accent); color: var(--accent); }
 button:disabled { opacity: .5; cursor: default; }
-#drive-status { margin-top: 8px; font-size: 12px; color: var(--muted); }
 a { display: block; margin-top: 14px; color: var(--accent); text-decoration: none; font-size: 13px; }
 a:hover { text-decoration: underline; }

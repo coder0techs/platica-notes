@@ -6,7 +6,7 @@ function makeMeeting(id: string): Meeting {
   return {
     id, platform: "meet", title: id,
     startedAt: "2026-06-10T10:00:00.000Z", endedAt: "2026-06-10T10:30:00.000Z",
-    localOnly: false, transcript: [], chat: [], driveStatus: "none",
+    isPrivate: false, transcript: [], chat: [],
   }
 }
 

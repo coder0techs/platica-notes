@@ -9,13 +9,12 @@ function makeMeeting(overrides: Partial<Meeting> = {}): Meeting {
     title: "Sprint sync",
     startedAt: "2026-06-10T10:00:00.000Z",
     endedAt: "2026-06-10T10:30:00.000Z",
-    localOnly: false,
+    isPrivate: false,
     transcript: [
       { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "Hello everyone" },
       { speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", text: "Hi Alice" },
     ],
     chat: [],
-    driveStatus: "none",
     ...overrides,
   }
 }

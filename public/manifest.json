@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "Plática Notes",
   "version": "0.1.0",
-  "description": "Saves Google Meet transcripts and chat locally, with optional Google Drive export.",
-  "permissions": ["storage", "downloads", "identity"],
+  "description": "Saves Google Meet transcripts and chat locally.",
+  "permissions": ["storage", "downloads"],
   "host_permissions": ["https://meet.google.com/*"],
   "content_scripts": [
     {

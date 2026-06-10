@@ -26,25 +26,25 @@ export function showToast(message: string): void {
   setTimeout(() => toast.remove(), 5000)
 }
 
-/** Per-meeting privacy control: local-only vs allowed-to-upload. */
+/** Per-meeting privacy control: private (sibling folder) vs sync folder. */
 export function mountPrivacyPill(
-  initialLocalOnly: boolean,
-  onChange: (localOnly: boolean) => void,
+  initialPrivate: boolean,
+  onChange: (isPrivate: boolean) => void,
 ): void {
-  let localOnly = initialLocalOnly
+  let isPrivate = initialPrivate
   const pill = document.createElement("button")
   pill.style.cssText =
     "position:fixed;bottom:88px;left:16px;z-index:2147483647;border:none;color:#fff;" +
     "padding:6px 12px;border-radius:999px;font:12px system-ui;cursor:pointer;opacity:.85;"
   pill.title = "Plática Notes: where this transcript may go"
   const render = () => {
-    pill.textContent = localOnly ? "🔒 Local only" : "☁️ Drive after meeting"
-    pill.style.background = localOnly ? "#2e7d32" : "#1565c0"
+    pill.textContent = isPrivate ? "🔒 Private" : "☁️ Sync folder"
+    pill.style.background = isPrivate ? "#2e7d32" : "#1565c0"
   }
   pill.addEventListener("click", () => {
-    localOnly = !localOnly
+    isPrivate = !isPrivate
     render()
-    onChange(localOnly)
+    onChange(isPrivate)
   })
   render()
   document.documentElement.appendChild(pill)
