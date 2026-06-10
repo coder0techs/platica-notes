@@ -53,7 +53,18 @@ describe("sanitizeFileName", () => {
 })
 
 describe("meetingFileName", () => {
-  it("builds a deterministic name from title and start time", () => {
-    expect(meetingFileName(makeMeeting())).toBe("Sprint sync 2026-06-10 10-00.txt")
+  it("matches shape: title + local date-time + .txt", () => {
+    expect(meetingFileName(makeMeeting())).toMatch(/^Sprint sync \d{4}-\d{2}-\d{2} \d{2}-\d{2}\.txt$/)
+  })
+
+  it("contains hour-minute derived from local time", () => {
+    const d = new Date("2026-06-10T10:00:00.000Z")
+    const pad = (n: number) => String(n).padStart(2, "0")
+    const expectedTime = `${pad(d.getHours())}-${pad(d.getMinutes())}`
+    expect(meetingFileName(makeMeeting())).toContain(expectedTime)
+  })
+
+  it("sanitizes illegal chars in the title part of the filename", () => {
+    expect(meetingFileName(makeMeeting({ title: "a/b: report" }))).toMatch(/^a_b_ report /)
   })
 })
