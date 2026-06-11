@@ -1,16 +1,16 @@
 import { getSettings, saveSettings } from "../../shared/storage"
 
-const hideCaptions = document.querySelector<HTMLInputElement>("#hide-captions")!
+const captionLanguage = document.querySelector<HTMLSelectElement>("#caption-language")!
 const privateDefault = document.querySelector<HTMLInputElement>("#private-default")!
 
 async function init(): Promise<void> {
   const settings = await getSettings()
-  hideCaptions.checked = settings.hideCaptionsOverlay
+  captionLanguage.value = settings.captionLanguage
   privateDefault.checked = settings.privateByDefault
 }
 
-hideCaptions.addEventListener("change", () => {
-  void saveSettings({ hideCaptionsOverlay: hideCaptions.checked })
+captionLanguage.addEventListener("change", () => {
+  void saveSettings({ captionLanguage: captionLanguage.value })
 })
 
 privateDefault.addEventListener("change", () => {

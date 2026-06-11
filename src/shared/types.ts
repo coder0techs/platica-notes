@@ -35,13 +35,14 @@ export interface Meeting {
 }
 
 export interface Settings {
-  hideCaptionsOverlay: boolean
+  /** BCP 47 tag passed to Meet's caption stream subscription (e.g. "ru-RU"). */
+  captionLanguage: string
   privateByDefault: boolean
   retentionLimit: number
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  hideCaptionsOverlay: true,
+  captionLanguage: "ru-RU",
   privateByDefault: false,
   retentionLimit: 30,
 }

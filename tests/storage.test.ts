@@ -10,6 +10,6 @@ describe("withDefaults", () => {
   it("overlays stored values on defaults", () => {
     const settings = withDefaults({ retentionLimit: 5 })
     expect(settings.retentionLimit).toBe(5)
-    expect(settings.hideCaptionsOverlay).toBe(DEFAULT_SETTINGS.hideCaptionsOverlay)
+    expect(settings.captionLanguage).toBe(DEFAULT_SETTINGS.captionLanguage)
   })
 })

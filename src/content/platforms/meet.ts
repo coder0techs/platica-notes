@@ -1,31 +1,30 @@
 import { sendToBackground } from "../../shared/messages"
 import { getLocal, getSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
 import type { ActiveSession, Settings } from "../../shared/types"
-import { ChatLog, TranscriptCollector } from "../core/collector"
 import { SessionWriter } from "../core/persistence"
 import { mountPrivacyPill, pulseActivity, showToast } from "../core/ui"
+import { RTC_CONFIG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
+import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
+import { RtcFeed } from "../meet-rtc/feed"
 
 // --- Google Meet DOM contract. Verify on a live meeting before each release. ---
 const ICON_FONT = ".google-symbols"
 const LEAVE_ICON_TEXT = "call_end"
-const CAPTIONS_OFF_ICON_TEXT = "closed_caption_off"
-const CAPTIONS_REGION = 'div[role="region"][tabindex="0"]'
-const CHAT_LIST = 'div[aria-live="polite"].Ge9Kpc'
-const CHAT_TOGGLE = 'button[aria-label="Chat with everyone"]'
-const SIDE_PANEL = 'aside[aria-label="Side panel"]'
-const SELF_NAME = ".awLEm"
 const MEETING_TITLE = ".u6vdEc"
 // -------------------------------------------------------------------------------
 
-const HIDE_CAPTIONS_STYLE_ID = "platica-hide-captions"
-const HIDE_SIDE_PANEL_STYLE_ID = "platica-hide-sidepanel"
-// Meet restarts very long captions of one speaker; a sharp text shrink signals it.
-const MONOLOGUE_RESET_DROP = 250
 const MEETING_PATH = /^\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i
 // The leave icon flickers during toolbar re-renders; only this many consecutive
 // missing checks mean the user actually left the call.
 const LEAVE_GONE_CHECKS = 3
 const END_WATCH_INTERVAL_MS = 2000
+
+// Roster events stream from join time — often before our leave-icon detection
+// lands — so the deviceId → name map lives at page level and survives across
+// meetings in the same tab. Transcript/chat events without an active meeting
+// are dropped (nothing to attribute them to yet).
+const roster = new Map<string, string>()
+let activeMeetingHandler: ((event: RtcCaptionEvent | RtcChatEvent) => void) | null = null
 
 void main().catch((error) => console.error("[platica-notes]", error))
 
@@ -37,6 +36,27 @@ async function main(): Promise<void> {
     return
   }
   const tabId = tabIdResponse.data
+
+  document.addEventListener(RTC_EVENT, (event) => {
+    const detail = (event as CustomEvent).detail
+    if (typeof detail !== "string") return
+    let parsed: RtcEvent
+    try {
+      parsed = JSON.parse(detail) as RtcEvent
+    } catch {
+      return
+    }
+    if (parsed.type === "device") {
+      if (parsed.deviceId && parsed.deviceName) roster.set(parsed.deviceId, parsed.deviceName)
+      return
+    }
+    activeMeetingHandler?.(parsed)
+  })
+
+  // The MAIN-world script must know the caption language before its first
+  // subscribe, so push the config before any meeting can start.
+  const settings = await getSettings()
+  pushRtcConfig(settings.captionLanguage)
   watchSettings()
 
   // Meet soft-navigates without page loads (landing -> meeting, /new -> meeting,
@@ -65,9 +85,7 @@ async function runMeeting(tabId: number): Promise<void> {
   await sendToBackground({ kind: "meetingStarted" })
 
   const settings = await getSettings()
-  let selfName = "You"
   let ending = false
-  void captureSelfName(() => ending).then((name) => { if (name) selfName = name })
 
   // A mid-meeting reload must continue the same session, not erase it.
   const previous = await getLocal<ActiveSession>(sessionKey(tabId))
@@ -85,9 +103,9 @@ async function runMeeting(tabId: number): Promise<void> {
     transcript: prefixTranscript,
     chat: prefixChat,
   }
-  const collector = new TranscriptCollector()
-  const chatLog = new ChatLog()
-  const observers: MutationObserver[] = []
+  // The page roster is shared in, so names resolve retroactively even for
+  // participants whose roster entries arrived before this meeting's feed existed.
+  const feed = new RtcFeed(roster)
   const writer = new SessionWriter<ActiveSession>(
     (snapshot) => setLocal({ [sessionKey(tabId)]: snapshot }),
     () => session,
@@ -106,15 +124,23 @@ async function runMeeting(tabId: number): Promise<void> {
     writer.requestWrite()
   }, 7000)
 
-  // Inject the hide style BEFORE enabling captions. enableCaptions() can block
-  // for seconds (it waits for the toolbar, and times out entirely if captions
-  // are already on), and the style must already be in place so the caption
-  // overlay never flashes on screen during that window.
-  setCaptionsHidden(settings.hideCaptionsOverlay)
-  await enableCaptions()
-
-  void observeCaptions()
-  void observeChat()
+  let firstCaptionLogged = false
+  activeMeetingHandler = (event) => {
+    if (event.type === "transcript") {
+      if (!feed.handleCaption(event, new Date().toISOString())) return
+      if (!firstCaptionLogged) {
+        firstCaptionLogged = true
+        console.log("[platica-notes] captions are flowing")
+      }
+      session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
+      writer.requestWrite()
+      pulseActivity()
+    } else {
+      if (!feed.handleChat(event, new Date().toISOString())) return
+      session.chat = [...prefixChat, ...feed.chatSnapshot()]
+      writer.requestWrite()
+    }
+  }
 
   // --- meeting end detection -------------------------------------------------
   // Meet re-renders its toolbar (mute toggles, layout changes), replacing the
@@ -155,204 +181,36 @@ async function runMeeting(tabId: number): Promise<void> {
     console.log("[platica-notes] meeting ended:", reason)
     clearInterval(endWatcher)
     document.removeEventListener("click", onDocumentClick, true)
-    // Stop observing first: a caption mutation arriving after finalization
-    // would re-create the session key the background just cleaned up.
-    for (const observer of observers) observer.disconnect()
+    // Stop routing first: a caption event arriving after finalization would
+    // re-create the session key the background just cleaned up. The page-level
+    // RTC listener stays armed for the next meeting.
+    activeMeetingHandler = null
     unmountPill()
-    collector.closeCurrent()
-    session.transcript = [...prefixTranscript, ...collector.snapshot()]
+    // Final snapshot resolves speaker names from the roster as it stands now.
+    session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
     await writer.writeNow()
     const response = await sendToBackground({ kind: "meetingEnded" })
     if (!response.ok) console.error("[platica-notes] finalize failed:", response.error)
     meetingDone()
   }
-
-  async function observeCaptions(): Promise<void> {
-    const region = await waitForSelector(CAPTIONS_REGION, () => ending)
-    if (!region || ending) return
-    console.log("[platica-notes] captions region found, observer attached")
-    // The caption overlay holds two things: the text region (hidden by selector)
-    // and a control bar (language picker, "Live captions" toggle, font controls)
-    // that sits beside it. Tag the whole overlay so the hide style collapses the
-    // control bar too — otherwise it stays visible at the bottom of the screen.
-    tagCaptionOverlay(region)
-    let blockSeq = 0
-    let lastSpeaker = ""
-    let lastText = ""
-    let firstCaptureLogged = false
-
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        if (mutation.type !== "characterData") continue
-        try {
-          const textDiv = mutation.target.parentElement
-          const wrapper = textDiv?.parentElement
-          const siblings = [...(wrapper?.parentElement?.children ?? [])]
-          // Meet keeps two service nodes at the end and rewrites older caption
-          // blocks retroactively — only the third-from-last block is live speech.
-          if (siblings.length < 3 || siblings[siblings.length - 3] !== wrapper) continue
-
-          const speaker = textDiv?.previousSibling?.textContent ?? ""
-          const text = textDiv?.textContent ?? ""
-
-          if (!speaker || !text) {
-            // Captions went quiet: close the open utterance.
-            collector.closeCurrent()
-            blockSeq++
-            lastSpeaker = ""
-            lastText = ""
-            continue
-          }
-
-          const monologueReset = text.length - lastText.length < -MONOLOGUE_RESET_DROP
-          if (speaker !== lastSpeaker || monologueReset) blockSeq++
-          lastSpeaker = speaker
-          lastText = text
-
-          collector.update({
-            blockKey: String(blockSeq),
-            speaker: speaker === "You" ? selfName : speaker,
-            text,
-            at: new Date().toISOString(),
-          })
-          if (!firstCaptureLogged) {
-            firstCaptureLogged = true
-            console.log("[platica-notes] captions are flowing")
-          }
-          session.transcript = [...prefixTranscript, ...collector.snapshot()]
-          writer.requestWrite()
-          pulseActivity()
-        } catch (error) {
-          console.error("[platica-notes] caption mutation:", error)
-        }
-      }
-    })
-    observer.observe(region, { childList: true, subtree: true, characterData: true })
-    observers.push(observer)
-  }
-
-  async function observeChat(): Promise<void> {
-    try {
-      const chatButton = await withTimeout(
-        waitForSelector(CHAT_TOGGLE, () => ending),
-        30_000,
-      )
-      if (!chatButton || ending) return
-
-      // Meet only builds the chat DOM once the side panel is opened. Hide the
-      // panel first so this materialization toggle is invisible — the user
-      // never sees the chat flash open and shut on join.
-      hideSidePanel(true)
-      ;(chatButton as HTMLElement).click() // open (offscreen)
-      const list = await withTimeout(waitForSelector(CHAT_LIST, () => ending), 10_000)
-      ;(chatButton as HTMLElement).click() // close again
-      // The list node persists in the DOM after closing, so the observer below
-      // keeps working. Reveal the panel again once it has collapsed.
-      void waitForSidePanelClosed().then(() => hideSidePanel(false))
-      if (!list || ending) {
-        hideSidePanel(false)
-        return
-      }
-
-      const observer = new MutationObserver(() => {
-        try {
-          const container = document.querySelector(CHAT_LIST)
-          if (!container || container.children.length === 0) return
-          const messageElement = container.lastChild?.firstChild?.firstChild?.lastChild
-          const header = messageElement?.firstChild
-          const sender =
-            header?.childNodes.length === 1 ? selfName : header?.firstChild?.textContent
-          const text =
-            messageElement?.lastChild?.lastChild?.firstChild?.firstChild?.firstChild?.textContent
-          if (!sender || !text) return
-          if (chatLog.add({ sender, sentAt: new Date().toISOString(), text })) {
-            session.chat = [...prefixChat, ...chatLog.snapshot()]
-            writer.requestWrite()
-          }
-        } catch (error) {
-          console.error("[platica-notes] chat mutation:", error)
-        }
-      })
-      observer.observe(list, { childList: true, subtree: true, characterData: true })
-      observers.push(observer)
-    } catch (error) {
-      console.error("[platica-notes] chat observer not registered:", error)
-    }
-  }
 }
 
 // ---------- module-level helpers ----------
 
-async function enableCaptions(): Promise<void> {
-  // If captions are already on, the off-icon never appears — time out quietly.
-  const icon = await withTimeout(waitForIcon(CAPTIONS_OFF_ICON_TEXT), 15_000)
-  icon?.click()
+function pushRtcConfig(captionLanguage: string): void {
+  document.dispatchEvent(
+    new CustomEvent(RTC_CONFIG_EVENT, { detail: JSON.stringify({ captionLanguage }) }),
+  )
 }
 
 function watchSettings(): void {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "sync" && changes.settings) {
       const next = withDefaults(changes.settings.newValue as Partial<Settings> | undefined)
-      setCaptionsHidden(next.hideCaptionsOverlay)
+      // The MAIN-world script re-subscribes the caption stream on change.
+      pushRtcConfig(next.captionLanguage)
     }
   })
-}
-
-function hideSidePanel(hidden: boolean): void {
-  const existing = document.getElementById(HIDE_SIDE_PANEL_STYLE_ID)
-  if (!hidden) {
-    existing?.remove()
-    return
-  }
-  if (existing) return
-  const style = document.createElement("style")
-  style.id = HIDE_SIDE_PANEL_STYLE_ID
-  style.textContent = `${SIDE_PANEL} { opacity: 0 !important; pointer-events: none !important; }`
-  document.documentElement.appendChild(style)
-}
-
-async function waitForSidePanelClosed(): Promise<void> {
-  // Give the close click time to land, then wait until the panel is gone.
-  for (let i = 0; i < 40; i++) {
-    if (!document.querySelector(SIDE_PANEL)) return
-    await delay(100)
-  }
-}
-
-const OVERLAY_ATTR = "data-platica-overlay"
-
-/** Climb from the caption region to the overlay that also holds the control bar. */
-function tagCaptionOverlay(region: Element): void {
-  let el: Element | null = region.parentElement
-  for (let i = 0; i < 6 && el; i++) {
-    // The overlay is the nearest ancestor that also contains the caption control
-    // bar — identified by its dropdowns (language / "Live captions" / font size),
-    // which is locale-independent and survives Meet's obfuscated class churn.
-    if (el.querySelector('[role="combobox"], [aria-haspopup="true"]')) {
-      el.setAttribute(OVERLAY_ATTR, "")
-      return
-    }
-    el = el.parentElement
-  }
-}
-
-function setCaptionsHidden(hidden: boolean): void {
-  const existing = document.getElementById(HIDE_CAPTIONS_STYLE_ID)
-  if (!hidden) {
-    existing?.remove()
-    return
-  }
-  if (existing) return
-  const style = document.createElement("style")
-  style.id = HIDE_CAPTIONS_STYLE_ID
-  // opacity + collapsed height (not display:none): Meet must keep writing caption
-  // text into the DOM, but neither the text region nor the caption control bar
-  // (tagged with OVERLAY_ATTR once the region is found) must occupy screen space.
-  const collapse =
-    "opacity: 0 !important; height: 0 !important; min-height: 0 !important; " +
-    "overflow: hidden !important; pointer-events: none !important;"
-  style.textContent = `${CAPTIONS_REGION} { ${collapse} } [${OVERLAY_ATTR}] { ${collapse} }`
-  document.documentElement.appendChild(style)
 }
 
 function findIcon(text: string): HTMLElement | null {
@@ -366,15 +224,6 @@ function findIcon(text: string): HTMLElement | null {
 async function waitForIcon(text: string, abort?: () => boolean): Promise<HTMLElement | null> {
   for (;;) {
     const el = findIcon(text)
-    if (el) return el
-    if (abort?.()) return null
-    await tick()
-  }
-}
-
-async function waitForSelector(selector: string, abort?: () => boolean): Promise<Element | null> {
-  for (;;) {
-    const el = document.querySelector(selector)
     if (el) return el
     if (abort?.()) return null
     await tick()
@@ -395,15 +244,6 @@ function tick(): Promise<void> {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
-  return Promise.race([promise, delay(ms).then(() => null)])
-}
-
-async function captureSelfName(abort: () => boolean): Promise<string | null> {
-  const el = await withTimeout(waitForSelector(SELF_NAME, abort), 60_000)
-  return el?.textContent?.trim() || null
 }
 
 function readMeetingTitle(): string {

@@ -3,7 +3,24 @@
 <head><meta charset="utf-8"><link rel="stylesheet" href="popup.css"></head>
 <body>
   <h1>Plática Notes</h1>
-  <label><input type="checkbox" id="hide-captions"> Hide captions overlay in Meet</label>
+  <label>Caption language
+    <select id="caption-language">
+      <option value="ru-RU">Russian</option>
+      <option value="en-US">English (US)</option>
+      <option value="en-GB">English (UK)</option>
+      <option value="es-ES">Spanish (Spain)</option>
+      <option value="es-MX">Spanish (Mexico)</option>
+      <option value="pt-BR">Portuguese (Brazil)</option>
+      <option value="pt-PT">Portuguese (Portugal)</option>
+      <option value="fr-FR">French</option>
+      <option value="de-DE">German</option>
+      <option value="it-IT">Italian</option>
+      <option value="nl-NL">Dutch</option>
+      <option value="pl-PL">Polish</option>
+      <option value="uk-UA">Ukrainian</option>
+      <option value="kk-KZ">Kazakh</option>
+    </select>
+  </label>
   <label><input type="checkbox" id="private-default"> Mark meetings private by default</label>
   <p class="hint">Private meetings download to "Platica Notes private" — keep that folder out of your cloud sync.</p>
   <a href="history.html" target="_blank">Open meeting history</a>

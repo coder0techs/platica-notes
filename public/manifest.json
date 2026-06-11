@@ -11,6 +11,10 @@
       "js": ["meet-rtc-main.js"],
       "run_at": "document_start",
       "world": "MAIN"
+    },
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["content-meet.js"]
     }
   ],
   "background": { "service_worker": "background.js" },
