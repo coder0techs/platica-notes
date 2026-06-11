@@ -171,6 +171,11 @@ async function runMeeting(tabId: number): Promise<void> {
     const region = await waitForSelector(CAPTIONS_REGION, () => ending)
     if (!region || ending) return
     console.log("[platica-notes] captions region found, observer attached")
+    // The caption overlay holds two things: the text region (hidden by selector)
+    // and a control bar (language picker, "Live captions" toggle, font controls)
+    // that sits beside it. Tag the whole overlay so the hide style collapses the
+    // control bar too — otherwise it stays visible at the bottom of the screen.
+    tagCaptionOverlay(region)
     let blockSeq = 0
     let lastSpeaker = ""
     let lastText = ""
@@ -314,6 +319,23 @@ async function waitForSidePanelClosed(): Promise<void> {
   }
 }
 
+const OVERLAY_ATTR = "data-platica-overlay"
+
+/** Climb from the caption region to the overlay that also holds the control bar. */
+function tagCaptionOverlay(region: Element): void {
+  let el: Element | null = region.parentElement
+  for (let i = 0; i < 6 && el; i++) {
+    // The overlay is the nearest ancestor that also contains the caption control
+    // bar — identified by its dropdowns (language / "Live captions" / font size),
+    // which is locale-independent and survives Meet's obfuscated class churn.
+    if (el.querySelector('[role="combobox"], [aria-haspopup="true"]')) {
+      el.setAttribute(OVERLAY_ATTR, "")
+      return
+    }
+    el = el.parentElement
+  }
+}
+
 function setCaptionsHidden(hidden: boolean): void {
   const existing = document.getElementById(HIDE_CAPTIONS_STYLE_ID)
   if (!hidden) {
@@ -324,10 +346,12 @@ function setCaptionsHidden(hidden: boolean): void {
   const style = document.createElement("style")
   style.id = HIDE_CAPTIONS_STYLE_ID
   // opacity + collapsed height (not display:none): Meet must keep writing caption
-  // text into the DOM, but the region must not occupy screen space either.
-  style.textContent =
-    `${CAPTIONS_REGION} { opacity: 0 !important; height: 0 !important; ` +
-    `min-height: 0 !important; overflow: hidden !important; pointer-events: none !important; }`
+  // text into the DOM, but neither the text region nor the caption control bar
+  // (tagged with OVERLAY_ATTR once the region is found) must occupy screen space.
+  const collapse =
+    "opacity: 0 !important; height: 0 !important; min-height: 0 !important; " +
+    "overflow: hidden !important; pointer-events: none !important;"
+  style.textContent = `${CAPTIONS_REGION} { ${collapse} } [${OVERLAY_ATTR}] { ${collapse} }`
   document.documentElement.appendChild(style)
 }
 
