@@ -1,258 +1,256 @@
-// SPIKE — Google Meet caption capture via the WebRTC `captions` data channel.
+// Google Meet capture via WebRTC data channels (captions / chat / roster).
 // Runs in the page MAIN world at document_start so it can wrap RTCPeerConnection
-// before Meet captures the original. Goal of this spike: prove we can (a) hook the
-// peer connection, (b) open the `captions` channel + subscribe over `media-session`
-// without enabling Meet's caption UI, (c) decode the transcript protobuf.
-//
-// Results are written to documentElement.dataset.platicaSpike (readable from an
-// isolated-world reader / external automation) and logged to the console.
+// before Meet captures the original. Decoded events are dispatched to the
+// isolated-world adapter as CustomEvents on `document` (see bridge.ts).
 //
 // Clean reimplementation against Google Meet's wire format. Not derived from any
 // third-party source code; only the public protocol shape is used.
 
-const SPIKE_LANG = "ru-RU"
-const events: unknown[] = []
+import {
+  buildAck,
+  buildSubscribe,
+  decodeChatWrapper,
+  decodeRoster,
+  decodeTranscriptWrapper,
+  readNestedOp,
+  readNestedSeq,
+  toBytes,
+} from "./proto"
+import { RTC_CONFIG_EVENT, RTC_EVENT } from "./bridge"
+import type { RtcConfig, RtcEvent } from "./bridge"
 
-function emit(event: Record<string, unknown>): void {
-  events.push({ ...event, ts: Date.now() })
+const DEFAULT_LANG = "ru-RU"
+// Meet finishes its own media-session handshake within this window; sending the
+// subscribe earlier gets ignored (observed in the spike).
+const SUBSCRIBE_DELAY_MS = 1500
+
+// ---------- diagnostics ----------
+
+// Ring buffer of recent lifecycle events on documentElement.dataset — readable
+// from an isolated-world script or external automation (AppleScript in Arc).
+const RING_MAX = 40
+const ring: Record<string, unknown>[] = []
+
+function record(event: Record<string, unknown>): void {
+  ring.push({ ...event, ts: Date.now() })
+  if (ring.length > RING_MAX) ring.shift()
   try {
-    document.documentElement.dataset.platicaSpike = JSON.stringify(events.slice(-60))
+    document.documentElement.dataset.platicaRtc = JSON.stringify(ring)
   } catch {
     /* dataset may be unavailable very early */
   }
+}
+
+function log(...args: unknown[]): void {
   // eslint-disable-next-line no-console
-  console.log("[platica-spike]", event)
+  console.log("[platica-rtc]", ...args)
 }
 
-// ---------- protobuf (minimal varint reader) ----------
+// ---------- cross-world event dispatch ----------
 
-interface Cursor { buf: Uint8Array; i: number }
-
-function readVarint(c: Cursor): number {
-  let result = 0
-  let shift = 0
-  for (;;) {
-    const byte = c.buf[c.i++]
-    result += (byte & 0x7f) * 2 ** shift
-    if ((byte & 0x80) === 0) break
-    shift += 7
-  }
-  return result
-}
-
-function readTag(c: Cursor): { field: number; wire: number } {
-  const key = readVarint(c)
-  return { field: key >>> 3, wire: key & 7 }
-}
-
-function skip(c: Cursor, wire: number): void {
-  if (wire === 0) readVarint(c)
-  else if (wire === 2) c.i += readVarint(c)
-  else if (wire === 5) c.i += 4
-  else if (wire === 1) c.i += 8
-}
-
-const decoder = new TextDecoder()
-
-interface Transcript { deviceId?: string; messageId?: number; messageVersion?: number; text?: string; langId?: number }
-
-function decodeTranscript(buf: Uint8Array, start: number, end: number): Transcript {
-  const c: Cursor = { buf, i: start }
-  const out: Transcript = {}
-  while (c.i < end) {
-    const { field, wire } = readTag(c)
-    if (field === 1 && wire === 2) { const l = readVarint(c); out.deviceId = decoder.decode(buf.slice(c.i, c.i + l)); c.i += l }
-    else if (field === 2 && wire === 0) out.messageId = readVarint(c)
-    else if (field === 3 && wire === 0) out.messageVersion = readVarint(c)
-    else if (field === 6 && wire === 2) { const l = readVarint(c); out.text = decoder.decode(buf.slice(c.i, c.i + l)); c.i += l }
-    else if (field === 8 && wire === 0) out.langId = readVarint(c)
-    else skip(c, wire)
-  }
-  return out
-}
-
-// Wrapper: field 1 = message (length-delimited), field 2 = unknown2 (presence = not a transcript).
-function decodeTranscriptWrapper(buf: Uint8Array): Transcript | null {
-  const c: Cursor = { buf, i: 0 }
-  let message: Transcript | null = null
-  let hasUnknown2 = false
-  while (c.i < buf.length) {
-    const { field, wire } = readTag(c)
-    if (field === 1 && wire === 2) { const l = readVarint(c); message = decodeTranscript(buf, c.i, c.i + l); c.i += l }
-    else if (field === 2 && wire === 2) { hasUnknown2 = true; skip(c, wire) }
-    else skip(c, wire)
-  }
-  return hasUnknown2 ? null : message
-}
-
-// ---------- protobuf (minimal writer) ----------
-
-function writeVarint(n: number, out: number[]): void {
-  while (n > 0x7f) { out.push((n & 0x7f) | 0x80); n = Math.floor(n / 128) }
-  out.push(n)
-}
-function tag(field: number, wire: number, out: number[]): void { writeVarint((field << 3) | wire, out) }
-function lenField(field: number, bytes: number[], out: number[]): void {
-  tag(field, 2, out); writeVarint(bytes.length, out); for (const b of bytes) out.push(b)
-}
-function strBytes(s: string): number[] { return [...new TextEncoder().encode(s)] }
-
-// MediaSessionDcBigPacket: subscribe to captions in `lang`.
-function buildSubscribe(op: number, lang: string): Uint8Array {
-  const captionConfig: number[] = []
-  lenField(1, strBytes(lang), captionConfig) // lang_1
-  lenField(2, strBytes(lang), captionConfig) // lang_2
-  const clientConfig: number[] = []
-  lenField(9, captionConfig, clientConfig)
-  const updateMask: number[] = []
-  lenField(1, strBytes("client_config.caption_config"), updateMask)
-  const captionUpdate: number[] = []
-  lenField(1, clientConfig, captionUpdate)
-  lenField(2, updateMask, captionUpdate)
-  const command: number[] = []
-  tag(1, 0, command); writeVarint(op, command) // op
-  lenField(3, captionUpdate, command)
-  const envelope: number[] = []
-  lenField(2, command, envelope)
-  const packet: number[] = []
-  lenField(1, envelope, packet)
-  return new Uint8Array(packet)
-}
-
-// MediaSessionDcSmallPacket: ack(seq, ok=1).
-function buildAck(seq: number): Uint8Array {
-  const ack: number[] = []
-  tag(2, 0, ack); writeVarint(seq, ack)
-  tag(3, 0, ack); writeVarint(1, ack)
-  const envelope: number[] = []
-  lenField(1, ack, envelope)
-  const packet: number[] = []
-  lenField(1, envelope, packet)
-  return new Uint8Array(packet)
-}
-
-// Track Meet's own op (big packet) / seq (small packet) counters from outgoing sends.
-function readNestedOp(buf: Uint8Array): number | undefined {
-  // packet.field1(env).field2(command).field1(op)
-  const c: Cursor = { buf, i: 0 }
+function dispatch(event: RtcEvent): void {
   try {
-    if (readTag(c).field !== 1) return undefined
-    const envLen = readVarint(c); const envEnd = c.i + envLen
-    while (c.i < envEnd) { const t = readTag(c); if (t.field === 2 && t.wire === 2) {
-      const cmdLen = readVarint(c); const cmdEnd = c.i + cmdLen
-      while (c.i < cmdEnd) { const t2 = readTag(c); if (t2.field === 1 && t2.wire === 0) return readVarint(c); skip(c, t2.wire) }
-    } else skip(c, t.wire) }
-  } catch { /* not a big packet */ }
-  return undefined
+    document.dispatchEvent(new CustomEvent(RTC_EVENT, { detail: JSON.stringify(event) }))
+  } catch (err) {
+    record({ phase: "dispatch-error", error: String(err) })
+  }
 }
-function readNestedSeq(buf: Uint8Array): number | undefined {
-  // packet.field1(env).field1(ack).field2(seq)
-  const c: Cursor = { buf, i: 0 }
+
+// ---------- language config from the isolated-world adapter ----------
+
+let captionLanguage = DEFAULT_LANG
+
+document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
   try {
-    if (readTag(c).field !== 1) return undefined
-    const envLen = readVarint(c); const envEnd = c.i + envLen
-    while (c.i < envEnd) { const t = readTag(c); if (t.field === 1 && t.wire === 2) {
-      const ackLen = readVarint(c); const ackEnd = c.i + ackLen
-      while (c.i < ackEnd) { const t2 = readTag(c); if (t2.field === 2 && t2.wire === 0) return readVarint(c); skip(c, t2.wire) }
-    } else skip(c, t.wire) }
-  } catch { /* not a small packet */ }
-  return undefined
+    const detail = (e as CustomEvent).detail
+    if (typeof detail !== "string") return
+    const cfg = JSON.parse(detail) as RtcConfig
+    if (!cfg || typeof cfg.captionLanguage !== "string" || !cfg.captionLanguage) return
+    const changed = cfg.captionLanguage !== captionLanguage
+    captionLanguage = cfg.captionLanguage
+    record({ phase: "config", lang: captionLanguage, changed })
+    if (changed) resubscribeAll()
+  } catch (err) {
+    record({ phase: "config-error", error: String(err) })
+  }
+})
+
+// ---------- per media-session channel state ----------
+
+// Each media-session channel (one per peer connection, fresh on reconnect or a
+// second meeting in the same tab) carries its own op/seq counters and subscribe
+// state. The owning pc is remembered so the captions-channel creation attempt
+// targets the right connection.
+interface MediaSession {
+  channel: RTCDataChannel
+  pc: RTCPeerConnection
+  op: number
+  seq: number
+  subscribed: boolean
+  lang: string
 }
 
-// ---------- gzip-aware payload normalization ----------
+const sessions: MediaSession[] = []
+const sessionByChannel = new WeakMap<RTCDataChannel, MediaSession>()
 
-function isGzip(u: Uint8Array): boolean { return u.length > 2 && u[0] === 0x1f && u[1] === 0x8b && u[2] === 0x08 }
-
-async function toBytes(data: ArrayBuffer | Uint8Array): Promise<Uint8Array> {
-  const u = data instanceof Uint8Array ? data : new Uint8Array(data)
-  let gz: Uint8Array | null = null
-  if (isGzip(u)) gz = u
-  else if (isGzip(u.slice(3))) gz = u.slice(3)
-  if (!gz) return u
+function trySubscribe(s: MediaSession): void {
+  if (s.subscribed || s.channel.readyState !== "open") return
+  s.subscribed = true
+  // Belt-and-braces: Meet usually creates the captions channel itself once the
+  // subscription is active, but creating it explicitly never hurts.
   try {
-    const ds = new DecompressionStream("gzip")
-    const ab = await new Response(new Blob([gz as unknown as BlobPart]).stream().pipeThrough(ds)).arrayBuffer()
-    return new Uint8Array(ab)
-  } catch { return u }
+    s.pc.createDataChannel("captions", { ordered: true, maxRetransmits: 10, id: 50001 })
+  } catch (err) {
+    record({ phase: "create-captions-error", error: String(err) })
+  }
+  try {
+    s.lang = captionLanguage
+    s.channel.send(buildSubscribe(s.op + 1, s.lang) as unknown as ArrayBuffer)
+    s.channel.send(buildAck(s.seq + 1) as unknown as ArrayBuffer)
+    s.channel.send(buildAck(s.seq + 2) as unknown as ArrayBuffer)
+    log("subscribe-sent", { op: s.op + 1, lang: s.lang })
+    record({ phase: "subscribe-sent", op: s.op + 1, lang: s.lang })
+  } catch (err) {
+    s.subscribed = false
+    log("subscribe-error", String(err))
+    record({ phase: "subscribe-error", error: String(err) })
+  }
 }
 
-// ---------- RTCPeerConnection hooks ----------
+function resubscribeAll(): void {
+  // Drop dead channels so a long-lived tab does not accumulate state.
+  for (let i = sessions.length - 1; i >= 0; i--) {
+    if (sessions[i].channel.readyState === "closed") sessions.splice(i, 1)
+  }
+  for (const s of sessions) {
+    if (!s.subscribed || s.lang === captionLanguage || s.channel.readyState !== "open") continue
+    try {
+      s.lang = captionLanguage
+      s.channel.send(buildSubscribe(s.op + 1, s.lang) as unknown as ArrayBuffer)
+      log("subscribe-sent", { op: s.op + 1, lang: s.lang, reason: "config-change" })
+      record({ phase: "resubscribe-sent", op: s.op + 1, lang: s.lang })
+    } catch (err) {
+      record({ phase: "resubscribe-error", error: String(err) })
+    }
+  }
+}
 
-let opCounter = 0
-let seqCounter = 0
-let pc: RTCPeerConnection | null = null
-let mediaSession: RTCDataChannel | null = null
-let subscribed = false
+// ---------- channel consumers ----------
 
-function attachCaptions(ch: RTCDataChannel): void {
-  emit({ phase: "captions-attached", state: ch.readyState })
+let firstTranscript = true
+
+function handleCaptions(bytes: Uint8Array): void {
+  const m = decodeTranscriptWrapper(bytes)
+  if (!m || !m.text || !m.deviceId || m.messageId === undefined || m.messageVersion === undefined) return
+  if (firstTranscript) {
+    firstTranscript = false
+    log("first transcript", { lang: captionLanguage })
+  }
+  record({ phase: "transcript", text: m.text.slice(0, 80), deviceId: m.deviceId, messageId: m.messageId })
+  dispatch({
+    type: "transcript",
+    deviceId: m.deviceId,
+    messageId: m.messageId,
+    messageVersion: m.messageVersion,
+    text: m.text,
+    langId: m.langId,
+  })
+}
+
+function handleChat(bytes: Uint8Array): void {
+  const p = decodeChatWrapper(bytes)
+  if (!p || !p.deviceId || !p.text) return
+  record({ phase: "chat", deviceId: p.deviceId, text: p.text.slice(0, 80) })
+  dispatch({ type: "chat", deviceId: p.deviceId, text: p.text })
+}
+
+function handleRoster(bytes: Uint8Array): void {
+  const entries = decodeRoster(bytes)
+  let dispatched = 0
+  for (const entry of entries) {
+    // The adapter dedupes by deviceId; here we only skip empties.
+    if (!entry.deviceId || !entry.deviceName) continue
+    dispatch({ type: "device", deviceId: entry.deviceId, deviceName: entry.deviceName })
+    dispatched++
+  }
+  if (dispatched > 0) record({ phase: "roster", count: dispatched })
+}
+
+function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void): void {
   ch.addEventListener("message", (e: MessageEvent) => {
     void (async () => {
       try {
         const bytes = await toBytes(e.data as ArrayBuffer)
-        const m = decodeTranscriptWrapper(bytes)
-        if (m?.text) emit({ phase: "transcript", text: m.text.slice(0, 140), langId: m.langId, deviceId: m.deviceId })
-      } catch (err) { emit({ phase: "decode-error", error: String(err) }) }
+        consume(bytes)
+      } catch (err) {
+        log("decode-error", ch.label, String(err))
+        record({ phase: "decode-error", label: ch.label, error: String(err) })
+      }
     })()
   })
 }
 
-// A Meet data channel can be created locally (createDataChannel) or arrive
-// remotely (ondatachannel); handle every label from both directions.
-function handleChannel(ch: RTCDataChannel): void {
-  if (ch.label === "captions") { attachCaptions(ch); return }
+// ---------- channel routing ----------
+
+// A channel can be created locally (createDataChannel) or arrive remotely
+// (datachannel event); both paths funnel here with the owning pc.
+const seenChannels = new WeakSet<RTCDataChannel>()
+
+function handleChannel(ch: RTCDataChannel, pc: RTCPeerConnection): void {
+  if (seenChannels.has(ch)) return
+  seenChannels.add(ch)
+  record({ phase: "channel", label: ch.label, state: ch.readyState })
+  log("channel", ch.label)
   if (ch.label === "media-session") {
-    mediaSession = ch
-    emit({ phase: "media-session", state: ch.readyState })
-    if (ch.readyState === "open") setTimeout(trySubscribe, 1500)
-    ch.addEventListener("open", () => setTimeout(trySubscribe, 1500))
-    return
+    const s: MediaSession = { channel: ch, pc, op: 0, seq: 0, subscribed: false, lang: captionLanguage }
+    sessions.push(s)
+    sessionByChannel.set(ch, s)
+    if (ch.readyState === "open") setTimeout(() => trySubscribe(s), SUBSCRIBE_DELAY_MS)
+    ch.addEventListener("open", () => setTimeout(() => trySubscribe(s), SUBSCRIBE_DELAY_MS))
+  } else if (ch.label === "captions") {
+    attachConsumer(ch, handleCaptions)
+  } else if (ch.label === "meet_messages") {
+    attachConsumer(ch, handleChat)
+  } else if (ch.label === "collections") {
+    attachConsumer(ch, handleRoster)
   }
-  if (ch.label === "collections") emit({ phase: "collections", state: ch.readyState })
-  else if (ch.label === "meet_messages") emit({ phase: "meet_messages", state: ch.readyState })
 }
 
-function trySubscribe(): void {
-  if (subscribed || !pc) return
-  if (!mediaSession || mediaSession.readyState !== "open") return
-  subscribed = true
-  try {
-    pc.createDataChannel("captions", { ordered: true, maxRetransmits: 10, id: 50001 })
-  } catch (err) { emit({ phase: "create-captions-error", error: String(err) }) }
-  try {
-    mediaSession.send(buildSubscribe(opCounter + 1, SPIKE_LANG) as unknown as ArrayBuffer)
-    mediaSession.send(buildAck(seqCounter + 1) as unknown as ArrayBuffer)
-    mediaSession.send(buildAck(seqCounter + 2) as unknown as ArrayBuffer)
-    emit({ phase: "subscribe-sent", op: opCounter + 1, lang: SPIKE_LANG })
-  } catch (err) { emit({ phase: "subscribe-error", error: String(err) }) }
-}
+// ---------- RTCPeerConnection hooks ----------
 
 function install(): boolean {
-  const w = window as unknown as { RTCPeerConnection?: typeof RTCPeerConnection; __platicaSpike?: boolean }
-  if (!w.RTCPeerConnection || w.__platicaSpike) return false
-  w.__platicaSpike = true
+  const w = window as unknown as { RTCPeerConnection?: typeof RTCPeerConnection; __platicaRtc?: boolean }
+  if (!w.RTCPeerConnection || w.__platicaRtc) return false
+  w.__platicaRtc = true
 
-  // Track op/seq from Meet's outgoing media-session packets.
+  // Track Meet's own op (big packet) / seq (small packet) counters per channel
+  // from outgoing media-session sends.
   const origSend = RTCDataChannel.prototype.send
   RTCDataChannel.prototype.send = function (this: RTCDataChannel, data: unknown) {
     try {
       if (this.label === "media-session" && data instanceof ArrayBuffer) {
-        const u = new Uint8Array(data)
-        const op = readNestedOp(u); if (op !== undefined) opCounter = op
-        const seq = readNestedSeq(u); if (seq !== undefined) seqCounter = seq
+        const s = sessionByChannel.get(this)
+        if (s) {
+          const u = new Uint8Array(data)
+          const op = readNestedOp(u)
+          if (op !== undefined) s.op = op
+          const seq = readNestedSeq(u)
+          if (seq !== undefined) s.seq = seq
+        }
       }
-    } catch { /* best-effort counters */ }
+    } catch {
+      /* best-effort counters */
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (origSend as any).apply(this, arguments as any)
   }
 
-  // Catch channels Meet (or we) create locally.
+  // Catch channels Meet (or we) create locally; `this` is the owning pc.
   const origCreate = RTCPeerConnection.prototype.createDataChannel
-  RTCPeerConnection.prototype.createDataChannel = function (this: RTCPeerConnection, label: string, ...rest: unknown[]) {
+  RTCPeerConnection.prototype.createDataChannel = function (this: RTCPeerConnection, ...args: unknown[]) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ch = (origCreate as any).apply(this, [label, ...rest])
-    emit({ phase: "createDataChannel", label })
-    handleChannel(ch)
+    const ch: RTCDataChannel = (origCreate as any).apply(this, args)
+    handleChannel(ch, this)
     return ch
   }
 
@@ -260,19 +258,21 @@ function install(): boolean {
   const Wrapped = function (this: unknown, ...args: unknown[]) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const conn: RTCPeerConnection = new (OrigPC as any)(...args)
-    pc = conn
-    emit({ phase: "pc-created" })
+    log("pc-created")
+    record({ phase: "pc-created" })
     conn.addEventListener("datachannel", (ev: RTCDataChannelEvent) => {
-      emit({ phase: "ondatachannel", label: ev.channel.label })
-      handleChannel(ev.channel)
+      handleChannel(ev.channel, conn)
     })
     return conn
   } as unknown as typeof RTCPeerConnection
   Wrapped.prototype = OrigPC.prototype
   w.RTCPeerConnection = Wrapped
 
-  emit({ phase: "installed", rtc: typeof OrigPC })
+  log("installed")
+  record({ phase: "installed" })
   return true
 }
 
-if (!install()) emit({ phase: "install-skipped", rtc: typeof (window as unknown as { RTCPeerConnection?: unknown }).RTCPeerConnection })
+if (!install()) {
+  record({ phase: "install-skipped", rtc: typeof (window as unknown as { RTCPeerConnection?: unknown }).RTCPeerConnection })
+}
