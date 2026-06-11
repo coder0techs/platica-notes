@@ -14,6 +14,8 @@ export interface ChatMessage {
 
 export interface ActiveSession {
   platform: PlatformId
+  /** Meeting page pathname; lets a reloaded tab resume its own session only. */
+  path?: string
   title: string
   startedAt: string
   isPrivate: boolean

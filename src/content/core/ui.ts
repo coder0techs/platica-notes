@@ -30,7 +30,7 @@ export function showToast(message: string): void {
 export function mountPrivacyPill(
   initialPrivate: boolean,
   onChange: (isPrivate: boolean) => void,
-): void {
+): () => void {
   let isPrivate = initialPrivate
   const pill = document.createElement("button")
   pill.style.cssText =
@@ -48,4 +48,5 @@ export function mountPrivacyPill(
   })
   render()
   document.documentElement.appendChild(pill)
+  return () => pill.remove()
 }

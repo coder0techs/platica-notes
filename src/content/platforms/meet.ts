@@ -1,5 +1,5 @@
 import { sendToBackground } from "../../shared/messages"
-import { getSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
+import { getLocal, getSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
 import type { ActiveSession, Settings } from "../../shared/types"
 import { ChatLog, TranscriptCollector } from "../core/collector"
 import { SessionWriter } from "../core/persistence"
@@ -20,36 +20,68 @@ const HIDE_CAPTIONS_STYLE_ID = "platica-hide-captions"
 // Meet restarts very long captions of one speaker; a sharp text shrink signals it.
 const MONOLOGUE_RESET_DROP = 250
 const MEETING_PATH = /^\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i
+// The leave icon flickers during toolbar re-renders; only this many consecutive
+// missing checks mean the user actually left the call.
+const LEAVE_GONE_CHECKS = 3
+const END_WATCH_INTERVAL_MS = 2000
 
 void main().catch((error) => console.error("[platica-notes]", error))
 
 async function main(): Promise<void> {
-  // Only meeting pages look like /abc-defg-hij
-  if (!MEETING_PATH.test(location.pathname)) return
   console.log("[platica-notes] adapter loaded on", location.pathname)
-
   const tabIdResponse = await sendToBackground<number>({ kind: "getTabId" })
   if (!tabIdResponse.ok) {
     console.error("[platica-notes] could not get tab id:", tabIdResponse.error)
     return
   }
   const tabId = tabIdResponse.data
-  const settings = await getSettings()
+  watchSettings()
 
-  let selfName = "You"
-  void captureSelfName().then((name) => { if (name) selfName = name })
+  // Meet soft-navigates without page loads (landing -> meeting, /new -> meeting,
+  // leave screen -> rejoin), so one meeting per page lifetime is not enough:
+  // keep watching this tab for meeting pages forever.
+  for (;;) {
+    await waitFor(() => MEETING_PATH.test(location.pathname))
+    await runMeeting(tabId)
+    // Re-arm only after the leave screen is gone (path change) or the user
+    // rejoined the same meeting (leave icon back).
+    await waitFor(() => !MEETING_PATH.test(location.pathname) || !!findIcon(LEAVE_ICON_TEXT))
+  }
+}
 
-  await waitForIcon(LEAVE_ICON_TEXT)
+async function runMeeting(tabId: number): Promise<void> {
+  const meetingPath = location.pathname
+  console.log("[platica-notes] waiting to join", meetingPath)
+
+  // Abort the lobby wait if the user backs out without joining.
+  const joined = await waitForIcon(
+    LEAVE_ICON_TEXT,
+    () => location.pathname !== meetingPath,
+  )
+  if (!joined) return
   console.log("[platica-notes] meeting started, tab", tabId)
   await sendToBackground({ kind: "meetingStarted" })
 
+  const settings = await getSettings()
+  let selfName = "You"
+  let ending = false
+  void captureSelfName(() => ending).then((name) => { if (name) selfName = name })
+
+  // A mid-meeting reload must continue the same session, not erase it.
+  const previous = await getLocal<ActiveSession>(sessionKey(tabId))
+  const resumed = previous && previous.path === meetingPath ? previous : null
+  if (resumed) console.log("[platica-notes] resuming session after reload")
+  const prefixTranscript = resumed ? resumed.transcript : []
+  const prefixChat = resumed ? resumed.chat : []
+
   const session: ActiveSession = {
     platform: "meet",
-    title: document.title,
-    startedAt: new Date().toISOString(),
-    isPrivate: settings.privateByDefault,
-    transcript: [],
-    chat: [],
+    path: meetingPath,
+    title: resumed ? resumed.title : document.title,
+    startedAt: resumed ? resumed.startedAt : new Date().toISOString(),
+    isPrivate: resumed ? resumed.isPrivate : settings.privateByDefault,
+    transcript: prefixTranscript,
+    chat: prefixChat,
   }
   const collector = new TranscriptCollector()
   const chatLog = new ChatLog()
@@ -60,30 +92,78 @@ async function main(): Promise<void> {
   )
   writer.requestWrite()
 
-  mountPrivacyPill(session.isPrivate, (isPrivate) => {
+  const unmountPill = mountPrivacyPill(session.isPrivate, (isPrivate) => {
     session.isPrivate = isPrivate
     writer.requestWrite()
   })
 
   // Meet fills the real meeting name in with a delay.
   setTimeout(() => {
+    if (ending) return
     session.title = readMeetingTitle()
     writer.requestWrite()
   }, 7000)
 
   await enableCaptions()
-  applyCaptionsVisibility(settings)
-  watchSettings()
+  setCaptionsHidden(settings.hideCaptionsOverlay)
 
   void observeCaptions()
   void observeChat()
-  hookMeetingEnd()
+
+  // --- meeting end detection -------------------------------------------------
+  // Meet re-renders its toolbar (mute toggles, layout changes), replacing the
+  // leave button node, so a listener bound to one node silently dies. Delegate
+  // from the document instead, and back it up with a poller that catches ends
+  // we never see a click for (keyboard shortcut, kicked, host ended call).
+  let meetingDone!: () => void
+  const done = new Promise<void>((resolve) => { meetingDone = resolve })
+
+  const onDocumentClick = (event: Event) => {
+    const target = event.target as Element | null
+    const control = target?.closest('button, [role="button"]')
+    const icon = control?.querySelector(ICON_FONT)
+    if (icon?.textContent === LEAVE_ICON_TEXT) void endMeeting("leave click")
+  }
+  document.addEventListener("click", onDocumentClick, true)
+
+  let leaveGoneCount = 0
+  const endWatcher = setInterval(() => {
+    if (location.pathname !== meetingPath) {
+      void endMeeting("left meeting page")
+      return
+    }
+    leaveGoneCount = findIcon(LEAVE_ICON_TEXT) ? 0 : leaveGoneCount + 1
+    if (leaveGoneCount >= LEAVE_GONE_CHECKS) void endMeeting("call ended")
+  }, END_WATCH_INTERVAL_MS)
+  // ---------------------------------------------------------------------------
+
   showToast("Plática Notes is recording this meeting")
+  await done
+  return
 
   // ---------- closures ----------
 
+  async function endMeeting(reason: string): Promise<void> {
+    if (ending) return
+    ending = true
+    console.log("[platica-notes] meeting ended:", reason)
+    clearInterval(endWatcher)
+    document.removeEventListener("click", onDocumentClick, true)
+    // Stop observing first: a caption mutation arriving after finalization
+    // would re-create the session key the background just cleaned up.
+    for (const observer of observers) observer.disconnect()
+    unmountPill()
+    collector.closeCurrent()
+    session.transcript = [...prefixTranscript, ...collector.snapshot()]
+    await writer.writeNow()
+    const response = await sendToBackground({ kind: "meetingEnded" })
+    if (!response.ok) console.error("[platica-notes] finalize failed:", response.error)
+    meetingDone()
+  }
+
   async function observeCaptions(): Promise<void> {
-    const region = await waitForSelector(CAPTIONS_REGION)
+    const region = await waitForSelector(CAPTIONS_REGION, () => ending)
+    if (!region || ending) return
     console.log("[platica-notes] captions region found, observer attached")
     let blockSeq = 0
     let lastSpeaker = ""
@@ -128,7 +208,7 @@ async function main(): Promise<void> {
             firstCaptureLogged = true
             console.log("[platica-notes] captions are flowing")
           }
-          session.transcript = collector.snapshot()
+          session.transcript = [...prefixTranscript, ...collector.snapshot()]
           writer.requestWrite()
           pulseActivity()
         } catch (error) {
@@ -142,12 +222,12 @@ async function main(): Promise<void> {
 
   async function observeChat(): Promise<void> {
     try {
-      const chatButton = await withTimeout(waitForIcon(CHAT_ICON_TEXT), 30_000)
-      if (!chatButton) return
+      const chatButton = await withTimeout(waitForIcon(CHAT_ICON_TEXT, () => ending), 30_000)
+      if (!chatButton || ending) return
       chatButton.click() // materialize the chat DOM once
-      const list = await withTimeout(waitForSelector(CHAT_LIST), 10_000)
+      const list = await withTimeout(waitForSelector(CHAT_LIST, () => ending), 10_000)
       chatButton.click() // close the panel again
-      if (!list) return
+      if (!list || ending) return
 
       const observer = new MutationObserver(() => {
         try {
@@ -161,7 +241,7 @@ async function main(): Promise<void> {
             messageElement?.lastChild?.lastChild?.firstChild?.firstChild?.firstChild?.textContent
           if (!sender || !text) return
           if (chatLog.add({ sender, sentAt: new Date().toISOString(), text })) {
-            session.chat = chatLog.snapshot()
+            session.chat = [...prefixChat, ...chatLog.snapshot()]
             writer.requestWrite()
           }
         } catch (error) {
@@ -174,49 +254,24 @@ async function main(): Promise<void> {
       console.error("[platica-notes] chat observer not registered:", error)
     }
   }
-
-  async function enableCaptions(): Promise<void> {
-    // If captions are already on, the off-icon never appears — time out quietly.
-    const icon = await withTimeout(waitForIcon(CAPTIONS_OFF_ICON_TEXT), 15_000)
-    icon?.click()
-  }
-
-  function applyCaptionsVisibility(current: Settings): void {
-    setCaptionsHidden(current.hideCaptionsOverlay)
-  }
-
-  function watchSettings(): void {
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === "sync" && changes.settings) {
-        const next = withDefaults(changes.settings.newValue as Partial<Settings> | undefined)
-        setCaptionsHidden(next.hideCaptionsOverlay)
-      }
-    })
-  }
-
-  function hookMeetingEnd(): void {
-    const leaveIcon = findIcon(LEAVE_ICON_TEXT)
-    const clickTarget = leaveIcon?.parentElement?.parentElement
-    if (!clickTarget) {
-      console.error("[platica-notes] leave button not found; relying on tab-close finalization")
-      return
-    }
-    clickTarget.addEventListener("click", () => { void endMeeting() })
-  }
-
-  async function endMeeting(): Promise<void> {
-    // Stop observing first: a caption mutation arriving after finalization
-    // would re-create the session key the background just cleaned up.
-    for (const observer of observers) observer.disconnect()
-    collector.closeCurrent()
-    session.transcript = collector.snapshot()
-    await writer.writeNow()
-    const response = await sendToBackground({ kind: "meetingEnded" })
-    if (!response.ok) console.error("[platica-notes] finalize failed:", response.error)
-  }
 }
 
 // ---------- module-level helpers ----------
+
+async function enableCaptions(): Promise<void> {
+  // If captions are already on, the off-icon never appears — time out quietly.
+  const icon = await withTimeout(waitForIcon(CAPTIONS_OFF_ICON_TEXT), 15_000)
+  icon?.click()
+}
+
+function watchSettings(): void {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "sync" && changes.settings) {
+      const next = withDefaults(changes.settings.newValue as Partial<Settings> | undefined)
+      setCaptionsHidden(next.hideCaptionsOverlay)
+    }
+  })
+}
 
 function setCaptionsHidden(hidden: boolean): void {
   const existing = document.getElementById(HIDE_CAPTIONS_STYLE_ID)
@@ -243,20 +298,26 @@ function findIcon(text: string): HTMLElement | null {
   )
 }
 
-async function waitForIcon(text: string): Promise<HTMLElement> {
+async function waitForIcon(text: string, abort?: () => boolean): Promise<HTMLElement | null> {
   for (;;) {
     const el = findIcon(text)
     if (el) return el
+    if (abort?.()) return null
     await tick()
   }
 }
 
-async function waitForSelector(selector: string): Promise<Element> {
+async function waitForSelector(selector: string, abort?: () => boolean): Promise<Element | null> {
   for (;;) {
     const el = document.querySelector(selector)
     if (el) return el
+    if (abort?.()) return null
     await tick()
   }
+}
+
+async function waitFor(condition: () => boolean): Promise<void> {
+  while (!condition()) await tick()
 }
 
 /** rAF when visible, timer fallback when the tab is backgrounded. */
@@ -275,8 +336,8 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   return Promise.race([promise, delay(ms).then(() => null)])
 }
 
-async function captureSelfName(): Promise<string | null> {
-  const el = await withTimeout(waitForSelector(SELF_NAME), 60_000)
+async function captureSelfName(abort: () => boolean): Promise<string | null> {
+  const el = await withTimeout(waitForSelector(SELF_NAME, abort), 60_000)
   return el?.textContent?.trim() || null
 }
 
