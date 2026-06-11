@@ -9,14 +9,16 @@ import { mountPrivacyPill, pulseActivity, showToast } from "../core/ui"
 const ICON_FONT = ".google-symbols"
 const LEAVE_ICON_TEXT = "call_end"
 const CAPTIONS_OFF_ICON_TEXT = "closed_caption_off"
-const CHAT_ICON_TEXT = "chat"
 const CAPTIONS_REGION = 'div[role="region"][tabindex="0"]'
 const CHAT_LIST = 'div[aria-live="polite"].Ge9Kpc'
+const CHAT_TOGGLE = 'button[aria-label="Chat with everyone"]'
+const SIDE_PANEL = 'aside[aria-label="Side panel"]'
 const SELF_NAME = ".awLEm"
 const MEETING_TITLE = ".u6vdEc"
 // -------------------------------------------------------------------------------
 
 const HIDE_CAPTIONS_STYLE_ID = "platica-hide-captions"
+const HIDE_SIDE_PANEL_STYLE_ID = "platica-hide-sidepanel"
 // Meet restarts very long captions of one speaker; a sharp text shrink signals it.
 const MONOLOGUE_RESET_DROP = 250
 const MEETING_PATH = /^\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i
@@ -104,8 +106,12 @@ async function runMeeting(tabId: number): Promise<void> {
     writer.requestWrite()
   }, 7000)
 
-  await enableCaptions()
+  // Inject the hide style BEFORE enabling captions. enableCaptions() can block
+  // for seconds (it waits for the toolbar, and times out entirely if captions
+  // are already on), and the style must already be in place so the caption
+  // overlay never flashes on screen during that window.
   setCaptionsHidden(settings.hideCaptionsOverlay)
+  await enableCaptions()
 
   void observeCaptions()
   void observeChat()
@@ -222,12 +228,26 @@ async function runMeeting(tabId: number): Promise<void> {
 
   async function observeChat(): Promise<void> {
     try {
-      const chatButton = await withTimeout(waitForIcon(CHAT_ICON_TEXT, () => ending), 30_000)
+      const chatButton = await withTimeout(
+        waitForSelector(CHAT_TOGGLE, () => ending),
+        30_000,
+      )
       if (!chatButton || ending) return
-      chatButton.click() // materialize the chat DOM once
+
+      // Meet only builds the chat DOM once the side panel is opened. Hide the
+      // panel first so this materialization toggle is invisible — the user
+      // never sees the chat flash open and shut on join.
+      hideSidePanel(true)
+      ;(chatButton as HTMLElement).click() // open (offscreen)
       const list = await withTimeout(waitForSelector(CHAT_LIST, () => ending), 10_000)
-      chatButton.click() // close the panel again
-      if (!list || ending) return
+      ;(chatButton as HTMLElement).click() // close again
+      // The list node persists in the DOM after closing, so the observer below
+      // keeps working. Reveal the panel again once it has collapsed.
+      void waitForSidePanelClosed().then(() => hideSidePanel(false))
+      if (!list || ending) {
+        hideSidePanel(false)
+        return
+      }
 
       const observer = new MutationObserver(() => {
         try {
@@ -271,6 +291,27 @@ function watchSettings(): void {
       setCaptionsHidden(next.hideCaptionsOverlay)
     }
   })
+}
+
+function hideSidePanel(hidden: boolean): void {
+  const existing = document.getElementById(HIDE_SIDE_PANEL_STYLE_ID)
+  if (!hidden) {
+    existing?.remove()
+    return
+  }
+  if (existing) return
+  const style = document.createElement("style")
+  style.id = HIDE_SIDE_PANEL_STYLE_ID
+  style.textContent = `${SIDE_PANEL} { opacity: 0 !important; pointer-events: none !important; }`
+  document.documentElement.appendChild(style)
+}
+
+async function waitForSidePanelClosed(): Promise<void> {
+  // Give the close click time to land, then wait until the panel is gone.
+  for (let i = 0; i < 40; i++) {
+    if (!document.querySelector(SIDE_PANEL)) return
+    await delay(100)
+  }
 }
 
 function setCaptionsHidden(hidden: boolean): void {
