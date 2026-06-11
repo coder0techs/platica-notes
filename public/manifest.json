@@ -8,12 +8,9 @@
   "content_scripts": [
     {
       "matches": ["https://meet.google.com/*"],
-      "exclude_matches": [
-        "https://meet.google.com/",
-        "https://meet.google.com/landing*"
-      ],
-      "js": ["content-meet.js"],
-      "run_at": "document_end"
+      "js": ["meet-rtc-main.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ],
   "background": { "service_worker": "background.js" },
