@@ -12,6 +12,9 @@ export const RTC_EVENT = "platica-rtc"
 // `detail` is a JSON string of RtcConfig (same boundary constraint).
 export const RTC_CONFIG_EVENT = "platica-rtc-config"
 
+// Events for one channel are emitted in arrival order, but consumers must
+// still treat max(messageVersion) per (deviceId, messageId) as the winner
+// regardless of arrival order.
 export interface RtcCaptionEvent {
   type: "transcript"
   deviceId: string

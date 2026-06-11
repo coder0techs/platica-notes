@@ -29,11 +29,12 @@ const SUBSCRIBE_DELAY_MS = 1500
 // Ring buffer of recent lifecycle events on documentElement.dataset — readable
 // from an isolated-world script or external automation (AppleScript in Arc).
 const RING_MAX = 40
+const RING_FLUSH_MS = 500
 const ring: Record<string, unknown>[] = []
+let ringFlushTimer: ReturnType<typeof setTimeout> | undefined
 
-function record(event: Record<string, unknown>): void {
-  ring.push({ ...event, ts: Date.now() })
-  if (ring.length > RING_MAX) ring.shift()
+function flushRing(): void {
+  ringFlushTimer = undefined
   try {
     document.documentElement.dataset.platicaRtc = JSON.stringify(ring)
   } catch {
@@ -41,8 +42,16 @@ function record(event: Record<string, unknown>): void {
   }
 }
 
+function record(event: Record<string, unknown>): void {
+  ring.push({ ...event, ts: Date.now() })
+  if (ring.length > RING_MAX) ring.shift()
+  // Writing dataset on every caption message would fire Meet's attribute
+  // MutationObservers several times per second. Flush at most once per
+  // RING_FLUSH_MS via a trailing timer, so the last event is never lost.
+  if (ringFlushTimer === undefined) ringFlushTimer = setTimeout(flushRing, RING_FLUSH_MS)
+}
+
 function log(...args: unknown[]): void {
-  // eslint-disable-next-line no-console
   console.log("[platica-rtc]", ...args)
 }
 
@@ -93,11 +102,22 @@ interface MediaSession {
 const sessions: MediaSession[] = []
 const sessionByChannel = new WeakMap<RTCDataChannel, MediaSession>()
 
+// Drop dead channels so a long-lived tab does not retain pcs/channels of
+// finished meetings. Called on new session registration, channel close, and
+// language change.
+function pruneDeadSessions(): void {
+  for (let i = sessions.length - 1; i >= 0; i--) {
+    if (sessions[i].channel.readyState === "closed") sessions.splice(i, 1)
+  }
+}
+
 function trySubscribe(s: MediaSession): void {
   if (s.subscribed || s.channel.readyState !== "open") return
   s.subscribed = true
   // Belt-and-braces: Meet usually creates the captions channel itself once the
-  // subscription is active, but creating it explicitly never hurts.
+  // subscription is active, but creating it explicitly never hurts. `id`
+  // without `negotiated: true` is implementation-dependent — we rely on the
+  // try/catch if the browser rejects it.
   try {
     s.pc.createDataChannel("captions", { ordered: true, maxRetransmits: 10, id: 50001 })
   } catch (err) {
@@ -105,11 +125,17 @@ function trySubscribe(s: MediaSession): void {
   }
   try {
     s.lang = captionLanguage
-    s.channel.send(buildSubscribe(s.op + 1, s.lang) as unknown as ArrayBuffer)
+    const op = s.op + 1
+    // Cast: TS 6 types Uint8Array as Uint8Array<ArrayBufferLike>, which does
+    // not satisfy send's ArrayBufferView<ArrayBuffer> overload.
+    s.channel.send(buildSubscribe(op, s.lang) as unknown as ArrayBuffer)
+    // Bump locally so a later re-subscribe never reuses this op; Meet's own
+    // traffic overwrites the counter via the send hook anyway.
+    s.op = op
     s.channel.send(buildAck(s.seq + 1) as unknown as ArrayBuffer)
     s.channel.send(buildAck(s.seq + 2) as unknown as ArrayBuffer)
-    log("subscribe-sent", { op: s.op + 1, lang: s.lang })
-    record({ phase: "subscribe-sent", op: s.op + 1, lang: s.lang })
+    log("subscribe-sent", { op, lang: s.lang })
+    record({ phase: "subscribe-sent", op, lang: s.lang })
   } catch (err) {
     s.subscribed = false
     log("subscribe-error", String(err))
@@ -118,17 +144,16 @@ function trySubscribe(s: MediaSession): void {
 }
 
 function resubscribeAll(): void {
-  // Drop dead channels so a long-lived tab does not accumulate state.
-  for (let i = sessions.length - 1; i >= 0; i--) {
-    if (sessions[i].channel.readyState === "closed") sessions.splice(i, 1)
-  }
+  pruneDeadSessions()
   for (const s of sessions) {
     if (!s.subscribed || s.lang === captionLanguage || s.channel.readyState !== "open") continue
     try {
       s.lang = captionLanguage
-      s.channel.send(buildSubscribe(s.op + 1, s.lang) as unknown as ArrayBuffer)
-      log("subscribe-sent", { op: s.op + 1, lang: s.lang, reason: "config-change" })
-      record({ phase: "resubscribe-sent", op: s.op + 1, lang: s.lang })
+      const op = s.op + 1
+      s.channel.send(buildSubscribe(op, s.lang) as unknown as ArrayBuffer)
+      s.op = op
+      log("subscribe-sent", { op, lang: s.lang, reason: "config-change" })
+      record({ phase: "resubscribe-sent", op, lang: s.lang })
     } catch (err) {
       record({ phase: "resubscribe-error", error: String(err) })
     }
@@ -160,6 +185,8 @@ function handleCaptions(bytes: Uint8Array): void {
 function handleChat(bytes: Uint8Array): void {
   const p = decodeChatWrapper(bytes)
   if (!p || !p.deviceId || !p.text) return
+  // Chat text in the diagnostics ring is deliberately the same truncated-PII
+  // class as transcript text above.
   record({ phase: "chat", deviceId: p.deviceId, text: p.text.slice(0, 80) })
   dispatch({ type: "chat", deviceId: p.deviceId, text: p.text })
 }
@@ -177,16 +204,22 @@ function handleRoster(bytes: Uint8Array): void {
 }
 
 function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void): void {
+  // toBytes is async (gzip goes through DecompressionStream), so two messages
+  // can finish decoding out of order, emitting events with regressing
+  // versions. Chain handler runs on a per-channel promise so events are
+  // processed strictly in arrival order.
+  let queue: Promise<void> = Promise.resolve()
   ch.addEventListener("message", (e: MessageEvent) => {
-    void (async () => {
+    const data = e.data as ArrayBuffer
+    queue = queue.then(async () => {
       try {
-        const bytes = await toBytes(e.data as ArrayBuffer)
+        const bytes = await toBytes(data)
         consume(bytes)
       } catch (err) {
         log("decode-error", ch.label, String(err))
         record({ phase: "decode-error", label: ch.label, error: String(err) })
       }
-    })()
+    })
   })
 }
 
@@ -202,11 +235,16 @@ function handleChannel(ch: RTCDataChannel, pc: RTCPeerConnection): void {
   record({ phase: "channel", label: ch.label, state: ch.readyState })
   log("channel", ch.label)
   if (ch.label === "media-session") {
+    pruneDeadSessions()
     const s: MediaSession = { channel: ch, pc, op: 0, seq: 0, subscribed: false, lang: captionLanguage }
     sessions.push(s)
     sessionByChannel.set(ch, s)
     if (ch.readyState === "open") setTimeout(() => trySubscribe(s), SUBSCRIBE_DELAY_MS)
     ch.addEventListener("open", () => setTimeout(() => trySubscribe(s), SUBSCRIBE_DELAY_MS))
+    ch.addEventListener("close", () => {
+      const i = sessions.indexOf(s)
+      if (i >= 0) sessions.splice(i, 1)
+    })
   } else if (ch.label === "captions") {
     attachConsumer(ch, handleCaptions)
   } else if (ch.label === "meet_messages") {
@@ -241,31 +279,44 @@ function install(): boolean {
     } catch {
       /* best-effort counters */
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (origSend as any).apply(this, arguments as any)
   }
 
   // Catch channels Meet (or we) create locally; `this` is the owning pc.
+  // Our code is try/caught so an exception here can never break Meet's call.
   const origCreate = RTCPeerConnection.prototype.createDataChannel
   RTCPeerConnection.prototype.createDataChannel = function (this: RTCPeerConnection, ...args: unknown[]) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ch: RTCDataChannel = (origCreate as any).apply(this, args)
-    handleChannel(ch, this)
+    try {
+      handleChannel(ch, this)
+    } catch (err) {
+      record({ phase: "hook-error", where: "createDataChannel", error: String(err) })
+    }
     return ch
   }
 
   const OrigPC = w.RTCPeerConnection
   const Wrapped = function (this: unknown, ...args: unknown[]) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const conn: RTCPeerConnection = new (OrigPC as any)(...args)
-    log("pc-created")
-    record({ phase: "pc-created" })
-    conn.addEventListener("datachannel", (ev: RTCDataChannelEvent) => {
-      handleChannel(ev.channel, conn)
-    })
+    // Same rule as above: nothing of ours may throw into Meet's constructor call.
+    try {
+      log("pc-created")
+      record({ phase: "pc-created" })
+      conn.addEventListener("datachannel", (ev: RTCDataChannelEvent) => {
+        try {
+          handleChannel(ev.channel, conn)
+        } catch (err) {
+          record({ phase: "hook-error", where: "datachannel", error: String(err) })
+        }
+      })
+    } catch (err) {
+      record({ phase: "hook-error", where: "pc-constructor", error: String(err) })
+    }
     return conn
   } as unknown as typeof RTCPeerConnection
   Wrapped.prototype = OrigPC.prototype
+  // Preserve statics (e.g. RTCPeerConnection.generateCertificate).
+  Object.setPrototypeOf(Wrapped, OrigPC)
   w.RTCPeerConnection = Wrapped
 
   log("installed")
