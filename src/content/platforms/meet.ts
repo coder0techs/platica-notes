@@ -26,6 +26,7 @@ void main().catch((error) => console.error("[platica-notes]", error))
 async function main(): Promise<void> {
   // Only meeting pages look like /abc-defg-hij
   if (!MEETING_PATH.test(location.pathname)) return
+  console.log("[platica-notes] adapter loaded on", location.pathname)
 
   const tabIdResponse = await sendToBackground<number>({ kind: "getTabId" })
   if (!tabIdResponse.ok) {
@@ -39,6 +40,7 @@ async function main(): Promise<void> {
   void captureSelfName().then((name) => { if (name) selfName = name })
 
   await waitForIcon(LEAVE_ICON_TEXT)
+  console.log("[platica-notes] meeting started, tab", tabId)
   await sendToBackground({ kind: "meetingStarted" })
 
   const session: ActiveSession = {
@@ -82,6 +84,7 @@ async function main(): Promise<void> {
 
   async function observeCaptions(): Promise<void> {
     const region = await waitForSelector(CAPTIONS_REGION)
+    console.log("[platica-notes] captions region found, observer attached")
     let blockSeq = 0
     let lastSpeaker = ""
     let lastText = ""
