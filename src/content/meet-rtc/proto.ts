@@ -30,12 +30,26 @@ export interface RosterEntry {
 
 interface Cursor { buf: Uint8Array; i: number }
 
+// Sentinel thrown by skip() on unknown wire types so the public decoder can abort
+// rather than silently misparsing the rest of the message.
+const UNKNOWN_WIRE = Symbol("unknown_wire")
+
+// Clamp a wire-declared length so walk loops never run past the real buffer end,
+// even when a truncated or hostile packet declares a length larger than the data.
+function boundedEnd(c: Cursor, l: number): number {
+  return Math.min(c.i + l, c.buf.length)
+}
+
 // Use multiplication rather than bit-shifts: JS `>>` coerces operands to Int32,
 // so shift >= 32 silently wraps and corrupts values above 2^31.
+// Guard against buffer ending mid-varint: a read past the end returns undefined;
+// (undefined & 0x7f) === 0 and (undefined & 0x80) === 0 breaks on the first
+// undefined byte (safe for a single read), but we also check the index bound so
+// a series of adjacent truncated messages cannot extend the loop via the tag read.
 function readVarint(c: Cursor): number {
   let result = 0
   let shift = 0
-  for (;;) {
+  while (c.i < c.buf.length) {
     const byte = c.buf[c.i++]
     result += (byte & 0x7f) * 2 ** shift
     if ((byte & 0x80) === 0) break
@@ -49,19 +63,24 @@ function readTag(c: Cursor): { field: number; wire: number } {
   return { field: key >>> 3, wire: key & 7 }
 }
 
+// Wire types 3/4/6/7 are undefined in proto3 (group start/end are deprecated in
+// proto3 and illegal in new schemas).  Encountering one means the message is
+// unparseable from this point — throw so the public boundary can abort cleanly.
 function skip(c: Cursor, wire: number): void {
   if (wire === 0) readVarint(c)
-  else if (wire === 2) c.i += readVarint(c)
+  else if (wire === 2) c.i = boundedEnd(c, readVarint(c))
   else if (wire === 5) c.i += 4
   else if (wire === 1) c.i += 8
+  else throw UNKNOWN_WIRE
 }
 
 const decoder = new TextDecoder()
 
 function readString(c: Cursor): string {
   const l = readVarint(c)
-  const s = decoder.decode(c.buf.slice(c.i, c.i + l))
-  c.i += l
+  const end = boundedEnd(c, l)
+  const s = decoder.decode(c.buf.slice(c.i, end))
+  c.i = end
   return s
 }
 
@@ -87,9 +106,11 @@ function strBytes(s: string): number[] { return [...new TextEncoder().encode(s)]
 // ---------- transcript decoder ----------
 
 function decodeTranscriptMessage(buf: Uint8Array, start: number, end: number): Transcript {
+  // Clamp end so a caller passing an oversized bound cannot walk past the buffer.
+  const safeEnd = Math.min(end, buf.length)
   const c: Cursor = { buf, i: start }
   const out: Transcript = {}
-  while (c.i < end) {
+  while (c.i < safeEnd) {
     const { field, wire } = readTag(c)
     if (field === 1 && wire === 2) out.deviceId = readString(c)
     else if (field === 2 && wire === 0) out.messageId = readVarint(c)
@@ -102,24 +123,30 @@ function decodeTranscriptMessage(buf: Uint8Array, start: number, end: number): T
 }
 
 // Wrapper: field 1 = message (len-delim); field 2 = unknown2 (presence → not a transcript).
+// try/catch: skip() throws UNKNOWN_WIRE on malformed input; we treat that as "not a transcript".
 export function decodeTranscriptWrapper(buf: Uint8Array): Transcript | null {
-  const c: Cursor = { buf, i: 0 }
-  let message: Transcript | null = null
-  let hasUnknown2 = false
-  while (c.i < buf.length) {
-    const { field, wire } = readTag(c)
-    if (field === 1 && wire === 2) {
-      const l = readVarint(c)
-      message = decodeTranscriptMessage(buf, c.i, c.i + l)
-      c.i += l
-    } else if (field === 2 && wire === 2) {
-      hasUnknown2 = true
-      skip(c, wire)
-    } else {
-      skip(c, wire)
+  try {
+    const c: Cursor = { buf, i: 0 }
+    let message: Transcript | null = null
+    let hasUnknown2 = false
+    while (c.i < buf.length) {
+      const { field, wire } = readTag(c)
+      if (field === 1 && wire === 2) {
+        const l = readVarint(c)
+        const end = boundedEnd(c, l)
+        message = decodeTranscriptMessage(buf, c.i, end)
+        c.i = end
+      } else if (field === 2 && wire === 2) {
+        hasUnknown2 = true
+        skip(c, wire)
+      } else {
+        skip(c, wire)
+      }
     }
+    return hasUnknown2 ? null : message
+  } catch {
+    return null
   }
-  return hasUnknown2 ? null : message
 }
 
 // ---------- chat decoder ----------
@@ -129,16 +156,18 @@ export function decodeTranscriptWrapper(buf: Uint8Array): Transcript | null {
 // message: f2=deviceId(string), f3=timestamp(varint), f5={f1=text(string)}
 
 function decodeChatMessage(buf: Uint8Array, start: number, end: number): ChatPayload {
+  // Clamp end so a caller passing an oversized bound cannot walk past the buffer.
+  const safeEnd = Math.min(end, buf.length)
   const c: Cursor = { buf, i: start }
   const out: ChatPayload = {}
-  while (c.i < end) {
+  while (c.i < safeEnd) {
     const { field, wire } = readTag(c)
     if (field === 2 && wire === 2) out.deviceId = readString(c)
     else if (field === 3 && wire === 0) out.timestamp = readVarint(c)
     else if (field === 5 && wire === 2) {
       // text submessage: field 1 = value(string)
       const subLen = readVarint(c)
-      const subEnd = c.i + subLen
+      const subEnd = boundedEnd(c, subLen)
       const sc: Cursor = { buf, i: c.i }
       while (sc.i < subEnd) {
         const { field: sf, wire: sw } = readTag(sc)
@@ -154,11 +183,14 @@ function decodeChatMessage(buf: Uint8Array, start: number, end: number): ChatPay
 }
 
 function walkLen(c: Cursor, end: number, targetField: number): { start: number; end: number } | null {
-  while (c.i < end) {
+  // Clamp the walk bound so a hostile declared length cannot extend past the buffer.
+  const safeEnd = Math.min(end, c.buf.length)
+  while (c.i < safeEnd) {
     const { field, wire } = readTag(c)
     if (field === targetField && wire === 2) {
       const l = readVarint(c)
-      return { start: c.i, end: c.i + l }
+      const fieldEnd = boundedEnd(c, l)
+      return { start: c.i, end: fieldEnd }
     }
     skip(c, wire)
   }
@@ -187,10 +219,12 @@ export function decodeChatWrapper(buf: Uint8Array): ChatPayload | null {
 
 // Leaf: field 1 = deviceId(string), field 2 = deviceName(string)
 function decodeLeaf(buf: Uint8Array, start: number, end: number): RosterEntry | null {
+  // Clamp end so a caller passing an oversized bound cannot walk past the buffer.
+  const safeEnd = Math.min(end, buf.length)
   const c: Cursor = { buf, i: start }
   let deviceId: string | undefined
   let deviceName: string | undefined
-  while (c.i < end) {
+  while (c.i < safeEnd) {
     const { field, wire } = readTag(c)
     if (field === 1 && wire === 2) deviceId = readString(c)
     else if (field === 2 && wire === 2) deviceName = readString(c)
@@ -212,8 +246,9 @@ function collectFromCollectionForm(buf: Uint8Array, results: RosterEntry[]): voi
     const { field, wire } = readTag(c2)
     if (field === 2 && wire === 2) {
       const l = readVarint(c2)
-      const entry = decodeLeaf(buf, c2.i, c2.i + l)
-      c2.i += l
+      const leafEnd = boundedEnd(c2, l)
+      const entry = decodeLeaf(buf, c2.i, leafEnd)
+      c2.i = leafEnd
       if (entry) results.push(entry)
     } else {
       skip(c2, wire)
@@ -287,11 +322,11 @@ export function readNestedOp(buf: Uint8Array): number | undefined {
   const c: Cursor = { buf, i: 0 }
   try {
     if (readTag(c).field !== 1) return undefined
-    const envLen = readVarint(c); const envEnd = c.i + envLen
+    const envLen = readVarint(c); const envEnd = boundedEnd(c, envLen)
     while (c.i < envEnd) {
       const t = readTag(c)
       if (t.field === 2 && t.wire === 2) {
-        const cmdLen = readVarint(c); const cmdEnd = c.i + cmdLen
+        const cmdLen = readVarint(c); const cmdEnd = boundedEnd(c, cmdLen)
         while (c.i < cmdEnd) {
           const t2 = readTag(c)
           if (t2.field === 1 && t2.wire === 0) return readVarint(c)
@@ -308,11 +343,11 @@ export function readNestedSeq(buf: Uint8Array): number | undefined {
   const c: Cursor = { buf, i: 0 }
   try {
     if (readTag(c).field !== 1) return undefined
-    const envLen = readVarint(c); const envEnd = c.i + envLen
+    const envLen = readVarint(c); const envEnd = boundedEnd(c, envLen)
     while (c.i < envEnd) {
       const t = readTag(c)
       if (t.field === 1 && t.wire === 2) {
-        const ackLen = readVarint(c); const ackEnd = c.i + ackLen
+        const ackLen = readVarint(c); const ackEnd = boundedEnd(c, ackLen)
         while (c.i < ackEnd) {
           const t2 = readTag(c)
           if (t2.field === 2 && t2.wire === 0) return readVarint(c)

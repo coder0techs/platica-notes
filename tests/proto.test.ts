@@ -32,6 +32,35 @@ function lenField(field: number, bytes: number[], out: number[]): void {
 function strBytes(s: string): number[] { return [...new TextEncoder().encode(s)] }
 function u8(arr: number[]): Uint8Array { return new Uint8Array(arr) }
 
+// ---------- test-local protobuf reader ----------
+// Used by the locale-embedding test to walk the subscribe packet structure
+// without depending on proto.ts internals.
+
+function makeReader(buf: Uint8Array): {
+  rv(): number
+  rt(): { f: number; w: number }
+  skipField(w: number): void
+  expectLenField(expectedField: number): { start: number; end: number }
+  i: { value: number }
+} {
+  const pos = { value: 0 }
+  function rv(): number {
+    let r = 0; let s = 0
+    for (;;) { const b = buf[pos.value++]; r += (b & 0x7f) * 2 ** s; if (!(b & 0x80)) return r; s += 7 }
+  }
+  function rt(): { f: number; w: number } { const k = rv(); return { f: k >>> 3, w: k & 7 } }
+  function skipField(w: number): void { if (w === 0) rv(); else if (w === 2) pos.value += rv(); else if (w === 5) pos.value += 4; else if (w === 1) pos.value += 8 }
+  function expectLenField(expectedField: number): { start: number; end: number } {
+    while (pos.value < buf.length) {
+      const { f, w } = rt()
+      if (f === expectedField && w === 2) { const l = rv(); return { start: pos.value, end: pos.value + l } }
+      skipField(w)
+    }
+    throw new Error(`field ${expectedField} not found`)
+  }
+  return { rv, rt, skipField, expectLenField, i: pos }
+}
+
 // Build a Transcript inner message
 function buildTranscriptMessage(opts: {
   deviceId?: string
@@ -305,37 +334,23 @@ describe("buildSubscribe / readNestedOp", () => {
     // Walk the bytes: packet.f1(env).f2(cmd).f3(captionUpdate).f1(clientConfig).f9(captionConfig)
     // → field 1 = lang1, field 2 = lang2
     const buf = buildSubscribe(3, "ru-RU")
-    const c = { buf, i: 0 }
-    function rv(): number {
-      let r = 0; let s = 0
-      for (;;) { const b = c.buf[c.i++]; r += (b & 0x7f) * 2 ** s; if (!(b & 0x80)) return r; s += 7 }
-    }
-    function rt(): { f: number; w: number } { const k = rv(); return { f: k >>> 3, w: k & 7 } }
-    function skipField(w: number): void { if (w === 0) rv(); else if (w === 2) c.i += rv(); else if (w === 5) c.i += 4; else if (w === 1) c.i += 8 }
-    function expectLenField(expectedField: number): { start: number; end: number } {
-      while (c.i < buf.length) {
-        const { f, w } = rt()
-        if (f === expectedField && w === 2) { const l = rv(); return { start: c.i, end: c.i + l } }
-        skipField(w)
-      }
-      throw new Error(`field ${expectedField} not found`)
-    }
+    const r = makeReader(buf)
     // packet → env (field 1)
-    const env = expectLenField(1); c.i = env.start
+    const env = r.expectLenField(1); r.i.value = env.start
     // env → command (field 2)
-    const cmd = expectLenField(2); c.i = cmd.start
+    const cmd = r.expectLenField(2); r.i.value = cmd.start
     // command → captionUpdate (field 3)
-    skipField(0)  // skip op (field 1, wire 0)
-    const cu = expectLenField(3); c.i = cu.start
+    r.skipField(0)  // skip op (field 1, wire 0)
+    const cu = r.expectLenField(3); r.i.value = cu.start
     // captionUpdate → clientConfig (field 1)
-    const cc = expectLenField(1); c.i = cc.start
+    const cc = r.expectLenField(1); r.i.value = cc.start
     // clientConfig → captionConfig (field 9)
-    const cfg = expectLenField(9); c.i = cfg.start
+    const cfg = r.expectLenField(9); r.i.value = cfg.start
     // captionConfig → lang_1 (field 1)
-    const lang1tag = rt()
+    const lang1tag = r.rt()
     expect(lang1tag.f).toBe(1)
-    const l1len = rv()
-    const lang1 = new TextDecoder().decode(buf.slice(c.i, c.i + l1len))
+    const l1len = r.rv()
+    const lang1 = new TextDecoder().decode(buf.slice(r.i.value, r.i.value + l1len))
     expect(lang1).toBe("ru-RU")
   })
 })
@@ -409,5 +424,102 @@ describe("toBytes", () => {
     const corrupt = u8([0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x99, 0xff])
     const result = await toBytes(corrupt)
     expect(result).toEqual(corrupt)
+  })
+})
+
+// ---------- hostile-input tests ----------
+// All decoders must return quickly (no busy-loop) and never throw on malformed input.
+
+describe("hostile input — truncated / oversized / garbage", () => {
+  // All public decoders exercised over every hostile buffer.
+  const publicDecoders: Array<(buf: Uint8Array) => unknown> = [
+    decodeTranscriptWrapper,
+    decodeChatWrapper,
+    decodeRoster,
+    readNestedOp,
+    readNestedSeq,
+  ]
+
+  function runAll(buf: Uint8Array): void {
+    for (const decode of publicDecoders) {
+      // Must not throw and must return (not loop forever).
+      expect(() => decode(buf)).not.toThrow()
+    }
+  }
+
+  it("truncated string: field declares length larger than remaining bytes", () => {
+    // field 1, wire 2, declared length 100, only 3 payload bytes
+    const buf = u8([0x0a, 100, 0x41, 0x42, 0x43])
+    runAll(buf)
+  })
+
+  it("buffer ending mid-varint (continuation bit set on last byte)", () => {
+    // field 1, wire 2 tag, then a varint with MSB set and no following byte
+    const buf = u8([0x0a, 0x80])
+    runAll(buf)
+  })
+
+  it("huge declared length 2^34 completes quickly (< 100 ms)", () => {
+    // field 1, wire 2 + 5-byte varint encoding 2^34 (= 17179869184), then no payload
+    // varint encoding of 17179869184: 0x80 0x80 0x80 0x80 0x40
+    const buf = u8([0x0a, 0x80, 0x80, 0x80, 0x80, 0x40])
+    const start = performance.now()
+    runAll(buf)
+    const elapsed = performance.now() - start
+    expect(elapsed).toBeLessThan(100)
+  })
+
+  it("returns null/empty on short fixed garbage — pattern A", () => {
+    // Deterministic random-ish bytes (no Math.random)
+    const buf = u8([0xd3, 0x4f, 0x7a, 0x01, 0xff, 0x12, 0x00, 0x5b])
+    runAll(buf)
+  })
+
+  it("returns null/empty on short fixed garbage — pattern B", () => {
+    const buf = u8([0x03, 0xfe, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01])
+    runAll(buf)
+  })
+
+  it("returns null/empty on short fixed garbage — pattern C (unknown wire type 3)", () => {
+    // field 1, wire 3 (group start — unknown in proto3)
+    const buf = u8([0x0b, 0x41, 0x42])
+    runAll(buf)
+  })
+
+  it("returns null/empty on short fixed garbage — pattern D (unknown wire type 6)", () => {
+    // field 2, wire 6
+    const buf = u8([0x16, 0x00, 0x00])
+    runAll(buf)
+  })
+
+  it("transcript wrapper: unknown wire type at outer level → null, not throw", () => {
+    // field 1 wire 3 (group start) — illegal in proto3
+    const buf = u8([0x0b])
+    expect(decodeTranscriptWrapper(buf)).toBeNull()
+  })
+
+  it("chat wrapper: unknown wire type mid-nesting → null, not throw", () => {
+    // Craft a valid chat wrapper up to l3, then inject wire type 7
+    const message = buildLeafMessage({ text: "x" })
+    const l4: number[] = []; lenField(2, message, l4)
+    // field 4, wire 7 instead of wire 2
+    const l3: number[] = []
+    tagBytes(4, 7, l3)
+    for (const b of l4) l3.push(b)
+    const l2: number[] = []; lenField(13, l3, l2)
+    const l1: number[] = []; lenField(2, l2, l1)
+    const wrapper: number[] = []; lenField(1, l1, wrapper)
+    expect(decodeChatWrapper(u8(wrapper))).toBeNull()
+  })
+
+  it("roster: unknown wire type in leaf → empty results, not throw", () => {
+    // A leaf with wire type 4 (group end) on field 1
+    const leaf: number[] = []
+    tagBytes(1, 4, leaf)
+    leaf.push(0x00)
+    const l2: number[] = []; lenField(2, leaf, l2)
+    const l1: number[] = []; lenField(2, l2, l1)
+    const outer: number[] = []; lenField(2, l1, outer)
+    expect(() => decodeRoster(u8(outer))).not.toThrow()
   })
 })
