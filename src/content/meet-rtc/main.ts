@@ -146,7 +146,16 @@ function trySubscribe(s: MediaSession): void {
 function resubscribeAll(): void {
   pruneDeadSessions()
   for (const s of sessions) {
-    if (!s.subscribed || s.lang === captionLanguage || s.channel.readyState !== "open") continue
+    if (s.channel.readyState !== "open") continue
+    // Session that never successfully subscribed (e.g. initial send threw and
+    // no further "open" event will fire): use the same trySubscribe path so
+    // op/seq handling stays identical.
+    if (!s.subscribed) {
+      trySubscribe(s)
+      continue
+    }
+    // Already subscribed but the language changed — send a fresh subscribe.
+    if (s.lang === captionLanguage) continue
     try {
       s.lang = captionLanguage
       const op = s.op + 1
@@ -210,6 +219,10 @@ function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void
   // processed strictly in arrival order.
   let queue: Promise<void> = Promise.resolve()
   ch.addEventListener("message", (e: MessageEvent) => {
+    if (!(e.data instanceof ArrayBuffer) && !(e.data instanceof Uint8Array)) {
+      record({ phase: "unexpected-payload", label: ch.label, type: typeof e.data })
+      return
+    }
     const data = e.data as ArrayBuffer
     queue = queue.then(async () => {
       try {

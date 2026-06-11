@@ -47,7 +47,7 @@ async function main(): Promise<void> {
       return
     }
     if (parsed.type === "device") {
-      if (parsed.deviceId && parsed.deviceName) roster.set(parsed.deviceId, parsed.deviceName)
+      if (typeof parsed.deviceId === "string" && parsed.deviceId && typeof parsed.deviceName === "string" && parsed.deviceName) roster.set(parsed.deviceId, parsed.deviceName)
       return
     }
     activeMeetingHandler?.(parsed)
