@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { RtcFeed } from "../src/content/meet-rtc/feed"
-import type { RtcCaptionEvent, RtcChatEvent, RtcDeviceEvent } from "../src/content/meet-rtc/bridge"
+import type { RtcCaptionEvent, RtcChatEvent } from "../src/content/meet-rtc/bridge"
 
 const at = "2026-06-11T10:00:00.000Z"
 const later = "2026-06-11T10:00:05.000Z"
@@ -11,12 +11,6 @@ const caption = (
   messageVersion: number,
   text: string,
 ): RtcCaptionEvent => ({ type: "transcript", deviceId, messageId, messageVersion, text })
-
-const device = (deviceId: string, deviceName: string): RtcDeviceEvent => ({
-  type: "device",
-  deviceId,
-  deviceName,
-})
 
 const chat = (deviceId: string, text: string): RtcChatEvent => ({ type: "chat", deviceId, text })
 
@@ -61,10 +55,11 @@ describe("RtcFeed transcript", () => {
   })
 
   it("resolves names retroactively when the roster arrives after speech", () => {
-    const feed = new RtcFeed()
+    const roster = new Map<string, string>()
+    const feed = new RtcFeed(roster)
     feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
     expect(feed.transcriptSnapshot()[0].speaker).toBe("Speaker 1")
-    feed.handleDevice(device(ALICE, "Alice García"))
+    roster.set(ALICE, "Alice García")
     expect(feed.transcriptSnapshot()[0].speaker).toBe("Alice García")
   })
 
@@ -100,8 +95,8 @@ describe("RtcFeed chat", () => {
   })
 
   it("resolves the sender from the roster at append time", () => {
-    const feed = new RtcFeed()
-    feed.handleDevice(device(ALICE, "Alice García"))
+    const roster = new Map([[ALICE, "Alice García"]])
+    const feed = new RtcFeed(roster)
     feed.handleChat(chat(ALICE, "hi"), at)
     expect(feed.chatSnapshot()).toEqual([{ sender: "Alice García", sentAt: at, text: "hi" }])
   })
@@ -110,6 +105,19 @@ describe("RtcFeed chat", () => {
     const feed = new RtcFeed()
     feed.handleChat(chat(BOB, "hi"), at)
     expect(feed.chatSnapshot()[0].sender).toBe("Speaker 2")
+  })
+
+  it("does NOT retroactively rename a chat sender when the roster entry arrives later", () => {
+    // Chat sender is resolved at append time; unlike transcript speakers it is
+    // frozen into the ChatLog entry and will not change even if the roster
+    // is populated afterwards. This is deliberate — see handleChat comment.
+    const roster = new Map<string, string>()
+    const feed = new RtcFeed(roster)
+    feed.handleChat(chat(ALICE, "hello"), at)
+    expect(feed.chatSnapshot()[0].sender).toBe("Speaker 1")
+    roster.set(ALICE, "Alice García")
+    // Snapshot still shows the name that was resolved at append time.
+    expect(feed.chatSnapshot()[0].sender).toBe("Speaker 1")
   })
 })
 

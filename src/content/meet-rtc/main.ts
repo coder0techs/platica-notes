@@ -18,8 +18,7 @@ import {
 } from "./proto"
 import { RTC_CONFIG_EVENT, RTC_EVENT } from "./bridge"
 import type { RtcConfig, RtcEvent } from "./bridge"
-
-const DEFAULT_LANG = "ru-RU"
+import { DEFAULT_SETTINGS } from "../../shared/types"
 // Meet finishes its own media-session handshake within this window; sending the
 // subscribe earlier gets ignored (observed in the spike).
 const SUBSCRIBE_DELAY_MS = 1500
@@ -67,7 +66,8 @@ function dispatch(event: RtcEvent): void {
 
 // ---------- language config from the isolated-world adapter ----------
 
-let captionLanguage = DEFAULT_LANG
+// Canonical default lives in DEFAULT_SETTINGS.captionLanguage (shared/types.ts).
+let captionLanguage = DEFAULT_SETTINGS.captionLanguage
 
 document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
   try {

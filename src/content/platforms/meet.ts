@@ -135,11 +135,12 @@ async function runMeeting(tabId: number): Promise<void> {
       session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
       writer.requestWrite()
       pulseActivity()
-    } else {
+    } else if (event.type === "chat") {
       if (!feed.handleChat(event, new Date().toISOString())) return
       session.chat = [...prefixChat, ...feed.chatSnapshot()]
       writer.requestWrite()
     }
+    // Unknown event types from future bridge versions are silently ignored.
   }
 
   // --- meeting end detection -------------------------------------------------

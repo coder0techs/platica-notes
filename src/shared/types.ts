@@ -41,6 +41,9 @@ export interface Settings {
   retentionLimit: number
 }
 
+// captionLanguage is the single source of truth for the default BCP 47 tag.
+// main.ts (MAIN-world bundle) imports DEFAULT_SETTINGS directly from here;
+// esbuild inlines the const — no runtime browser API is dragged in.
 export const DEFAULT_SETTINGS: Settings = {
   captionLanguage: "ru-RU",
   privateByDefault: false,

@@ -6,6 +6,16 @@ const privateDefault = document.querySelector<HTMLInputElement>("#private-defaul
 async function init(): Promise<void> {
   const settings = await getSettings()
   captionLanguage.value = settings.captionLanguage
+  if (captionLanguage.value === "") {
+    // The stored value is not among the built-in <option>s (future language tag,
+    // manually set value, etc.). Append a synthetic option so the UI shows the
+    // truth rather than going blank; the stored setting is NOT overwritten.
+    const opt = document.createElement("option")
+    opt.value = settings.captionLanguage
+    opt.textContent = settings.captionLanguage
+    captionLanguage.appendChild(opt)
+    captionLanguage.value = settings.captionLanguage
+  }
   privateDefault.checked = settings.privateByDefault
 }
 

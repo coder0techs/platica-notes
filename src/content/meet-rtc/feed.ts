@@ -4,10 +4,13 @@
 
 import type { ChatMessage, Utterance } from "../../shared/types"
 import { ChatLog } from "../core/collector"
-import type { RtcCaptionEvent, RtcChatEvent, RtcDeviceEvent } from "./bridge"
+import type { RtcCaptionEvent, RtcChatEvent } from "./bridge"
 
 interface CaptionState {
-  /** Global first-seen counter; snapshot order, independent of revision arrival. */
+  // First-seen counter used for snapshot ordering. Entries are insert-only (revisions
+  // mutate in place), so Map insertion order already equals first-seen order and the
+  // sort is currently a no-op; the field is kept as a defence against future
+  // reinsertion of entries (e.g. merge/replay logic).
   order: number
   deviceId: string
   startedAt: string
@@ -49,12 +52,11 @@ export class RtcFeed {
     return true
   }
 
-  handleDevice(ev: RtcDeviceEvent): void {
-    this.roster.set(ev.deviceId, ev.deviceName)
-  }
-
   /** Returns true if appended (not a consecutive duplicate). */
   handleChat(ev: RtcChatEvent, at: string): boolean {
+    // Sender resolved at append time, not at snapshot time (unlike transcript speakers).
+    // Deliberate: chat needs a human-readable name immediately (seconds after join,
+    // before the roster is fully streamed); transcripts can afford retroactive resolution.
     return this.chat.add({ sender: this.speakerFor(ev.deviceId), sentAt: at, text: ev.text })
   }
 
