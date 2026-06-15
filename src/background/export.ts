@@ -1,5 +1,5 @@
-import type { Meeting } from "../shared/types"
-import { formatMeetingText, meetingFileName } from "./format"
+import type { DebugEvent, Meeting } from "../shared/types"
+import { debugLogFileName, formatDebugLog, formatMeetingText, meetingFileName } from "./format"
 
 export async function downloadMeeting(meeting: Meeting): Promise<void> {
   const content = formatMeetingText(meeting)
@@ -11,6 +11,24 @@ export async function downloadMeeting(meeting: Meeting): Promise<void> {
   await chrome.downloads.download({
     url,
     filename: `${folder}/${meetingFileName(meeting)}`,
+    conflictAction: "uniquify",
+  })
+}
+
+export async function downloadDebugLog(
+  meta: { title: string; startedAt: string },
+  events: DebugEvent[],
+): Promise<void> {
+  const content = formatDebugLog(events)
+  if (events.length === 0) return // never write empty files
+  const url = "data:application/json;charset=utf-8," + encodeURIComponent(content)
+  // Always a single "Platica Logs" folder for both normal and private meetings,
+  // never split by privacy: the debug log embeds the full transcript regardless
+  // of the isPrivate flag, so the whole folder is local-only by convention and
+  // meant to be kept out of cloud sync entirely.
+  await chrome.downloads.download({
+    url,
+    filename: `Platica Logs/${debugLogFileName(meta)}`,
     conflictAction: "uniquify",
   })
 }

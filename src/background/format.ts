@@ -57,16 +57,18 @@ function fileStamp(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}`
 }
 
-function fileBase(meeting: Meeting): string {
-  return `${sanitizeFileName(meeting.title)} ${fileStamp(meeting.startedAt)}`
+// Accepts the lighter { title, startedAt } meta so a full Meeting (which
+// structurally satisfies it) and the finalize meta both work.
+function fileBase(meta: { title: string; startedAt: string }): string {
+  return `${sanitizeFileName(meta.title)} ${fileStamp(meta.startedAt)}`
 }
 
 export function meetingFileName(meeting: Meeting): string {
   return `${fileBase(meeting)}.txt`
 }
 
-export function debugLogFileName(meeting: Meeting): string {
-  return `${fileBase(meeting)}.debug.jsonl`
+export function debugLogFileName(meta: { title: string; startedAt: string }): string {
+  return `${fileBase(meta)}.debug.jsonl`
 }
 
 export function formatDebugLog(events: DebugEvent[]): string {

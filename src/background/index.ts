@@ -1,5 +1,5 @@
 import type { BackgroundRequest, BackgroundResponse } from "../shared/messages"
-import { downloadMeeting } from "./export"
+import { downloadDebugLog, downloadMeeting } from "./export"
 import { finalizeSession, recoverOrphanSessions, trackTab } from "./sessions"
 import { deleteMeeting, getMeeting } from "./store"
 
@@ -49,10 +49,11 @@ async function handle(message: BackgroundRequest, sender: chrome.runtime.Message
 }
 
 async function finalizeAndProcess(tabId: number): Promise<string | null> {
-  const meeting = await finalizeSession(tabId)
-  if (!meeting) return null
-  await downloadMeeting(meeting)
-  return meeting.id
+  const r = await finalizeSession(tabId)
+  if (!r) return null
+  if (r.meeting) await downloadMeeting(r.meeting)
+  if (r.debug.length > 0) await downloadDebugLog(r, r.debug)
+  return r.meeting?.id ?? null
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -71,7 +72,8 @@ chrome.runtime.onUpdateAvailable.addListener(() => {
 
 // On every service-worker start, rescue meetings orphaned by a crash.
 void recoverOrphanSessions().then(async (recovered) => {
-  for (const meeting of recovered) {
-    await downloadMeeting(meeting)
+  for (const result of recovered) {
+    if (result.meeting) await downloadMeeting(result.meeting)
+    if (result.debug.length > 0) await downloadDebugLog(result, result.debug)
   }
 })
