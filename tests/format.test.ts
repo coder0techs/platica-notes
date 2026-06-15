@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { debugLogFileName, formatDebugLog, formatMeetingText, meetingFileName, sanitizeFileName } from "../src/background/format"
+import { debugLogFileName, formatDebugLog, formatMeetingText, meetingFileName, sanitizeFileName, sanitizeFolder } from "../src/background/format"
 import type { DebugEvent, Meeting } from "../src/shared/types"
 
 function makeMeeting(overrides: Partial<Meeting> = {}): Meeting {
@@ -48,6 +48,36 @@ describe("sanitizeFileName", () => {
 
   it("falls back to Meeting for empty results", () => {
     expect(sanitizeFileName("...")).toBe("Meeting")
+  })
+})
+
+describe("sanitizeFolder", () => {
+  it("preserves a clean nested path", () => {
+    expect(sanitizeFolder("meetings/platica-notes", "fb")).toBe("meetings/platica-notes")
+  })
+
+  it("strips leading and trailing slashes", () => {
+    expect(sanitizeFolder("/a/b/", "fb")).toBe("a/b")
+  })
+
+  it("drops .. segments to prevent escaping Downloads", () => {
+    expect(sanitizeFolder("../../x", "fb")).toBe("x")
+    expect(sanitizeFolder("a/../b", "fb")).toBe("a/b")
+  })
+
+  it("sanitizes illegal chars per segment", () => {
+    expect(sanitizeFolder('a/b:c?d', "fb")).toBe("a/b_c_d")
+  })
+
+  it("replaces a Windows-illegal char like : instead of keeping it", () => {
+    expect(sanitizeFolder("a:b", "fb")).toBe("a_b")
+  })
+
+  it("falls back when nothing survives", () => {
+    expect(sanitizeFolder("", "fb")).toBe("fb")
+    expect(sanitizeFolder("   ", "fb")).toBe("fb")
+    expect(sanitizeFolder("/", "fb")).toBe("fb")
+    expect(sanitizeFolder(".", "fb")).toBe("fb")
   })
 })
 

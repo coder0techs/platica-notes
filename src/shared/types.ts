@@ -47,6 +47,10 @@ export interface Settings {
   privateByDefault: boolean
   retentionLimit: number
   debugLog: boolean
+  // Download subfolders, relative to the browser Downloads directory.
+  folderPublic: string
+  folderPrivate: string
+  folderDebug: string
 }
 
 // captionLanguage is the single source of truth for the default BCP 47 tag.
@@ -57,4 +61,7 @@ export const DEFAULT_SETTINGS: Settings = {
   privateByDefault: false,
   retentionLimit: 30,
   debugLog: false,
+  folderPublic: "meetings/platica-notes",
+  folderPrivate: "meetings/platica-notes-private",
+  folderDebug: "meetings/platica-notes-logs",
 }

@@ -4,6 +4,9 @@ import { getSettings, saveSettings } from "../../shared/storage"
 const captionLanguage = document.querySelector<HTMLSelectElement>("#caption-language")!
 const privateDefault = document.querySelector<HTMLInputElement>("#private-default")!
 const debugLog = document.querySelector<HTMLInputElement>("#debug-log")!
+const folderPublic = document.querySelector<HTMLInputElement>("#folder-public")!
+const folderPrivate = document.querySelector<HTMLInputElement>("#folder-private")!
+const folderDebug = document.querySelector<HTMLInputElement>("#folder-debug")!
 
 for (const lang of CAPTION_LANGUAGES) {
   const opt = document.createElement("option")
@@ -27,6 +30,9 @@ async function init(): Promise<void> {
   }
   privateDefault.checked = settings.privateByDefault
   debugLog.checked = settings.debugLog
+  folderPublic.value = settings.folderPublic
+  folderPrivate.value = settings.folderPrivate
+  folderDebug.value = settings.folderDebug
 }
 
 captionLanguage.addEventListener("change", () => {
@@ -39,6 +45,18 @@ privateDefault.addEventListener("change", () => {
 
 debugLog.addEventListener("change", () => {
   void saveSettings({ debugLog: debugLog.checked })
+})
+
+folderPublic.addEventListener("change", () => {
+  void saveSettings({ folderPublic: folderPublic.value.trim() })
+})
+
+folderPrivate.addEventListener("change", () => {
+  void saveSettings({ folderPrivate: folderPrivate.value.trim() })
+})
+
+folderDebug.addEventListener("change", () => {
+  void saveSettings({ folderDebug: folderDebug.value.trim() })
 })
 
 void init()

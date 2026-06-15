@@ -9,7 +9,17 @@
   <label><input type="checkbox" id="private-default"> Mark meetings private by default</label>
   <p class="hint">Private meetings download to "Platica Notes private" — keep that folder out of your cloud sync.</p>
   <label><input type="checkbox" id="debug-log"> Debug log (writes a full .jsonl to "Platica Logs")</label>
-  <p class="hint">Off by default. Turn on to record a full diagnostic log per meeting to Downloads/Platica Logs — keep that folder out of your cloud sync (it contains the full transcript).</p>
+  <p class="hint">Off by default. Turn on to record a full diagnostic log per meeting — keep its folder out of your cloud sync (it contains the full transcript).</p>
+  <label>Public folder
+    <input type="text" id="folder-public">
+  </label>
+  <label>Private folder
+    <input type="text" id="folder-private">
+  </label>
+  <label>Debug-log folder
+    <input type="text" id="folder-debug">
+  </label>
+  <p class="hint">Folders are relative to your Downloads folder; nested paths like "meetings/work" are allowed.</p>
   <a href="history.html" target="_blank">Open meeting history</a>
   <script src="popup.js"></script>
 </body>

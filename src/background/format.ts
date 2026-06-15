@@ -51,6 +51,22 @@ export function sanitizeFileName(name: string): string {
   return cleaned || "Meeting"
 }
 
+// Produces a safe RELATIVE path for chrome.downloads: each "/"-segment is run
+// through sanitizeFileName, and segments that are empty, "." or ".." are
+// dropped. This guarantees no leading "/" (no absolute path), no ".." (no
+// escaping Downloads), and no illegal filename chars per segment. Falls back
+// when nothing survives.
+export function sanitizeFolder(path: string, fallback: string): string {
+  const segments = path
+    .split("/")
+    .filter(seg => {
+      const trimmed = seg.trim()
+      return trimmed !== "" && trimmed !== "." && trimmed !== ".."
+    })
+    .map(sanitizeFileName)
+  return segments.length > 0 ? segments.join("/") : fallback
+}
+
 function fileStamp(iso: string): string {
   const d = new Date(iso)
   const pad = (n: number) => String(n).padStart(2, "0")

@@ -1,13 +1,18 @@
-import type { DebugEvent, Meeting } from "../shared/types"
-import { debugLogFileName, formatDebugLog, formatMeetingText, meetingFileName } from "./format"
+import { getSettings } from "../shared/storage"
+import { DEFAULT_SETTINGS, type DebugEvent, type Meeting } from "../shared/types"
+import { debugLogFileName, formatDebugLog, formatMeetingText, meetingFileName, sanitizeFolder } from "./format"
 
 export async function downloadMeeting(meeting: Meeting): Promise<void> {
   const content = formatMeetingText(meeting)
   const url = "data:text/plain;charset=utf-8," + encodeURIComponent(content)
-  // Private meetings land in a SIBLING folder ("Platica Notes private", not a
-  // subfolder): folder-sync tools cannot exclude subfolders, and chrome.downloads
-  // can only write inside the Downloads directory.
-  const folder = meeting.isPrivate ? "Platica Notes private" : "Platica Notes"
+  // Public and private transcripts go to independent, user-configurable folders
+  // (no longer necessarily siblings). All paths are relative to Downloads, the
+  // only place chrome.downloads can write; sanitizeFolder strips any escape.
+  const settings = await getSettings()
+  const folder = sanitizeFolder(
+    meeting.isPrivate ? settings.folderPrivate : settings.folderPublic,
+    meeting.isPrivate ? DEFAULT_SETTINGS.folderPrivate : DEFAULT_SETTINGS.folderPublic,
+  )
   await chrome.downloads.download({
     url,
     filename: `${folder}/${meetingFileName(meeting)}`,
@@ -26,13 +31,15 @@ export async function downloadDebugLog(
   // text/plain -> ".txt". octet-stream has no canonical extension, so Chrome
   // leaves the ".jsonl" filename untouched. Content is unchanged JSONL.
   const url = "data:application/octet-stream;charset=utf-8," + encodeURIComponent(content)
-  // Always a single "Platica Logs" folder for both normal and private meetings,
+  // A single configurable debug folder for both normal and private meetings,
   // never split by privacy: the debug log embeds the full transcript regardless
   // of the isPrivate flag, so the whole folder is local-only by convention and
-  // meant to be kept out of cloud sync entirely.
+  // meant to be kept out of cloud sync entirely. Relative to Downloads only.
+  const settings = await getSettings()
+  const folder = sanitizeFolder(settings.folderDebug, DEFAULT_SETTINGS.folderDebug)
   await chrome.downloads.download({
     url,
-    filename: `Platica Logs/${debugLogFileName(meta)}`,
+    filename: `${folder}/${debugLogFileName(meta)}`,
     conflictAction: "uniquify",
   })
 }
