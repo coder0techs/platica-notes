@@ -136,6 +136,15 @@ describe("RtcFeed chat", () => {
   })
 })
 
+describe("RtcFeed chat harvests sender into roster", () => {
+  it("teaches the feed deviceId->name so transcript lines from that device resolve", () => {
+    const feed = new RtcFeed()
+    feed.handleChat(chat(ALICE, "hi", "Alice García"), at)
+    feed.handleCaption(caption(ALICE, 1, 1, "Hello"), later)
+    expect(feed.transcriptSnapshot()[0].speaker).toBe("Alice García")
+  })
+})
+
 describe("RtcFeed shared roster", () => {
   it("uses a caller-provided roster map populated externally", () => {
     const roster = new Map<string, string>()

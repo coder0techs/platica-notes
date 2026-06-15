@@ -59,6 +59,12 @@ export class RtcFeed {
     // before the roster is fully streamed); transcripts can afford retroactive resolution.
     // Precedence: the display name embedded in the chat packet wins (it ships with the
     // message); otherwise fall back to the roster lookup / deviceId-tail label.
+    // Harvest the embedded sender into the roster first: a chat message teaches
+    // the feed this deviceId->name mapping, so transcript lines from the same
+    // device — including the local user, who never appears in the collections
+    // roster — resolve to the real name at snapshot time (both later and prior,
+    // since transcript speakers resolve at snapshot time).
+    if (ev.sender && ev.sender.trim()) this.roster.set(ev.deviceId, ev.sender)
     const sender = ev.sender && ev.sender.trim() ? ev.sender : this.speakerFor(ev.deviceId)
     return this.chat.add({ sender, sentAt: at, text: ev.text })
   }

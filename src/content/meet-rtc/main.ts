@@ -394,6 +394,127 @@ function install(): boolean {
     return ch
   }
 
+  // RPC response capture (debug-gated via record()). Meet does NOT include the
+  // local user's own device in the `collections` roster channel, so transcript
+  // lines for the self device fall back to "Speaker N". To locate where the
+  // self deviceId + display name live we capture Meet's internal RPC responses
+  // (fetch + XHR) and dump their body bytes as hex into the debug log.
+  //
+  // Privacy: this path is debug-only (opt-in via Settings.debugLog, default off)
+  // and writes to the local-only "Platica Logs" folder. We log the request URL
+  // and the response body bytes only — never request headers, cookies, or auth.
+  //
+  // Both wrappers always call through to the originals and return their result
+  // untouched; only the logging is conditional (record() drops when debug off).
+  // Every wrapper is fully try/caught so it can never throw into Meet's request.
+
+  // Apply a noise filter, then record matching responses through record(). Use a
+  // 600-byte hex window (vs 160 for channels) since RPC bodies are bigger and the
+  // self-device name may be nested deep.
+  function logRpc(method: string, url: string, status: number, bytes: Uint8Array): void {
+    try {
+      if (!url.includes("meet.google.com")) return
+      const lower = url.toLowerCase()
+      if (
+        lower.includes(".js") ||
+        lower.includes(".css") ||
+        lower.includes(".png") ||
+        lower.includes(".jpg") ||
+        lower.includes(".woff") ||
+        lower.includes(".svg") ||
+        lower.includes(".ico") ||
+        lower.includes("/gen_204") ||
+        lower.includes("/log?")
+      ) {
+        return
+      }
+      record({ phase: "rpc", method, url, status, bytes: bytes.length, hex: toHex(bytes, 600) })
+    } catch {
+      /* diagnostics must never affect Meet's request */
+    }
+  }
+
+  // fetch: call through, read a CLONE of the response body asynchronously, and
+  // ALWAYS return the original Response untouched (the clone is what we consume,
+  // so Meet's reader sees a pristine body). Never await the logging.
+  try {
+    const origFetch = window.fetch
+    window.fetch = function (this: unknown, ...args: Parameters<typeof fetch>) {
+      const p = (origFetch as any).apply(this, args)
+      try {
+        const input = args[0]
+        const method =
+          (args[1] && (args[1] as RequestInit).method) ||
+          (input instanceof Request ? input.method : "GET") ||
+          "GET"
+        const url = input instanceof Request ? input.url : String(input)
+        Promise.resolve(p)
+          .then((res: Response) => {
+            try {
+              res
+                .clone()
+                .arrayBuffer()
+                .then((buf) => logRpc(method, url, res.status, new Uint8Array(buf)))
+                .catch(() => {
+                  /* body read failure must not affect Meet */
+                })
+            } catch {
+              /* clone may throw on some response types */
+            }
+          })
+          .catch(() => {
+            /* a rejected fetch is Meet's concern, not ours */
+          })
+      } catch {
+        /* logging setup must never affect Meet's request */
+      }
+      return p
+    } as typeof fetch
+  } catch (err) {
+    record({ phase: "hook-error", where: "fetch", error: String(err) })
+  }
+
+  // XHR: stash method+url on the instance at open(); on load read the response
+  // (arraybuffer when available, else text) and log it. Behaviour is unchanged.
+  try {
+    const origOpen = XMLHttpRequest.prototype.open
+    XMLHttpRequest.prototype.open = function (
+      this: XMLHttpRequest & { __platicaMethod?: string; __platicaUrl?: string },
+      method: string,
+      url: string | URL,
+      ...rest: unknown[]
+    ) {
+      try {
+        this.__platicaMethod = method
+        this.__platicaUrl = String(url)
+      } catch {
+        /* stashing must never affect the request */
+      }
+      try {
+        this.addEventListener("load", function (this: XMLHttpRequest & { __platicaMethod?: string; __platicaUrl?: string }) {
+          try {
+            let bytes: Uint8Array | undefined
+            if (this.responseType === "arraybuffer" && this.response instanceof ArrayBuffer) {
+              bytes = new Uint8Array(this.response)
+            } else if (this.responseType === "" || this.responseType === "text") {
+              // responseText only readable for "" / "text" responseType — any
+              // other value (json, blob, document) throws when accessed.
+              bytes = new TextEncoder().encode(this.responseText ?? "")
+            }
+            if (bytes) logRpc(this.__platicaMethod ?? "GET", this.__platicaUrl ?? "", this.status, bytes)
+          } catch {
+            /* response read failure must not affect Meet */
+          }
+        })
+      } catch {
+        /* listener attach must never affect the request */
+      }
+      return (origOpen as any).apply(this, [method, url, ...rest])
+    } as typeof XMLHttpRequest.prototype.open
+  } catch (err) {
+    record({ phase: "hook-error", where: "xhr-open", error: String(err) })
+  }
+
   const OrigPC = w.RTCPeerConnection
   const Wrapped = function (this: unknown, ...args: unknown[]) {
     const conn: RTCPeerConnection = new (OrigPC as any)(...args)
