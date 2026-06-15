@@ -18,6 +18,11 @@ const MEETING_PATH = /^\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i
 // missing checks mean the user actually left the call.
 const LEAVE_GONE_CHECKS = 3
 const END_WATCH_INTERVAL_MS = 2000
+// Meet keeps the captions data channel open for a few seconds after Leave and
+// keeps streaming the final caption revision. A same-code re-entry within this
+// window would start a fresh session that catches that tail as a phantom
+// duplicate, so we refuse to start one until the tail has drained.
+const CAPTION_TAIL_GRACE_MS = 8000
 
 // Roster events stream from join time — often before our leave-icon detection
 // lands — so the deviceId → name map lives at page level and survives across
@@ -112,9 +117,22 @@ async function main(): Promise<void> {
   // Meet soft-navigates without page loads (landing -> meeting, /new -> meeting,
   // leave screen -> rejoin), so one meeting per page lifetime is not enough:
   // keep watching this tab for meeting pages forever.
+  let lastMeetingPath = ""
+  let lastMeetingEndedAt = 0
   for (;;) {
     await waitFor(() => MEETING_PATH.test(location.pathname))
+    const meetingPath = location.pathname
+    // Refuse to start a NEW session on the just-ended code while Meet is still
+    // streaming the final caption tail (see CAPTION_TAIL_GRACE_MS). Drain it with
+    // no active session, then re-check from the top: after the grace the check is
+    // stale, so a genuine rejoin of the same code still runs normally.
+    if (meetingPath === lastMeetingPath && Date.now() - lastMeetingEndedAt < CAPTION_TAIL_GRACE_MS) {
+      await delay(CAPTION_TAIL_GRACE_MS)
+      continue
+    }
     await runMeeting(tabId)
+    lastMeetingPath = meetingPath
+    lastMeetingEndedAt = Date.now()
     // The Leave click fires endMeeting while Meet's toolbar (and the call_end
     // icon) is still on screen. Wait for the icon to actually disappear before
     // re-arming, otherwise the residual icon triggers an instant phantom re-join
