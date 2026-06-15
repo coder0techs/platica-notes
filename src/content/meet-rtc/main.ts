@@ -16,7 +16,7 @@ import {
   readNestedSeq,
   toBytes,
 } from "./proto"
-import { RTC_CONFIG_EVENT, RTC_EVENT } from "./bridge"
+import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "./bridge"
 import type { RtcConfig, RtcEvent } from "./bridge"
 import { DEFAULT_SETTINGS } from "../../shared/types"
 // Meet finishes its own media-session handshake within this window; sending the
@@ -42,7 +42,21 @@ function flushRing(): void {
 }
 
 function record(event: Record<string, unknown>): void {
-  ring.push({ ...event, ts: Date.now() })
+  // Full event (untruncated text) feeds the optional debug stream; the dataset
+  // ring keeps a small truncated copy. Read debugEnabled at emit time — config
+  // can flip it mid-meeting.
+  if (debugEnabled) {
+    try {
+      const full = { t: new Date().toISOString(), ctx: "rtc", ...event }
+      document.dispatchEvent(new CustomEvent(RTC_DEBUG_EVENT, { detail: JSON.stringify(full) }))
+    } catch {
+      /* a debug-dispatch failure must never affect capture */
+    }
+  }
+  const ringEvent: Record<string, unknown> = { ...event, ts: Date.now() }
+  // Truncate text in the ring copy only — keeps the dataset small.
+  if (typeof ringEvent.text === "string") ringEvent.text = ringEvent.text.slice(0, 80)
+  ring.push(ringEvent)
   if (ring.length > RING_MAX) ring.shift()
   // Writing dataset on every caption message would fire Meet's attribute
   // MutationObservers several times per second. Flush at most once per
@@ -68,6 +82,8 @@ function dispatch(event: RtcEvent): void {
 
 // Canonical default lives in DEFAULT_SETTINGS.captionLanguage (shared/types.ts).
 let captionLanguage = DEFAULT_SETTINGS.captionLanguage
+// May flip mid-meeting; record() honours the current value at emit time.
+let debugEnabled = false
 
 document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
   try {
@@ -75,6 +91,7 @@ document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
     if (typeof detail !== "string") return
     const cfg = JSON.parse(detail) as RtcConfig
     if (!cfg || typeof cfg.captionLanguage !== "string" || !cfg.captionLanguage) return
+    debugEnabled = !!cfg.debug
     const changed = cfg.captionLanguage !== captionLanguage
     captionLanguage = cfg.captionLanguage
     record({ phase: "config", lang: captionLanguage, changed })
@@ -180,7 +197,7 @@ function handleCaptions(bytes: Uint8Array): void {
     firstTranscript = false
     log("first transcript", { lang: captionLanguage })
   }
-  record({ phase: "transcript", text: m.text.slice(0, 80), deviceId: m.deviceId, messageId: m.messageId })
+  record({ phase: "transcript", text: m.text, deviceId: m.deviceId, messageId: m.messageId })
   dispatch({
     type: "transcript",
     deviceId: m.deviceId,
@@ -195,8 +212,8 @@ function handleChat(bytes: Uint8Array): void {
   const p = decodeChatWrapper(bytes)
   if (!p || !p.deviceId || !p.text) return
   // Chat text in the diagnostics ring is deliberately the same truncated-PII
-  // class as transcript text above.
-  record({ phase: "chat", deviceId: p.deviceId, text: p.text.slice(0, 80) })
+  // class as transcript text above (truncation now applied inside record).
+  record({ phase: "chat", deviceId: p.deviceId, text: p.text })
   dispatch({ type: "chat", deviceId: p.deviceId, text: p.text })
 }
 

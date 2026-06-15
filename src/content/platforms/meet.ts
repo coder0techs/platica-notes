@@ -1,9 +1,9 @@
 import { sendToBackground } from "../../shared/messages"
 import { getLocal, getSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
-import type { ActiveSession, Settings } from "../../shared/types"
+import type { ActiveSession, DebugEvent, Settings } from "../../shared/types"
 import { SessionWriter } from "../core/persistence"
 import { mountPrivacyPill, pulseActivity, showToast } from "../core/ui"
-import { RTC_CONFIG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
+import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
 import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
 import { RtcFeed } from "../meet-rtc/feed"
 
@@ -26,16 +26,45 @@ const END_WATCH_INTERVAL_MS = 2000
 const roster = new Map<string, string>()
 let activeMeetingHandler: ((event: RtcCaptionEvent | RtcChatEvent) => void) | null = null
 
+// Optional debug trail. Like roster, the buffer lives for the whole tab; the
+// active meeting slices its own window out of it and flushes via onDebugEvent.
+let debugEnabled = false
+const debugEvents: DebugEvent[] = []
+let onDebugEvent: (() => void) | null = null
+
+// Adapter's own lifecycle events: always to console, plus the debug buffer when
+// enabled. Structured detail rides in `extra`.
+function dlog(msg: string, extra?: Record<string, unknown>): void {
+  console.log("[platica-notes]", msg, extra ?? "")
+  if (!debugEnabled) return
+  debugEvents.push({ t: new Date().toISOString(), ctx: "adapter", msg, ...(extra ?? {}) })
+  onDebugEvent?.()
+}
+
 void main().catch((error) => console.error("[platica-notes]", error))
 
 async function main(): Promise<void> {
-  console.log("[platica-notes] adapter loaded on", location.pathname)
+  dlog("adapter loaded", { pathname: location.pathname })
   const tabIdResponse = await sendToBackground<number>({ kind: "getTabId" })
   if (!tabIdResponse.ok) {
     console.error("[platica-notes] could not get tab id:", tabIdResponse.error)
+    dlog("could not get tab id", { error: tabIdResponse.error })
     return
   }
   const tabId = tabIdResponse.data
+
+  document.addEventListener(RTC_DEBUG_EVENT, (event) => {
+    try {
+      if (!debugEnabled) return
+      const detail = (event as CustomEvent).detail
+      if (typeof detail !== "string") return
+      const ev = JSON.parse(detail) as DebugEvent
+      debugEvents.push(ev)
+      onDebugEvent?.()
+    } catch {
+      /* a debug-collection failure must never affect capture */
+    }
+  })
 
   document.addEventListener(RTC_EVENT, (event) => {
     const detail = (event as CustomEvent).detail
@@ -56,7 +85,8 @@ async function main(): Promise<void> {
   // The MAIN-world script must know the caption language before its first
   // subscribe, so push the config before any meeting can start.
   const settings = await getSettings()
-  pushRtcConfig(settings.captionLanguage)
+  debugEnabled = settings.debugLog
+  pushRtcConfig(settings.captionLanguage, settings.debugLog)
   watchSettings()
 
   // Meet soft-navigates without page loads (landing -> meeting, /new -> meeting,
@@ -73,7 +103,7 @@ async function main(): Promise<void> {
 
 async function runMeeting(tabId: number): Promise<void> {
   const meetingPath = location.pathname
-  console.log("[platica-notes] waiting to join", meetingPath)
+  dlog("waiting to join", { path: meetingPath })
 
   // Abort the lobby wait if the user backs out without joining.
   const joined = await waitForIcon(
@@ -81,18 +111,24 @@ async function runMeeting(tabId: number): Promise<void> {
     () => location.pathname !== meetingPath,
   )
   if (!joined) return
-  console.log("[platica-notes] meeting started, tab", tabId)
+  dlog("meeting started", { tab: tabId })
   await sendToBackground({ kind: "meetingStarted" })
 
   const settings = await getSettings()
   let ending = false
 
+  // This meeting's debug window starts here. Earlier events (e.g. MAIN-world
+  // "installed") fall into the first meeting — acceptable.
+  const debugStart = debugEvents.length
+
   // A mid-meeting reload must continue the same session, not erase it.
   const previous = await getLocal<ActiveSession>(sessionKey(tabId))
   const resumed = previous && previous.path === meetingPath ? previous : null
-  if (resumed) console.log("[platica-notes] resuming session after reload")
+  if (resumed) dlog("resuming session after reload")
   const prefixTranscript = resumed ? resumed.transcript : []
   const prefixChat = resumed ? resumed.chat : []
+  // Debug from a resumed snapshot is prepended, mirroring transcript/chat.
+  const prefixDebug = resumed?.debug ?? []
 
   const session: ActiveSession = {
     platform: "meet",
@@ -112,6 +148,17 @@ async function runMeeting(tabId: number): Promise<void> {
   )
   writer.requestWrite()
 
+  // Persist the debug trail through the same writer. Only active when enabled,
+  // so session.debug stays undefined otherwise (nothing persisted).
+  if (debugEnabled) {
+    onDebugEvent = () => {
+      if (!debugEnabled) return
+      session.debug = [...prefixDebug, ...debugEvents.slice(debugStart)]
+      writer.requestWrite()
+    }
+    onDebugEvent()
+  }
+
   const unmountPill = mountPrivacyPill(session.isPrivate, (isPrivate) => {
     session.isPrivate = isPrivate
     writer.requestWrite()
@@ -130,7 +177,7 @@ async function runMeeting(tabId: number): Promise<void> {
       if (!feed.handleCaption(event, new Date().toISOString())) return
       if (!firstCaptionLogged) {
         firstCaptionLogged = true
-        console.log("[platica-notes] captions are flowing")
+        dlog("captions are flowing")
       }
       session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
       writer.requestWrite()
@@ -179,28 +226,36 @@ async function runMeeting(tabId: number): Promise<void> {
   async function endMeeting(reason: string): Promise<void> {
     if (ending) return
     ending = true
-    console.log("[platica-notes] meeting ended:", reason)
+    dlog("meeting ended", { reason })
     clearInterval(endWatcher)
     document.removeEventListener("click", onDocumentClick, true)
     // Stop routing first: a caption event arriving after finalization would
     // re-create the session key the background just cleaned up. The page-level
-    // RTC listener stays armed for the next meeting.
+    // RTC listener stays armed for the next meeting. Null onDebugEvent here too
+    // so a late debug event can't resurrect the session.
     activeMeetingHandler = null
+    onDebugEvent = null
     unmountPill()
     // Final snapshot resolves speaker names from the roster as it stands now.
     session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
+    // Capture the complete debug trail (including this "meeting ended") into the
+    // final snapshot. Stays undefined when disabled — no behavioural change.
+    if (debugEnabled) session.debug = [...prefixDebug, ...debugEvents.slice(debugStart)]
     await writer.writeNow()
     const response = await sendToBackground({ kind: "meetingEnded" })
-    if (!response.ok) console.error("[platica-notes] finalize failed:", response.error)
+    if (!response.ok) {
+      console.error("[platica-notes] finalize failed:", response.error)
+      dlog("finalize failed", { error: response.error })
+    }
     meetingDone()
   }
 }
 
 // ---------- module-level helpers ----------
 
-function pushRtcConfig(captionLanguage: string): void {
+function pushRtcConfig(captionLanguage: string, debug: boolean): void {
   document.dispatchEvent(
-    new CustomEvent(RTC_CONFIG_EVENT, { detail: JSON.stringify({ captionLanguage }) }),
+    new CustomEvent(RTC_CONFIG_EVENT, { detail: JSON.stringify({ captionLanguage, debug }) }),
   )
 }
 
@@ -208,8 +263,9 @@ function watchSettings(): void {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "sync" && changes.settings) {
       const next = withDefaults(changes.settings.newValue as Partial<Settings> | undefined)
+      debugEnabled = next.debugLog
       // The MAIN-world script re-subscribes the caption stream on change.
-      pushRtcConfig(next.captionLanguage)
+      pushRtcConfig(next.captionLanguage, next.debugLog)
     }
   })
 }
