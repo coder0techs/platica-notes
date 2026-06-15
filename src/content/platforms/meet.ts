@@ -23,6 +23,10 @@ const END_WATCH_INTERVAL_MS = 2000
 // window would start a fresh session that catches that tail as a phantom
 // duplicate, so we refuse to start one until the tail has drained.
 const CAPTION_TAIL_GRACE_MS = 8000
+// Meet streams the final caption revision for a couple of seconds after Leave;
+// keep the feed receiving this long before finalizing so the closing sentence
+// isn't saved truncated.
+const CAPTION_FLUSH_MS = 2500
 
 // Roster events stream from join time — often before our leave-icon detection
 // lands — so the deviceId → name map lives at page level and survives across
@@ -277,9 +281,18 @@ async function runMeeting(tabId: number): Promise<void> {
     if (ending) return
     ending = true
     dlog("meeting ended", { reason })
+    // Stop the end-detection machinery first so neither the poller nor a
+    // residual leave click can re-enter during the flush wait below.
     clearInterval(endWatcher)
     document.removeEventListener("click", onDocumentClick, true)
-    // Stop routing first: a caption event arriving after finalization would
+    // Leave the page-level RTC routing attached and wait: Meet keeps streaming
+    // the final caption revision for a couple of seconds after Leave (same
+    // messageId, higher version), so the feed completes the closing sentence
+    // before we snapshot. The `ending` guard above makes a concurrent
+    // endMeeting call a no-op during this window.
+    dlog("finalizing after caption flush", { reason })
+    await delay(CAPTION_FLUSH_MS)
+    // Now stop routing: a caption event arriving after finalization would
     // re-create the session key the background just cleaned up. The page-level
     // RTC listener stays armed for the next meeting. Null onDebugEvent here too
     // so a late debug event can't resurrect the session.
@@ -287,8 +300,10 @@ async function runMeeting(tabId: number): Promise<void> {
     applySelfName = null
     onDebugEvent = null
     unmountPill()
-    // Final snapshot resolves speaker names from the roster as it stands now.
+    // Final snapshot resolves speaker names from the roster as it stands now,
+    // and includes anything the flush wait above let land.
     session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
+    session.chat = [...prefixChat, ...feed.chatSnapshot()]
     // Capture the complete debug trail (including this "meeting ended") into the
     // final snapshot. Stays undefined when disabled — no behavioural change.
     if (debugEnabled) session.debug = [...prefixDebug, ...debugEvents.slice(debugStart)]
