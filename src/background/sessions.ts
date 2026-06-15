@@ -32,7 +32,12 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
   finalizing.add(tabId)
   try {
     const session = await getLocal<ActiveSession>(sessionKey(tabId))
-    if (!session) return null
+    if (!session) {
+      // No backing session, but a stale activeSessionTabs entry may still linger
+      // (it would otherwise keep the update-deferral guard from ever reloading).
+      await untrackTab(tabId)
+      return null
+    }
     const debug = session.debug ?? []
     const empty = session.transcript.length === 0 && session.chat.length === 0
     // Append a bg summary only when debug is non-empty — debug is non-empty

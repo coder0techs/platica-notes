@@ -19,8 +19,8 @@ export async function downloadDebugLog(
   meta: { title: string; startedAt: string },
   events: DebugEvent[],
 ): Promise<void> {
-  const content = formatDebugLog(events)
   if (events.length === 0) return // never write empty files
+  const content = formatDebugLog(events)
   const url = "data:application/json;charset=utf-8," + encodeURIComponent(content)
   // Always a single "Platica Logs" folder for both normal and private meetings,
   // never split by privacy: the debug log embeds the full transcript regardless
