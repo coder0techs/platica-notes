@@ -179,7 +179,7 @@ async function runMeeting(tabId: number): Promise<void> {
   const session: ActiveSession = {
     platform: "meet",
     path: meetingPath,
-    title: resumed ? resumed.title : document.title,
+    title: resumed ? resumed.title : readMeetingTitle(),
     startedAt: resumed ? resumed.startedAt : new Date().toISOString(),
     isPrivate: resumed ? resumed.isPrivate : settings.privateByDefault,
     transcript: prefixTranscript,
@@ -371,5 +371,8 @@ function delay(ms: number): Promise<void> {
 
 function readMeetingTitle(): string {
   const titled = document.querySelector(MEETING_TITLE)?.textContent?.trim()
-  return titled || document.title
+  // Meet prefixes document.title with "Meet - " once you have been in the call
+  // (so rejoins and same-tab soft-nav meetings would otherwise be saved as
+  // "Meet - <code>"). Strip it so the title is the bare meeting name/code.
+  return (titled || document.title).replace(/^Meet - /, "")
 }
