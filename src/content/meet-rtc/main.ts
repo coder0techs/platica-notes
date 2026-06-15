@@ -254,7 +254,7 @@ function handleChat(bytes: Uint8Array): void {
   // Decode-result diagnostic: see whether the chat decoder yields anything on
   // live wire data. Runs before the empty-guard below. Never throws into capture.
   try {
-    record({ phase: "chat-decoded", got: p ? { deviceId: p.deviceId, text: p.text } : null })
+    record({ phase: "chat-decoded", got: p ? { deviceId: p.deviceId, text: p.text, sender: p.sender } : null })
   } catch {
     /* diagnostics must never affect capture */
   }
@@ -262,7 +262,9 @@ function handleChat(bytes: Uint8Array): void {
   // Chat text in the diagnostics ring is deliberately the same truncated-PII
   // class as transcript text above (truncation now applied inside record).
   record({ phase: "chat", deviceId: p.deviceId, text: p.text })
-  dispatch({ type: "chat", deviceId: p.deviceId, text: p.text })
+  // Pass the embedded sender through only when present; the feed prefers it over
+  // the roster lookup. Spread keeps the event shape unchanged when sender is absent.
+  dispatch({ type: "chat", deviceId: p.deviceId, text: p.text, ...(p.sender ? { sender: p.sender } : {}) })
 }
 
 function handleRoster(bytes: Uint8Array): void {

@@ -57,7 +57,10 @@ export class RtcFeed {
     // Sender resolved at append time, not at snapshot time (unlike transcript speakers).
     // Deliberate: chat needs a human-readable name immediately (seconds after join,
     // before the roster is fully streamed); transcripts can afford retroactive resolution.
-    return this.chat.add({ sender: this.speakerFor(ev.deviceId), sentAt: at, text: ev.text })
+    // Precedence: the display name embedded in the chat packet wins (it ships with the
+    // message); otherwise fall back to the roster lookup / deviceId-tail label.
+    const sender = ev.sender && ev.sender.trim() ? ev.sender : this.speakerFor(ev.deviceId)
+    return this.chat.add({ sender, sentAt: at, text: ev.text })
   }
 
   transcriptSnapshot(): Utterance[] {

@@ -17,8 +17,8 @@ export interface Transcript {
 
 export interface ChatPayload {
   deviceId?: string
-  timestamp?: number
   text?: string
+  sender?: string
 }
 
 export interface RosterEntry {
@@ -151,9 +151,26 @@ export function decodeTranscriptWrapper(buf: Uint8Array): Transcript | null {
 
 // ---------- chat decoder ----------
 
-// Chat nesting (all len-delim):
-// wrapper.f1 → l1.f2 → l2.f13 → l3.f4 → l4.f2 → message
-// message: f2=deviceId(string), f3=timestamp(varint), f5={f1=text(string)}
+// Live-verified nesting (all len-delim unless noted), from real meet_messages bytes:
+//   root.f1 (wrapper) { f1 varint = seq (skip); f4 (container) { f1 (message) ... } }
+//   message: f2=deviceId(string), f5={f1=text(string)}, f8={f1=sender display name(string)}
+// Other message fields (f1 message-name, f3 timestamp, f4 sub, f6) are skipped.
+// One message per packet in observed samples; if the container repeats f1 we decode
+// the FIRST entry only (batching is unobserved — not worth a repeated-message array).
+
+// Read the f1 sub-string of a len-delimited submessage (used for both text f5.f1 and
+// sender f8.f1). Tolerates unknown fields and truncation via boundedEnd.
+function firstSubString(buf: Uint8Array, start: number, end: number): string | undefined {
+  const safeEnd = Math.min(end, buf.length)
+  const c: Cursor = { buf, i: start }
+  let value: string | undefined
+  while (c.i < safeEnd) {
+    const { field, wire } = readTag(c)
+    if (field === 1 && wire === 2 && value === undefined) value = readString(c)
+    else skip(c, wire)
+  }
+  return value
+}
 
 function decodeChatMessage(buf: Uint8Array, start: number, end: number): ChatPayload {
   // Clamp end so a caller passing an oversized bound cannot walk past the buffer.
@@ -163,17 +180,15 @@ function decodeChatMessage(buf: Uint8Array, start: number, end: number): ChatPay
   while (c.i < safeEnd) {
     const { field, wire } = readTag(c)
     if (field === 2 && wire === 2) out.deviceId = readString(c)
-    else if (field === 3 && wire === 0) out.timestamp = readVarint(c)
     else if (field === 5 && wire === 2) {
-      // text submessage: field 1 = value(string)
       const subLen = readVarint(c)
       const subEnd = boundedEnd(c, subLen)
-      const sc: Cursor = { buf, i: c.i }
-      while (sc.i < subEnd) {
-        const { field: sf, wire: sw } = readTag(sc)
-        if (sf === 1 && sw === 2) out.text = readString(sc)
-        else skip(sc, sw)
-      }
+      out.text = firstSubString(buf, c.i, subEnd)
+      c.i = subEnd
+    } else if (field === 8 && wire === 2) {
+      const subLen = readVarint(c)
+      const subEnd = boundedEnd(c, subLen)
+      out.sender = firstSubString(buf, c.i, subEnd)
       c.i = subEnd
     } else {
       skip(c, wire)
@@ -199,17 +214,14 @@ function walkLen(c: Cursor, end: number, targetField: number): { start: number; 
 
 export function decodeChatWrapper(buf: Uint8Array): ChatPayload | null {
   try {
+    // root.f1 (wrapper) → f4 (container) → f1 (message). Field numbers live-verified.
     const c: Cursor = { buf, i: 0 }
-    const l1 = walkLen(c, buf.length, 1); if (!l1) return null
-    const c1: Cursor = { buf, i: l1.start }
-    const l2 = walkLen(c1, l1.end, 2); if (!l2) return null
-    const c2: Cursor = { buf, i: l2.start }
-    const l3 = walkLen(c2, l2.end, 13); if (!l3) return null
-    const c3: Cursor = { buf, i: l3.start }
-    const l4 = walkLen(c3, l3.end, 4); if (!l4) return null
-    const c4: Cursor = { buf, i: l4.start }
-    const msg = walkLen(c4, l4.end, 2); if (!msg) return null
-    return decodeChatMessage(buf, msg.start, msg.end)
+    const wrapper = walkLen(c, buf.length, 1); if (!wrapper) return null
+    const cw: Cursor = { buf, i: wrapper.start }
+    const container = walkLen(cw, wrapper.end, 4); if (!container) return null
+    const cc: Cursor = { buf, i: container.start }
+    const message = walkLen(cc, container.end, 1); if (!message) return null
+    return decodeChatMessage(buf, message.start, message.end)
   } catch {
     return null
   }

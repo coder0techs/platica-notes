@@ -30,10 +30,13 @@ export interface RtcCaptionEvent {
 
 // No timestamp here: Meet's wire timestamp unit is unverified, so the adapter
 // stamps receive time instead of trusting the wire value.
+// sender is the display name embedded in the chat packet (message.f8.f1); optional
+// because the live diagnostic logger truncates packets before f8.
 export interface RtcChatEvent {
   type: "chat"
   deviceId: string
   text: string
+  sender?: string
 }
 
 export interface RtcDeviceEvent {

@@ -12,7 +12,8 @@ const caption = (
   text: string,
 ): RtcCaptionEvent => ({ type: "transcript", deviceId, messageId, messageVersion, text })
 
-const chat = (deviceId: string, text: string): RtcChatEvent => ({ type: "chat", deviceId, text })
+const chat = (deviceId: string, text: string, sender?: string): RtcChatEvent =>
+  sender === undefined ? { type: "chat", deviceId, text } : { type: "chat", deviceId, text, sender }
 
 const ALICE = "spaces/abc/devices/1"
 const BOB = "spaces/abc/devices/2"
@@ -94,14 +95,28 @@ describe("RtcFeed chat", () => {
     expect(feed.chatSnapshot()).toHaveLength(3)
   })
 
-  it("resolves the sender from the roster at append time", () => {
+  it("prefers the embedded sender over the roster entry", () => {
+    const roster = new Map([[ALICE, "Roster Name"]])
+    const feed = new RtcFeed(roster)
+    feed.handleChat(chat(ALICE, "hi", "Embedded Name"), at)
+    expect(feed.chatSnapshot()).toEqual([{ sender: "Embedded Name", sentAt: at, text: "hi" }])
+  })
+
+  it("falls back to the roster when no embedded sender is present", () => {
     const roster = new Map([[ALICE, "Alice García"]])
     const feed = new RtcFeed(roster)
     feed.handleChat(chat(ALICE, "hi"), at)
     expect(feed.chatSnapshot()).toEqual([{ sender: "Alice García", sentAt: at, text: "hi" }])
   })
 
-  it("falls back to the deviceId tail for unknown senders", () => {
+  it("ignores a blank embedded sender and falls back to the roster", () => {
+    const roster = new Map([[ALICE, "Alice García"]])
+    const feed = new RtcFeed(roster)
+    feed.handleChat(chat(ALICE, "hi", "   "), at)
+    expect(feed.chatSnapshot()[0].sender).toBe("Alice García")
+  })
+
+  it("falls back to the deviceId tail when neither sender nor roster is known", () => {
     const feed = new RtcFeed()
     feed.handleChat(chat(BOB, "hi"), at)
     expect(feed.chatSnapshot()[0].sender).toBe("Speaker 2")
