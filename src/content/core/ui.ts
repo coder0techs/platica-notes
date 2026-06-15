@@ -53,22 +53,29 @@ export function mountMeetingControls(opts: {
   container.style.cssText =
     "position:fixed;top:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:2147483647;"
 
-  // --- language pill: a flex wrapper holding a glyph, the native <select>, and a caret ---
-  const langPill = document.createElement("label")
-  langPill.style.cssText = PILL_BASE
+  // --- language pill: a visual layer (glyph + label + caret) with a transparent
+  // native <select> stretched over the WHOLE pill, so a click anywhere on the pill
+  // opens the OS dropdown (not just the narrow text zone). ---
+  const langPill = document.createElement("div")
+  langPill.style.cssText = PILL_BASE + "position:relative;"
   langPill.title = "Plática Notes: caption language to capture"
   langPill.addEventListener("mouseenter", () => { langPill.style.background = PILL_BG_HOVER })
   langPill.addEventListener("mouseleave", () => { langPill.style.background = PILL_BG })
 
+  const langVisual = document.createElement("span")
+  langVisual.style.cssText = "display:flex;align-items:center;gap:6px;pointer-events:none;"
   const langGlyph = document.createElement("span")
   langGlyph.textContent = "🌐"
-  langGlyph.style.cssText = "pointer-events:none;"
+  const langText = document.createElement("span")
+  const caret = document.createElement("span")
+  caret.textContent = "▾"
+  caret.style.cssText = "opacity:.7;margin-left:2px;"
+  langVisual.append(langGlyph, langText, caret)
 
   const select = document.createElement("select")
-  // Strip the native chrome so only the OS dropdown popup remains styled by the OS.
+  // Transparent, covers the whole pill so the entire pill is the click target.
   select.style.cssText =
-    "appearance:none;-webkit-appearance:none;-moz-appearance:none;background:transparent;" +
-    "border:none;outline:none;color:#e8eaed;font:inherit;cursor:pointer;padding:0;margin:0;"
+    "position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:none;margin:0;"
   for (const lang of CAPTION_LANGUAGES) {
     const opt = document.createElement("option")
     opt.value = lang.value
@@ -78,32 +85,33 @@ export function mountMeetingControls(opts: {
   select.value = opts.initialLanguage
   if (select.value !== opts.initialLanguage) {
     // Stored value is not among the built-in options (future tag, manual value).
-    // Append a synthetic option so the closed pill shows the truth.
     const opt = document.createElement("option")
     opt.value = opts.initialLanguage
     opt.textContent = opts.initialLanguage
     select.appendChild(opt)
     select.value = opts.initialLanguage
   }
-  select.addEventListener("change", () => opts.onLanguageChange(select.value))
+  const syncLangText = () => {
+    langText.textContent = select.selectedOptions[0]?.textContent ?? select.value
+  }
+  select.addEventListener("change", () => {
+    syncLangText()
+    opts.onLanguageChange(select.value)
+  })
+  syncLangText()
 
-  const caret = document.createElement("span")
-  caret.textContent = "▾"
-  caret.style.cssText = "pointer-events:none;opacity:.7;"
+  langPill.append(langVisual, select)
 
-  langPill.append(langGlyph, select, caret)
-
-  // --- privacy pill: same style, subtle active-private accent (left border) ---
+  // --- privacy pill: same dark style; the mode is conveyed by text color —
+  // Public in red (goes to the synced folder), Private in green (local-only). ---
   let isPrivate = opts.initialPrivate
   const privacyPill = document.createElement("button")
   privacyPill.type = "button"
   privacyPill.style.cssText = PILL_BASE
   privacyPill.title = "Plática Notes: where this transcript may go"
   const renderPrivacy = () => {
-    privacyPill.textContent = isPrivate ? "🔒 Private" : "☁️ Sync folder"
-    // Subtle accent for the private state — a thin colored left border, not a full fill.
-    privacyPill.style.borderLeft = isPrivate ? "3px solid #34a853" : "1px solid rgba(255,255,255,.14)"
-    privacyPill.style.paddingLeft = isPrivate ? "12px" : "14px"
+    privacyPill.textContent = isPrivate ? "🔒 Private" : "☁️ Public"
+    privacyPill.style.color = isPrivate ? "#81c995" : "#f28b82"
   }
   privacyPill.addEventListener("mouseenter", () => { privacyPill.style.background = PILL_BG_HOVER })
   privacyPill.addEventListener("mouseleave", () => { privacyPill.style.background = PILL_BG })
