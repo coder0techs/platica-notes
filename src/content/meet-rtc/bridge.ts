@@ -12,6 +12,10 @@ export const RTC_EVENT = "platica-rtc"
 // `detail` is a JSON string of RtcConfig (same boundary constraint).
 export const RTC_CONFIG_EVENT = "platica-rtc-config"
 
+// MAIN-world script dispatches these (detail = JSON string of a DebugEvent with ctx:"rtc")
+// only when debug is enabled; isolated adapter collects them.
+export const RTC_DEBUG_EVENT = "platica-rtc-debug"
+
 // Events for one channel are emitted in arrival order, but consumers must
 // still treat max(messageVersion) per (deviceId, messageId) as the winner
 // regardless of arrival order.
@@ -42,4 +46,5 @@ export type RtcEvent = RtcCaptionEvent | RtcChatEvent | RtcDeviceEvent
 
 export interface RtcConfig {
   captionLanguage: string
+  debug: boolean
 }

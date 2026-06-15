@@ -2,6 +2,7 @@ import { getSettings, saveSettings } from "../../shared/storage"
 
 const captionLanguage = document.querySelector<HTMLSelectElement>("#caption-language")!
 const privateDefault = document.querySelector<HTMLInputElement>("#private-default")!
+const debugLog = document.querySelector<HTMLInputElement>("#debug-log")!
 
 async function init(): Promise<void> {
   const settings = await getSettings()
@@ -17,6 +18,7 @@ async function init(): Promise<void> {
     captionLanguage.value = settings.captionLanguage
   }
   privateDefault.checked = settings.privateByDefault
+  debugLog.checked = settings.debugLog
 }
 
 captionLanguage.addEventListener("change", () => {
@@ -25,6 +27,10 @@ captionLanguage.addEventListener("change", () => {
 
 privateDefault.addEventListener("change", () => {
   void saveSettings({ privateByDefault: privateDefault.checked })
+})
+
+debugLog.addEventListener("change", () => {
+  void saveSettings({ debugLog: debugLog.checked })
 })
 
 void init()

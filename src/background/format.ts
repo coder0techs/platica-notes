@@ -1,4 +1,4 @@
-import type { Meeting } from "../shared/types"
+import type { DebugEvent, Meeting } from "../shared/types"
 
 const PLATFORM_LABELS: Record<Meeting["platform"], string> = {
   meet: "Google Meet",
@@ -57,6 +57,19 @@ function fileStamp(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}`
 }
 
+function fileBase(meeting: Meeting): string {
+  return `${sanitizeFileName(meeting.title)} ${fileStamp(meeting.startedAt)}`
+}
+
 export function meetingFileName(meeting: Meeting): string {
-  return `${sanitizeFileName(meeting.title)} ${fileStamp(meeting.startedAt)}.txt`
+  return `${fileBase(meeting)}.txt`
+}
+
+export function debugLogFileName(meeting: Meeting): string {
+  return `${fileBase(meeting)}.debug.jsonl`
+}
+
+export function formatDebugLog(events: DebugEvent[]): string {
+  if (events.length === 0) return ""
+  return events.map(e => JSON.stringify(e)).join("\n")
 }

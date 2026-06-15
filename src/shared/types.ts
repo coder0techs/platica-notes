@@ -12,6 +12,12 @@ export interface ChatMessage {
   text: string
 }
 
+export interface DebugEvent {
+  t: string
+  ctx: "rtc" | "adapter" | "bg"
+  [key: string]: unknown
+}
+
 export interface ActiveSession {
   platform: PlatformId
   /** Meeting page pathname; lets a reloaded tab resume its own session only. */
@@ -21,6 +27,7 @@ export interface ActiveSession {
   isPrivate: boolean
   transcript: Utterance[]
   chat: ChatMessage[]
+  debug?: DebugEvent[]
 }
 
 export interface Meeting {
@@ -39,6 +46,7 @@ export interface Settings {
   captionLanguage: string
   privateByDefault: boolean
   retentionLimit: number
+  debugLog: boolean
 }
 
 // captionLanguage is the single source of truth for the default BCP 47 tag.
@@ -48,4 +56,5 @@ export const DEFAULT_SETTINGS: Settings = {
   captionLanguage: "ru-RU",
   privateByDefault: false,
   retentionLimit: 30,
+  debugLog: false,
 }

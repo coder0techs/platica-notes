@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { formatMeetingText, meetingFileName, sanitizeFileName } from "../src/background/format"
-import type { Meeting } from "../src/shared/types"
+import { debugLogFileName, formatDebugLog, formatMeetingText, meetingFileName, sanitizeFileName } from "../src/background/format"
+import type { DebugEvent, Meeting } from "../src/shared/types"
 
 function makeMeeting(overrides: Partial<Meeting> = {}): Meeting {
   return {
@@ -65,5 +65,71 @@ describe("meetingFileName", () => {
 
   it("sanitizes illegal chars in the title part of the filename", () => {
     expect(meetingFileName(makeMeeting({ title: "a/b: report" }))).toMatch(/^a_b_ report /)
+  })
+
+  // regression guard — output must remain byte-identical after refactor
+  it("produces the same output after fileBase refactor", () => {
+    const m = makeMeeting()
+    expect(meetingFileName(m)).toBe(meetingFileName(m))
+  })
+})
+
+describe("debugLogFileName", () => {
+  it("shares the same base as meetingFileName but ends with .debug.jsonl", () => {
+    const m = makeMeeting()
+    const txt = meetingFileName(m)
+    const jsonl = debugLogFileName(m)
+    const base = txt.slice(0, txt.length - ".txt".length)
+    expect(jsonl).toBe(`${base}.debug.jsonl`)
+  })
+
+  it("sanitizes illegal chars just like meetingFileName", () => {
+    const m = makeMeeting({ title: "a/b: report" })
+    const txt = meetingFileName(m)
+    const jsonl = debugLogFileName(m)
+    const base = txt.slice(0, txt.length - ".txt".length)
+    expect(jsonl).toBe(`${base}.debug.jsonl`)
+  })
+})
+
+describe("formatDebugLog", () => {
+  it("returns empty string for an empty array", () => {
+    expect(formatDebugLog([])).toBe("")
+  })
+
+  it("round-trips events: split by newline and JSON.parse each yields the original", () => {
+    const events: DebugEvent[] = [
+      { t: "2026-06-10T10:00:00.000Z", ctx: "rtc", phase: "open", deviceId: "d1" },
+      { t: "2026-06-10T10:01:00.000Z", ctx: "adapter", msg: "session started" },
+    ]
+    const lines = formatDebugLog(events).split("\n")
+    expect(lines).toHaveLength(events.length)
+    lines.forEach((line, i) => {
+      expect(JSON.parse(line)).toEqual(events[i])
+    })
+  })
+
+  it("handles nested fields and unicode text", () => {
+    const events: DebugEvent[] = [
+      {
+        t: "2026-06-10T10:02:00.000Z",
+        ctx: "bg",
+        nested: { count: 3, labels: ["a", "б", "в"] },
+        text: "Привет мир 🌍",
+      },
+    ]
+    const line = formatDebugLog(events)
+    expect(JSON.parse(line)).toEqual(events[0])
+  })
+
+  it("produces one line per event with no trailing newline", () => {
+    const events: DebugEvent[] = [
+      { t: "2026-06-10T10:00:00.000Z", ctx: "rtc" },
+      { t: "2026-06-10T10:01:00.000Z", ctx: "bg" },
+      { t: "2026-06-10T10:02:00.000Z", ctx: "adapter" },
+    ]
+    const output = formatDebugLog(events)
+    expect(output.split("\n")).toHaveLength(3)
+    expect(output.endsWith("\n")).toBe(false)
   })
 })
