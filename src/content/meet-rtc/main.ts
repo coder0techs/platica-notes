@@ -47,7 +47,8 @@ function record(event: Record<string, unknown>): void {
   // can flip it mid-meeting.
   if (debugEnabled) {
     try {
-      const full = { t: new Date().toISOString(), ctx: "rtc", ...event }
+      // Spread event first so framing fields (t, ctx) always win on collision.
+      const full = { ...event, t: new Date().toISOString(), ctx: "rtc" }
       document.dispatchEvent(new CustomEvent(RTC_DEBUG_EVENT, { detail: JSON.stringify(full) }))
     } catch {
       /* a debug-dispatch failure must never affect capture */

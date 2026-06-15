@@ -31,13 +31,18 @@ let activeMeetingHandler: ((event: RtcCaptionEvent | RtcChatEvent) => void) | nu
 let debugEnabled = false
 const debugEvents: DebugEvent[] = []
 let onDebugEvent: (() => void) | null = null
+// Bounds per-flush serialization cost on long debug sessions; oldest events
+// drop first. Cap applied to the final slice, not the source buffer, so
+// debugStart indices never drift (chosen approach for Fix 2).
+const DEBUG_EVENTS_MAX = 5000
 
 // Adapter's own lifecycle events: always to console, plus the debug buffer when
 // enabled. Structured detail rides in `extra`.
 function dlog(msg: string, extra?: Record<string, unknown>): void {
   console.log("[platica-notes]", msg, extra ?? "")
   if (!debugEnabled) return
-  debugEvents.push({ t: new Date().toISOString(), ctx: "adapter", msg, ...(extra ?? {}) })
+  // Spread caller data first so framing fields (t, ctx, msg) always win on collision.
+  debugEvents.push({ ...(extra ?? {}), t: new Date().toISOString(), ctx: "adapter", msg })
   onDebugEvent?.()
 }
 
@@ -148,16 +153,19 @@ async function runMeeting(tabId: number): Promise<void> {
   )
   writer.requestWrite()
 
-  // Persist the debug trail through the same writer. Only active when enabled,
-  // so session.debug stays undefined otherwise (nothing persisted).
-  if (debugEnabled) {
-    onDebugEvent = () => {
-      if (!debugEnabled) return
-      session.debug = [...prefixDebug, ...debugEvents.slice(debugStart)]
-      writer.requestWrite()
-    }
-    onDebugEvent()
+  // Always wire up onDebugEvent so an OFF→ON mid-meeting toggle starts flushing
+  // immediately. The closure self-gates on debugEnabled — no cost when debug is
+  // off for the entire meeting (session.debug stays undefined), and ON→OFF
+  // freezes the trail because the guard returns before writing.
+  onDebugEvent = () => {
+    if (!debugEnabled) return
+    // Cap the serialized slice to DEBUG_EVENTS_MAX so chrome.storage write size
+    // stays bounded. Source buffer is uncapped; only the persisted view is trimmed.
+    const slice = debugEvents.slice(debugStart)
+    session.debug = [...prefixDebug, ...slice].slice(-DEBUG_EVENTS_MAX)
+    writer.requestWrite()
   }
+  onDebugEvent()
 
   const unmountPill = mountPrivacyPill(session.isPrivate, (isPrivate) => {
     session.isPrivate = isPrivate
