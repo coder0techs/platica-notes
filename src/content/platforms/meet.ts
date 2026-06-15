@@ -1,8 +1,8 @@
 import { sendToBackground } from "../../shared/messages"
-import { getLocal, getSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
+import { getLocal, getSettings, saveSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
 import type { ActiveSession, DebugEvent, Settings } from "../../shared/types"
 import { SessionWriter } from "../core/persistence"
-import { mountPrivacyPill, pulseActivity, showToast } from "../core/ui"
+import { mountMeetingControls, pulseActivity, showToast } from "../core/ui"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
 import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
 import { RtcFeed } from "../meet-rtc/feed"
@@ -213,9 +213,16 @@ async function runMeeting(tabId: number): Promise<void> {
   }
   onDebugEvent()
 
-  const unmountPill = mountPrivacyPill(session.isPrivate, (isPrivate) => {
-    session.isPrivate = isPrivate
-    writer.requestWrite()
+  const unmountControls = mountMeetingControls({
+    initialLanguage: settings.captionLanguage,
+    initialPrivate: session.isPrivate,
+    onPrivateChange: (isPrivate) => {
+      session.isPrivate = isPrivate
+      writer.requestWrite()
+    },
+    // Writes the global captionLanguage; the watchSettings listener picks up the
+    // chrome.storage change and resubscribes the live caption stream.
+    onLanguageChange: (language) => { void saveSettings({ captionLanguage: language }) },
   })
 
   // Meet fills the real meeting name in with a delay.
@@ -299,7 +306,7 @@ async function runMeeting(tabId: number): Promise<void> {
     activeMeetingHandler = null
     applySelfName = null
     onDebugEvent = null
-    unmountPill()
+    unmountControls()
     // Final snapshot resolves speaker names from the roster as it stands now,
     // and includes anything the flush wait above let land.
     session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]

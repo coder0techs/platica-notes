@@ -1,8 +1,16 @@
+import { CAPTION_LANGUAGES } from "../../shared/languages"
 import { getSettings, saveSettings } from "../../shared/storage"
 
 const captionLanguage = document.querySelector<HTMLSelectElement>("#caption-language")!
 const privateDefault = document.querySelector<HTMLInputElement>("#private-default")!
 const debugLog = document.querySelector<HTMLInputElement>("#debug-log")!
+
+for (const lang of CAPTION_LANGUAGES) {
+  const opt = document.createElement("option")
+  opt.value = lang.value
+  opt.textContent = lang.label
+  captionLanguage.appendChild(opt)
+}
 
 async function init(): Promise<void> {
   const settings = await getSettings()
