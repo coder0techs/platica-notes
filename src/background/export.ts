@@ -21,7 +21,11 @@ export async function downloadDebugLog(
 ): Promise<void> {
   if (events.length === 0) return // never write empty files
   const content = formatDebugLog(events)
-  const url = "data:application/json;charset=utf-8," + encodeURIComponent(content)
+  // text/plain (not application/json): Chrome rewrites a ".jsonl" filename to
+  // ".json" when the data URL declares an application/json MIME. Content is
+  // unchanged JSONL — text/plain preserves the ".jsonl" extension, same as the
+  // ".txt" meeting download.
+  const url = "data:text/plain;charset=utf-8," + encodeURIComponent(content)
   // Always a single "Platica Logs" folder for both normal and private meetings,
   // never split by privacy: the debug log embeds the full transcript regardless
   // of the isPrivate flag, so the whole folder is local-only by convention and

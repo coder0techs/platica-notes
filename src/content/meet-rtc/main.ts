@@ -32,6 +32,16 @@ const RING_FLUSH_MS = 500
 const ring: Record<string, unknown>[] = []
 let ringFlushTimer: ReturnType<typeof setTimeout> | undefined
 
+// The MAIN-world script runs at document_start but only learns whether debug is
+// enabled when RTC_CONFIG_EVENT arrives — which is AFTER Meet has opened the
+// early channels (media-session, collections) and we subscribed. Until config
+// is seen we retain every full debug event here, then flush on config arrival
+// if debug turned out to be on (otherwise drop). Entries are pre-stringified
+// full event strings, ready to dispatch as-is.
+let configSeen = false
+const debugBacklog: string[] = []
+const DEBUG_BACKLOG_MAX = 3000
+
 function flushRing(): void {
   ringFlushTimer = undefined
   try {
@@ -41,19 +51,31 @@ function flushRing(): void {
   }
 }
 
+// Dispatch one already-JSON-stringified debug event. Used by record() (live) and
+// by the backlog flush (so the string is never re-stringified).
+function dispatchDebug(detail: string): void {
+  try {
+    document.dispatchEvent(new CustomEvent(RTC_DEBUG_EVENT, { detail }))
+  } catch {
+    /* a debug-dispatch failure must never affect capture */
+  }
+}
+
 function record(event: Record<string, unknown>): void {
   // Full event (untruncated text) feeds the optional debug stream; the dataset
   // ring keeps a small truncated copy. Read debugEnabled at emit time — config
   // can flip it mid-meeting.
+  // Spread event first so framing fields (t, ctx) always win on collision.
+  const detail = JSON.stringify({ ...event, t: new Date().toISOString(), ctx: "rtc" })
   if (debugEnabled) {
-    try {
-      // Spread event first so framing fields (t, ctx) always win on collision.
-      const full = { ...event, t: new Date().toISOString(), ctx: "rtc" }
-      document.dispatchEvent(new CustomEvent(RTC_DEBUG_EVENT, { detail: JSON.stringify(full) }))
-    } catch {
-      /* a debug-dispatch failure must never affect capture */
-    }
+    dispatchDebug(detail)
+  } else if (!configSeen) {
+    // Don't yet know if debug is on — retain so a late "debug on" config can
+    // still recover the early sequence.
+    debugBacklog.push(detail)
+    if (debugBacklog.length > DEBUG_BACKLOG_MAX) debugBacklog.shift()
   }
+  // else: config seen, debug off — drop.
   const ringEvent: Record<string, unknown> = { ...event, ts: Date.now() }
   // Truncate text in the ring copy only — keeps the dataset small.
   if (typeof ringEvent.text === "string") ringEvent.text = ringEvent.text.slice(0, 80)
@@ -67,6 +89,13 @@ function record(event: Record<string, unknown>): void {
 
 function log(...args: unknown[]): void {
   console.log("[platica-rtc]", ...args)
+}
+
+// Hex of the first `max` bytes — feeds the wire-bytes diagnostics for channels
+// whose decoder (collections/roster, meet_messages/chat) is not yet proven on
+// live data.
+function toHex(u: Uint8Array, max = 160): string {
+  return [...u.slice(0, max)].map((b) => b.toString(16).padStart(2, "0")).join("")
 }
 
 // ---------- cross-world event dispatch ----------
@@ -92,7 +121,18 @@ document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
     if (typeof detail !== "string") return
     const cfg = JSON.parse(detail) as RtcConfig
     if (!cfg || typeof cfg.captionLanguage !== "string" || !cfg.captionLanguage) return
-    debugEnabled = !!cfg.debug
+    configSeen = true
+    if (cfg.debug) {
+      // Debug on: flush the early backlog (each entry already a JSON string),
+      // then keep streaming live via record().
+      debugEnabled = true
+      for (const detailStr of debugBacklog) dispatchDebug(detailStr)
+      debugBacklog.length = 0
+    } else {
+      // Debug off: drop the retained backlog to free memory.
+      debugEnabled = false
+      debugBacklog.length = 0
+    }
     const changed = cfg.captionLanguage !== captionLanguage
     captionLanguage = cfg.captionLanguage
     record({ phase: "config", lang: captionLanguage, changed })
@@ -211,6 +251,13 @@ function handleCaptions(bytes: Uint8Array): void {
 
 function handleChat(bytes: Uint8Array): void {
   const p = decodeChatWrapper(bytes)
+  // Decode-result diagnostic: see whether the chat decoder yields anything on
+  // live wire data. Runs before the empty-guard below. Never throws into capture.
+  try {
+    record({ phase: "chat-decoded", got: p ? { deviceId: p.deviceId, text: p.text } : null })
+  } catch {
+    /* diagnostics must never affect capture */
+  }
   if (!p || !p.deviceId || !p.text) return
   // Chat text in the diagnostics ring is deliberately the same truncated-PII
   // class as transcript text above (truncation now applied inside record).
@@ -220,6 +267,13 @@ function handleChat(bytes: Uint8Array): void {
 
 function handleRoster(bytes: Uint8Array): void {
   const entries = decodeRoster(bytes)
+  // Decode-result diagnostic: see whether the roster decoder yields anything on
+  // live wire data. Never throws into capture.
+  try {
+    record({ phase: "roster-decoded", count: entries.length, entries: entries.slice(0, 5) })
+  } catch {
+    /* diagnostics must never affect capture */
+  }
   let dispatched = 0
   for (const entry of entries) {
     // The adapter dedupes by deviceId; here we only skip empties.
@@ -245,6 +299,18 @@ function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void
     queue = queue.then(async () => {
       try {
         const bytes = await toBytes(data)
+        // Wire-bytes diagnostics for channels whose decode is not yet proven on
+        // live data (collections/roster, meet_messages/chat, any other). Use the
+        // gzip-normalized bytes so the hex is the actual protobuf. Runs
+        // regardless of whether the decoder below yields anything; never throws
+        // into capture.
+        if (ch.label !== "captions" && ch.label !== "media-session") {
+          try {
+            record({ phase: "channel-raw", label: ch.label, bytes: bytes.length, hex: toHex(bytes) })
+          } catch {
+            /* diagnostics must never affect capture */
+          }
+        }
         consume(bytes)
       } catch (err) {
         log("decode-error", ch.label, String(err))
