@@ -145,6 +145,36 @@ describe("RtcFeed chat harvests sender into roster", () => {
   })
 })
 
+describe("RtcFeed self name", () => {
+  it("resolves an unrostered transcript speaker to the self name", () => {
+    const feed = new RtcFeed()
+    feed.setSelfName("Grace Hopper")
+    feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
+    expect(feed.transcriptSnapshot()[0].speaker).toBe("Grace Hopper")
+  })
+
+  it("lets the roster win over the self name for a rostered device", () => {
+    const roster = new Map([[ALICE, "Alice García"]])
+    const feed = new RtcFeed(roster)
+    feed.setSelfName("Grace Hopper")
+    feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
+    expect(feed.transcriptSnapshot()[0].speaker).toBe("Alice García")
+  })
+
+  it("falls back to the deviceId tail when no self name is set", () => {
+    const feed = new RtcFeed()
+    feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
+    expect(feed.transcriptSnapshot()[0].speaker).toBe("Speaker 1")
+  })
+
+  it("ignores a blank self name", () => {
+    const feed = new RtcFeed()
+    feed.setSelfName("   ")
+    feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
+    expect(feed.transcriptSnapshot()[0].speaker).toBe("Speaker 1")
+  })
+})
+
 describe("RtcFeed shared roster", () => {
   it("uses a caller-provided roster map populated externally", () => {
     const roster = new Map<string, string>()

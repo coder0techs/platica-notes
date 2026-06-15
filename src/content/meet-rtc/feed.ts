@@ -24,12 +24,20 @@ export class RtcFeed {
   private nextOrder = 0
   private chat = new ChatLog()
   private roster: Map<string, string>
+  // The local user's own display name (from the GetUser RPC). Meet never lists
+  // the local user in the collections roster, so a transcript deviceId absent
+  // from the roster is the local user and resolves to this name.
+  private selfName: string | null = null
 
   // The roster map can be shared with the caller (it streams from join time,
   // before a meeting's feed exists) — names then resolve retroactively at
   // snapshot time without replaying device events into the feed.
   constructor(roster: Map<string, string> = new Map()) {
     this.roster = roster
+  }
+
+  setSelfName(name: string): void {
+    if (name && name.trim()) this.selfName = name
   }
 
   /** Returns true if the revision was accepted (not stale). */
@@ -80,8 +88,13 @@ export class RtcFeed {
   }
 
   private speakerFor(deviceId: string): string {
+    // Precedence: roster wins (the real name for others, including names
+    // harvested from chat). Otherwise the local user — a deviceId absent from
+    // the roster is the local user, since Meet never rosters self; at the final
+    // snapshot all remote speakers are rostered, so only self stays unresolved.
     const name = this.roster.get(deviceId)
     if (name) return name
+    if (this.selfName) return this.selfName
     // Meet device ids look like spaces/<id>/devices/<n> — the tail is short and
     // stable enough to tell speakers apart when the roster has no entry (yet).
     const tail = deviceId.slice(deviceId.lastIndexOf("/") + 1)

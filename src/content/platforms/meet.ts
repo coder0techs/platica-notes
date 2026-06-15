@@ -24,7 +24,13 @@ const END_WATCH_INTERVAL_MS = 2000
 // meetings in the same tab. Transcript/chat events without an active meeting
 // are dropped (nothing to attribute them to yet).
 const roster = new Map<string, string>()
+// The local user's own name (from the GetUser RPC) can arrive before a meeting's
+// feed exists — GetUser fires early — so it lives at page level like the roster
+// and is applied to the feed when a meeting starts, then on each later self event.
+let selfName: string | null = null
 let activeMeetingHandler: ((event: RtcCaptionEvent | RtcChatEvent) => void) | null = null
+// Set by runMeeting so a self event arriving mid-meeting reaches the live feed.
+let applySelfName: ((name: string) => void) | null = null
 
 // Optional debug trail. Like roster, the buffer lives for the whole tab; the
 // active meeting slices its own window out of it and flushes via onDebugEvent.
@@ -82,6 +88,15 @@ async function main(): Promise<void> {
     }
     if (parsed.type === "device") {
       if (typeof parsed.deviceId === "string" && parsed.deviceId && typeof parsed.deviceName === "string" && parsed.deviceName) roster.set(parsed.deviceId, parsed.deviceName)
+      return
+    }
+    if (parsed.type === "self") {
+      // Store at page level (it can arrive before any meeting) and push into the
+      // live feed if a meeting is already running.
+      if (typeof parsed.name === "string" && parsed.name) {
+        selfName = parsed.name
+        applySelfName?.(parsed.name)
+      }
       return
     }
     activeMeetingHandler?.(parsed)
@@ -147,6 +162,11 @@ async function runMeeting(tabId: number): Promise<void> {
   // The page roster is shared in, so names resolve retroactively even for
   // participants whose roster entries arrived before this meeting's feed existed.
   const feed = new RtcFeed(roster)
+  // Apply a self name learned before join, and route later self events into this
+  // feed. The snapshot calls below re-resolve speakers, so a self name landing
+  // after some speech still renames the local user's earlier lines.
+  if (selfName) feed.setSelfName(selfName)
+  applySelfName = (name) => feed.setSelfName(name)
   const writer = new SessionWriter<ActiveSession>(
     (snapshot) => setLocal({ [sessionKey(tabId)]: snapshot }),
     () => session,
@@ -242,6 +262,7 @@ async function runMeeting(tabId: number): Promise<void> {
     // RTC listener stays armed for the next meeting. Null onDebugEvent here too
     // so a late debug event can't resurrect the session.
     activeMeetingHandler = null
+    applySelfName = null
     onDebugEvent = null
     unmountPill()
     // Final snapshot resolves speaker names from the roster as it stands now.

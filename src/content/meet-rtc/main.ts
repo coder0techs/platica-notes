@@ -108,6 +108,114 @@ function dispatch(event: RtcEvent): void {
   }
 }
 
+// ---------- self-name resolution from the GetUser RPC ----------
+
+// Last self name dispatched, so we emit at most once per distinct name.
+let lastSelfName: string | null = null
+
+// Strip non-base64 chars defensively, then decode to bytes. Returns null on
+// failure so the caller's try/catch stays simple.
+function base64ToBytes(text: string): Uint8Array | null {
+  try {
+    const clean = text.replace(/[^A-Za-z0-9+/=]/g, "")
+    const bin = atob(clean)
+    const out = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+    return out
+  } catch {
+    return null
+  }
+}
+
+// A length-delimited field value looks human-name-ish: has a letter, 1..80
+// chars, not a URL ("http" prefix), no "/" (rejects "users/me").
+function looksLikeName(s: string): boolean {
+  if (s.length < 1 || s.length > 80) return false
+  if (s.startsWith("http")) return false
+  if (s.includes("/")) return false
+  return /\p{L}/u.test(s)
+}
+
+// Protobuf-walk GetUser bytes and return the first name-like UTF-8 string,
+// scanning top-level and one level of nested length-delimited fields. Self-
+// contained: does not touch proto.ts decoders. The field index for the display
+// name is not assumed — the name-like heuristic locates it instead.
+function extractSelfName(bytes: Uint8Array): string | null {
+  const decoder = new TextDecoder("utf-8", { fatal: true })
+  const found = walkForName(bytes, decoder, 0)
+  return found
+}
+
+function walkForName(bytes: Uint8Array, decoder: TextDecoder, depth: number): string | null {
+  let i = 0
+  while (i < bytes.length) {
+    // Read field tag (varint).
+    let tag = 0
+    let shift = 0
+    let ok = false
+    while (i < bytes.length) {
+      const b = bytes[i++]
+      tag |= (b & 0x7f) << shift
+      if ((b & 0x80) === 0) {
+        ok = true
+        break
+      }
+      shift += 7
+      if (shift > 28) return null
+    }
+    if (!ok) return null
+    const wireType = tag & 0x7
+    if (wireType === 0) {
+      // varint — skip
+      while (i < bytes.length && (bytes[i] & 0x80) !== 0) i++
+      i++
+    } else if (wireType === 1) {
+      i += 8 // 64-bit
+    } else if (wireType === 5) {
+      i += 4 // 32-bit
+    } else if (wireType === 2) {
+      // length-delimited
+      let len = 0
+      let s2 = 0
+      let lok = false
+      while (i < bytes.length) {
+        const b = bytes[i++]
+        len |= (b & 0x7f) << s2
+        if ((b & 0x80) === 0) {
+          lok = true
+          break
+        }
+        s2 += 7
+        if (s2 > 28) return null
+      }
+      if (!lok || len < 0 || i + len > bytes.length) return null
+      const sub = bytes.subarray(i, i + len)
+      i += len
+      try {
+        const str = decoder.decode(sub)
+        if (looksLikeName(str)) return str
+      } catch {
+        // Not valid UTF-8 — try treating it as a nested message.
+        if (depth < 1) {
+          const nested = walkForName(sub, decoder, depth + 1)
+          if (nested) return nested
+        }
+        continue
+      }
+      // Valid UTF-8 but not name-like (e.g. "users/me", avatar URL): also try
+      // nesting in case a name string lives inside this sub-message.
+      if (depth < 1) {
+        const nested = walkForName(sub, decoder, depth + 1)
+        if (nested) return nested
+      }
+    } else {
+      // Unknown/group wire type — give up on this level.
+      return null
+    }
+  }
+  return null
+}
+
 // ---------- language config from the isolated-world adapter ----------
 
 // Canonical default lives in DEFAULT_SETTINGS.captionLanguage (shared/types.ts).
@@ -414,6 +522,26 @@ function install(): boolean {
   function logRpc(method: string, url: string, status: number, bytes: Uint8Array): void {
     try {
       if (!url.includes("meet.google.com")) return
+      // Self-name resolution: parse the GetUser RPC and dispatch the local
+      // user's display name. This is a real feature, not diagnostics, so it
+      // runs regardless of debugEnabled (the fetch/XHR hook always fires).
+      // Only the GetUser endpoint is parsed; everything else falls through.
+      // Fully try/caught so it can never throw into Meet's request handling.
+      if (url.endsWith("MeetingUserService/GetUser")) {
+        try {
+          // Body is base64 ASCII text wrapping a protobuf.
+          const text = new TextDecoder("utf-8").decode(bytes)
+          const decoded = base64ToBytes(text)
+          const name = decoded ? extractSelfName(decoded) : null
+          if (name && name !== lastSelfName) {
+            lastSelfName = name
+            dispatch({ type: "self", name })
+            record({ phase: "self", name })
+          }
+        } catch (err) {
+          record({ phase: "self-error", error: String(err) })
+        }
+      }
       const lower = url.toLowerCase()
       if (
         lower.includes(".js") ||
@@ -428,7 +556,7 @@ function install(): boolean {
       ) {
         return
       }
-      record({ phase: "rpc", method, url, status, bytes: bytes.length, hex: toHex(bytes, 600) })
+      record({ phase: "rpc", method, url, status, bytes: bytes.length, hex: toHex(bytes, 4096) })
     } catch {
       /* diagnostics must never affect Meet's request */
     }

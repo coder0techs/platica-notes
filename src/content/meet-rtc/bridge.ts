@@ -45,7 +45,14 @@ export interface RtcDeviceEvent {
   deviceName: string
 }
 
-export type RtcEvent = RtcCaptionEvent | RtcChatEvent | RtcDeviceEvent
+// The local user's own display name, parsed from the GetUser RPC; the adapter
+// binds it to unresolved (non-roster) speakers — Meet never rosters self.
+export interface RtcSelfEvent {
+  type: "self"
+  name: string
+}
+
+export type RtcEvent = RtcCaptionEvent | RtcChatEvent | RtcDeviceEvent | RtcSelfEvent
 
 export interface RtcConfig {
   captionLanguage: string
