@@ -115,9 +115,13 @@ async function main(): Promise<void> {
   for (;;) {
     await waitFor(() => MEETING_PATH.test(location.pathname))
     await runMeeting(tabId)
-    // Re-arm only after the leave screen is gone (path change) or the user
-    // rejoined the same meeting (leave icon back).
-    await waitFor(() => !MEETING_PATH.test(location.pathname) || !!findIcon(LEAVE_ICON_TEXT))
+    // The Leave click fires endMeeting while Meet's toolbar (and the call_end
+    // icon) is still on screen. Wait for the icon to actually disappear before
+    // re-arming, otherwise the residual icon triggers an instant phantom re-join
+    // on Meet's post-leave screen. Once gone, the top-of-loop wait re-detects the
+    // next meeting (soft-nav to a new code, or a rejoin of the same code when the
+    // icon returns).
+    await waitFor(() => !findIcon(LEAVE_ICON_TEXT))
   }
 }
 
