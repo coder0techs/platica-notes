@@ -185,6 +185,7 @@ async function runMeeting(tabId: number): Promise<void> {
   const prefixDebug = resumed?.debug ?? []
   // Attendees from a resumed snapshot seed the set (?? [] tolerates pre-feature snapshots).
   const prefixParticipants = resumed?.participants ?? []
+  const prefixRawVersions = resumed?.rawVersions ?? []
 
   const session: ActiveSession = {
     platform: "meet",
@@ -195,6 +196,7 @@ async function runMeeting(tabId: number): Promise<void> {
     transcript: prefixTranscript,
     chat: prefixChat,
     participants: [...prefixParticipants],
+    rawVersions: [...prefixRawVersions],
   }
   // The page roster is shared in, so names resolve retroactively even for
   // participants whose roster entries arrived before this meeting's feed existed.
@@ -266,6 +268,7 @@ async function runMeeting(tabId: number): Promise<void> {
         dlog("captions are flowing")
       }
       session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
+      session.rawVersions = [...prefixRawVersions, ...feed.versionsSnapshot()]
       writer.requestWrite()
       pulseActivity()
     } else if (event.type === "chat") {
@@ -336,6 +339,7 @@ async function runMeeting(tabId: number): Promise<void> {
     // Final snapshot resolves speaker names from the roster as it stands now,
     // and includes anything the flush wait above let land.
     session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
+    session.rawVersions = [...prefixRawVersions, ...feed.versionsSnapshot()]
     session.chat = [...prefixChat, ...feed.chatSnapshot()]
     session.participants = [...attendees]
     // Capture the complete debug trail (including this "meeting ended") into the
