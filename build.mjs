@@ -12,7 +12,9 @@ const version = pkg.version
 let commit = "unknown"
 try {
   commit = execSync("git rev-parse --short HEAD").toString().trim()
-  if (execSync("git status --porcelain").toString().trim() !== "") commit += "-dirty"
+  // Only tracked changes count as dirty — untracked .DS_Store/.claude/docs are
+  // always present and must not stamp every build "-dirty".
+  if (execSync("git status --porcelain --untracked-files=no").toString().trim() !== "") commit += "-dirty"
 } catch {
   // No git, no repo, or git missing — leave the fallback.
 }
