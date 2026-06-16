@@ -30,6 +30,9 @@ cpSync("public", "dist", { recursive: true })
 const manifestPath = "dist/manifest.json"
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
 manifest.version = version.replace(/[^0-9.].*$/, "")
+// version_name accepts any string and is what Chrome shows on the extensions
+// page — surface the build commit there so the loaded build is identifiable.
+manifest.version_name = `${version} (${commit})`
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n")
 
 const options = {
