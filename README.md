@@ -20,7 +20,10 @@ Everything is decoded in the page and kept on your machine.
 
 ## Features
 
-- Live transcript + in-meeting chat, saved as a `.txt` per meeting.
+- Live transcript + in-meeting chat, saved as a `.md` per meeting.
+- Full caption revision history appended at the bottom (`RAW CAPTION VERSIONS`):
+  every distinct version Google streamed, so an agent can recover words the
+  final caption dropped. Machine artifact, not for human reading.
 - Speaker-attributed lines (others and yourself), with the closing sentence
   captured in full on leave.
 - **Caption language** picker (popup) — set it to the language people speak;
@@ -39,7 +42,7 @@ Files land in your Downloads folder:
 
 | Folder | Contents |
 |---|---|
-| `Downloads/Platica Notes/` | normal meeting transcripts (`<title> <date>.txt`) |
+| `Downloads/Platica Notes/` | normal meeting transcripts (`<title> <date>.md`) |
 | `Downloads/Platica Notes private/` | transcripts of meetings marked private |
 | `Downloads/Platica Logs/` | debug logs (`.jsonl`), only when debug is on |
 
@@ -86,7 +89,7 @@ Three contexts, split by responsibility:
   caption-tail flush on leave) and pushes capture into the session.
 - **Background service worker** (`src/background/`) — session store with
   retention, finalize on meeting end / tab close (with crash recovery), and
-  `.txt` export via `chrome.downloads`.
+  `.md` export via `chrome.downloads`.
 
 A small, pure shared layer (`src/shared/`) holds the domain types, storage
 helpers, and the content↔background message contract.
