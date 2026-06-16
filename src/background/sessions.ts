@@ -67,6 +67,7 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
       isPrivate: session.isPrivate,
       transcript: session.transcript,
       chat: session.chat,
+      participants: session.participants ?? [],
     }
     const settings = await getSettings()
     await addMeeting(meeting, settings.retentionLimit)

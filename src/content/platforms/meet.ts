@@ -40,6 +40,10 @@ let selfName: string | null = null
 let activeMeetingHandler: ((event: RtcCaptionEvent | RtcChatEvent) => void) | null = null
 // Set by runMeeting so a self event arriving mid-meeting reaches the live feed.
 let applySelfName: ((name: string) => void) | null = null
+// Set by runMeeting; records a name into the active meeting's attendee set. Fed by
+// roster device events and the self name. Meeting-scoped (not the page-level roster
+// map) so names never bleed from a previous meeting in the same tab.
+let recordAttendee: ((name: string) => void) | null = null
 
 // Optional debug trail. Like roster, the buffer lives for the whole tab; the
 // active meeting slices its own window out of it and flushes via onDebugEvent.
@@ -96,7 +100,10 @@ async function main(): Promise<void> {
       return
     }
     if (parsed.type === "device") {
-      if (typeof parsed.deviceId === "string" && parsed.deviceId && typeof parsed.deviceName === "string" && parsed.deviceName) roster.set(parsed.deviceId, parsed.deviceName)
+      if (typeof parsed.deviceId === "string" && parsed.deviceId && typeof parsed.deviceName === "string" && parsed.deviceName) {
+        roster.set(parsed.deviceId, parsed.deviceName)
+        recordAttendee?.(parsed.deviceName)
+      }
       return
     }
     if (parsed.type === "self") {
@@ -105,6 +112,7 @@ async function main(): Promise<void> {
       if (typeof parsed.name === "string" && parsed.name) {
         selfName = parsed.name
         applySelfName?.(parsed.name)
+        recordAttendee?.(parsed.name)
       }
       return
     }
@@ -175,6 +183,8 @@ async function runMeeting(tabId: number): Promise<void> {
   const prefixChat = resumed ? resumed.chat : []
   // Debug from a resumed snapshot is prepended, mirroring transcript/chat.
   const prefixDebug = resumed?.debug ?? []
+  // Attendees from a resumed snapshot seed the set (?? [] tolerates pre-feature snapshots).
+  const prefixParticipants = resumed?.participants ?? []
 
   const session: ActiveSession = {
     platform: "meet",
@@ -184,6 +194,7 @@ async function runMeeting(tabId: number): Promise<void> {
     isPrivate: resumed ? resumed.isPrivate : settings.privateByDefault,
     transcript: prefixTranscript,
     chat: prefixChat,
+    participants: [...prefixParticipants],
   }
   // The page roster is shared in, so names resolve retroactively even for
   // participants whose roster entries arrived before this meeting's feed existed.
@@ -198,6 +209,20 @@ async function runMeeting(tabId: number): Promise<void> {
     () => session,
   )
   writer.requestWrite()
+
+  // Meeting-scoped attendee set. Fed by roster device events and the self name
+  // (both routed through the page-level RTC listener via recordAttendee). Deduped
+  // by exact name, so a participant who reconnects with a new device id — or any
+  // repeated roster broadcast — counts once.
+  const attendees = new Set<string>(prefixParticipants)
+  recordAttendee = (name) => {
+    const trimmed = name.trim()
+    if (!trimmed || attendees.has(trimmed)) return
+    attendees.add(trimmed)
+    session.participants = [...attendees]
+    writer.requestWrite()
+  }
+  if (selfName) recordAttendee(selfName)
 
   // Always wire up onDebugEvent so an OFF→ON mid-meeting toggle starts flushing
   // immediately. The closure self-gates on debugEnabled — no cost when debug is
@@ -305,12 +330,14 @@ async function runMeeting(tabId: number): Promise<void> {
     // so a late debug event can't resurrect the session.
     activeMeetingHandler = null
     applySelfName = null
+    recordAttendee = null
     onDebugEvent = null
     unmountControls()
     // Final snapshot resolves speaker names from the roster as it stands now,
     // and includes anything the flush wait above let land.
     session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
     session.chat = [...prefixChat, ...feed.chatSnapshot()]
+    session.participants = [...attendees]
     // Capture the complete debug trail (including this "meeting ended") into the
     // final snapshot. Stays undefined when disabled — no behavioural change.
     if (debugEnabled) session.debug = [...prefixDebug, ...debugEvents.slice(debugStart)]

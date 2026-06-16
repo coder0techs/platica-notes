@@ -15,6 +15,7 @@ function makeMeeting(overrides: Partial<Meeting> = {}): Meeting {
       { speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", text: "Hi Alice" },
     ],
     chat: [],
+    participants: [],
     ...overrides,
   }
 }
@@ -45,6 +46,32 @@ describe("formatMeetingText", () => {
     }))
     expect(text).toContain("CHAT")
     expect(text).toContain("see link")
+  })
+
+  it("omits the PARTICIPANTS section when the list is empty", () => {
+    expect(formatMeetingText(makeMeeting())).not.toContain("PARTICIPANTS")
+  })
+
+  it("renders the PARTICIPANTS section sorted alphabetically", () => {
+    const text = formatMeetingText(makeMeeting({ participants: ["Charlie", "alice", "Bob"] }))
+    expect(text).toContain("PARTICIPANTS")
+    const section = text.slice(text.indexOf("PARTICIPANTS"))
+    const names = section.split("\n").slice(2, 5)
+    expect(names).toEqual(["alice", "Bob", "Charlie"])
+  })
+
+  it("places PARTICIPANTS before the transcript", () => {
+    const text = formatMeetingText(makeMeeting({ participants: ["Alice"] }))
+    expect(text.indexOf("PARTICIPANTS")).toBeLessThan(text.indexOf("TRANSCRIPT"))
+  })
+
+  it("tolerates a meeting stored before the participants field existed", () => {
+    const meeting = makeMeeting()
+    // Simulate legacy stored data lacking the field entirely.
+    delete (meeting as { participants?: string[] }).participants
+    const text = formatMeetingText(meeting)
+    expect(text).not.toContain("PARTICIPANTS")
+    expect(text).toContain("Sprint sync")
   })
 })
 

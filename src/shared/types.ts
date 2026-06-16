@@ -27,6 +27,8 @@ export interface ActiveSession {
   isPrivate: boolean
   transcript: Utterance[]
   chat: ChatMessage[]
+  /** Names of everyone seen in the roster during this meeting, plus self. */
+  participants: string[]
   debug?: DebugEvent[]
 }
 
@@ -39,6 +41,8 @@ export interface Meeting {
   isPrivate: boolean
   transcript: Utterance[]
   chat: ChatMessage[]
+  /** Attendee names (deduped), as seen from the local user's connection. */
+  participants: string[]
 }
 
 export interface Settings {

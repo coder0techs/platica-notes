@@ -26,11 +26,16 @@ export function formatMeetingText(meeting: Meeting): string {
     `Platform: ${PLATFORM_LABELS[meeting.platform]}`,
     `Started: ${formatTimestamp(meeting.startedAt)}`,
     `Ended: ${formatTimestamp(meeting.endedAt)}`,
-    "",
-    "TRANSCRIPT",
-    "----------",
-    "",
   ]
+  // Attendance list. Optional via ?. so meetings stored before this field existed
+  // still render. Sorted here so output is deterministic regardless of capture order.
+  if (meeting.participants?.length) {
+    lines.push("", "PARTICIPANTS", "------------")
+    for (const name of [...meeting.participants].sort((a, b) => a.localeCompare(b))) {
+      lines.push(name)
+    }
+  }
+  lines.push("", "TRANSCRIPT", "----------", "")
   for (const utterance of meeting.transcript) {
     lines.push(`${utterance.speaker} (${formatTimestamp(utterance.startedAt)}):`)
     lines.push(utterance.text)
