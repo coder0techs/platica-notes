@@ -36,6 +36,8 @@ export interface ActiveSession {
   chat: ChatMessage[]
   /** Names of everyone seen in the roster during this meeting, plus self. */
   participants: string[]
+  /** Per-caption revision history. Rides alongside transcript so reload/orphan recovery keep it. */
+  rawVersions?: CaptionHistory[]
   debug?: DebugEvent[]
 }
 
@@ -50,6 +52,8 @@ export interface Meeting {
   chat: ChatMessage[]
   /** Attendee names (deduped), as seen from the local user's connection. */
   participants: string[]
+  /** Per-caption revision history (all distinct versions Google streamed). */
+  rawVersions?: CaptionHistory[]
 }
 
 export interface Settings {
