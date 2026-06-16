@@ -33,7 +33,11 @@ if (subjects.length === 0) {
 }
 const bodies = sh(`git log ${range} --format=%B`)
 
-const breaking = /BREAKING CHANGE/.test(bodies) || subjects.some((s) => /^[a-z]+(\(.+?\))?!:/.test(s))
+// A breaking change is a real Conventional Commits footer (a line starting with
+// "BREAKING CHANGE:" / "BREAKING-CHANGE:") or a "type!:" subject — NOT a mere
+// mention of the words inside prose (which would false-positive on this script's
+// own commit messages).
+const breaking = /^BREAKING[ -]CHANGE:/m.test(bodies) || subjects.some((s) => /^[a-z]+(\(.+?\))?!:/.test(s))
 const feat = subjects.some((s) => /^feat(\(.+?\))?!?:/.test(s))
 const level = breaking ? "major" : feat ? "minor" : "patch"
 
