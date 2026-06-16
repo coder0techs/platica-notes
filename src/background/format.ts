@@ -115,7 +115,7 @@ function fileBase(meta: { title: string; startedAt: string }): string {
 }
 
 export function meetingFileName(meeting: Meeting): string {
-  return `${fileBase(meeting)}.txt`
+  return `${fileBase(meeting)}.md`
 }
 
 export function debugLogFileName(meta: { title: string; startedAt: string }): string {

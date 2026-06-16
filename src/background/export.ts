@@ -4,7 +4,9 @@ import { debugLogFileName, formatDebugLog, formatMeetingText, meetingFileName, s
 
 export async function downloadMeeting(meeting: Meeting): Promise<void> {
   const content = formatMeetingText(meeting)
-  const url = "data:text/plain;charset=utf-8," + encodeURIComponent(content)
+  // octet-stream so Chrome keeps the ".md" filename (text/plain would be rewritten
+  // to ".txt"). Content is unchanged UTF-8 markdown. Same trick as downloadDebugLog.
+  const url = "data:application/octet-stream;charset=utf-8," + encodeURIComponent(content)
   // Public and private transcripts go to independent, user-configurable folders
   // (no longer necessarily siblings). All paths are relative to Downloads, the
   // only place chrome.downloads can write; sanitizeFolder strips any escape.

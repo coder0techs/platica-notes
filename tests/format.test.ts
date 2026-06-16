@@ -152,8 +152,8 @@ describe("sanitizeFolder", () => {
 })
 
 describe("meetingFileName", () => {
-  it("matches shape: title + local date-time + .txt", () => {
-    expect(meetingFileName(makeMeeting())).toMatch(/^Sprint sync \d{4}-\d{2}-\d{2} \d{2}-\d{2}\.txt$/)
+  it("matches shape: title + local date-time + .md", () => {
+    expect(meetingFileName(makeMeeting())).toMatch(/^Sprint sync \d{4}-\d{2}-\d{2} \d{2}-\d{2}\.md$/)
   })
 
   it("contains hour-minute derived from local time", () => {
@@ -179,7 +179,7 @@ describe("debugLogFileName", () => {
     const m = makeMeeting()
     const txt = meetingFileName(m)
     const jsonl = debugLogFileName(m)
-    const base = txt.slice(0, txt.length - ".txt".length)
+    const base = txt.slice(0, txt.length - ".md".length)
     expect(jsonl).toBe(`${base}.debug.jsonl`)
   })
 
@@ -187,7 +187,7 @@ describe("debugLogFileName", () => {
     const m = makeMeeting({ title: "a/b: report" })
     const txt = meetingFileName(m)
     const jsonl = debugLogFileName(m)
-    const base = txt.slice(0, txt.length - ".txt".length)
+    const base = txt.slice(0, txt.length - ".md".length)
     expect(jsonl).toBe(`${base}.debug.jsonl`)
   })
 })
