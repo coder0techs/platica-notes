@@ -51,6 +51,29 @@ export function formatMeetingText(meeting: Meeting): string {
       lines.push("")
     }
   }
+  // Machine-readable revision history for transcript-reconstruction agents.
+  // Only phrases that actually changed are emitted (single-version phrases are
+  // identical to the transcript line above and add nothing). Optional via ?. so
+  // meetings stored before this field existed still render.
+  const revised = meeting.rawVersions?.filter((v) => v.versions.length > 1) ?? []
+  if (revised.length > 0) {
+    lines.push("RAW CAPTION VERSIONS")
+    lines.push("--------------------")
+    lines.push("")
+    lines.push(
+      "Machine-generated revision history: every distinct caption version Google " +
+        "streamed, in order. For transcript-reconstruction agents, not human reading. " +
+        "The last line of each block is the text that appears in TRANSCRIPT above; " +
+        "earlier lines may contain words the final version dropped. Phrases that never " +
+        "changed are omitted.",
+    )
+    lines.push("")
+    for (const entry of revised) {
+      lines.push(`${entry.speaker} (${formatTimestamp(entry.startedAt)}):`)
+      for (const [i, text] of entry.versions.entries()) lines.push(`${i + 1}. ${text}`)
+      lines.push("")
+    }
+  }
   lines.push("")
   lines.push(`— Plática Notes ${VERSION} (${COMMIT})`)
   return lines.join("\n")

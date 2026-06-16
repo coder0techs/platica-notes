@@ -73,6 +73,42 @@ describe("formatMeetingText", () => {
     expect(text).not.toContain("PARTICIPANTS")
     expect(text).toContain("Sprint sync")
   })
+
+  const withVersions = {
+    rawVersions: [
+      { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", versions: ["Hello", "Hello everyone"] },
+      { speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", versions: ["Hi Alice"] },
+    ],
+  }
+
+  it("renders a RAW CAPTION VERSIONS section listing each distinct version", () => {
+    const text = formatMeetingText(makeMeeting(withVersions))
+    expect(text).toContain("RAW CAPTION VERSIONS")
+    expect(text).toContain("1. Hello")
+    expect(text).toContain("2. Hello everyone")
+  })
+
+  it("omits phrases that never changed (single-version) from the section", () => {
+    const text = formatMeetingText(makeMeeting(withVersions))
+    const section = text.slice(text.indexOf("RAW CAPTION VERSIONS"))
+    expect(section).not.toContain("Hi Alice")
+  })
+
+  it("omits the whole section when no phrase has more than one version", () => {
+    const text = formatMeetingText(makeMeeting({
+      rawVersions: [{ speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", versions: ["Hi"] }],
+    }))
+    expect(text).not.toContain("RAW CAPTION VERSIONS")
+  })
+
+  it("omits the section for legacy meetings lacking rawVersions", () => {
+    expect(formatMeetingText(makeMeeting())).not.toContain("RAW CAPTION VERSIONS")
+  })
+
+  it("places RAW CAPTION VERSIONS after the transcript", () => {
+    const text = formatMeetingText(makeMeeting(withVersions))
+    expect(text.indexOf("TRANSCRIPT")).toBeLessThan(text.indexOf("RAW CAPTION VERSIONS"))
+  })
 })
 
 describe("sanitizeFileName", () => {
