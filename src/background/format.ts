@@ -20,6 +20,16 @@ function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString("en-GB", TIME_FORMAT)
 }
 
+// Strips pure left-to-right typing from a caption's version history, keeping only
+// the revision points. A frame is dropped ONLY when it is a verbatim prefix of the
+// next frame (the next frame just appended to it) — so every character of a dropped
+// frame is reproduced later, making this provably lossless for reconstruction. Any
+// frame where text was shortened, rewritten mid-string, recased, or repunctuated is
+// NOT a prefix of its successor and is kept. The final frame is always kept.
+export function collapseVersions(versions: string[]): string[] {
+  return versions.filter((v, i) => i === versions.length - 1 || !versions[i + 1].startsWith(v))
+}
+
 export function formatMeetingText(meeting: Meeting): string {
   const lines: string[] = [
     meeting.title,
@@ -52,20 +62,26 @@ export function formatMeetingText(meeting: Meeting): string {
     }
   }
   // Machine-readable revision history for transcript-reconstruction agents.
-  // Only phrases that actually changed are emitted (single-version phrases are
-  // identical to the transcript line above and add nothing). Optional via ?. so
-  // meetings stored before this field existed still render.
-  const revised = meeting.rawVersions?.filter((v) => v.versions.length > 1) ?? []
+  // Collapse pure left-to-right typing (see collapseVersions) so only revision
+  // points survive, then emit only phrases that still have more than one frame
+  // (a phrase that just grew, or never changed, adds nothing over the transcript
+  // line above). Optional via ?. so meetings stored before this field existed
+  // still render.
+  const revised = (meeting.rawVersions ?? [])
+    .map((v) => ({ ...v, versions: collapseVersions(v.versions) }))
+    .filter((v) => v.versions.length > 1)
   if (revised.length > 0) {
     lines.push("RAW CAPTION VERSIONS")
     lines.push("--------------------")
     lines.push("")
     lines.push(
-      "Machine-generated revision history: every distinct caption version Google " +
-        "streamed, in order. For transcript-reconstruction agents, not human reading. " +
-        "The last line of each block is the text that appears in TRANSCRIPT above; " +
-        "earlier lines may contain words the final version dropped. Phrases that never " +
-        "changed are omitted.",
+      "Machine-generated revision points of each caption: the form before each time " +
+        "Google shortened or rewrote already-typed text, plus the final version. Pure " +
+        "left-to-right typing between these points is collapsed (losslessly: a dropped " +
+        "frame is always a prefix of the next). For transcript-reconstruction agents, " +
+        "not human reading. The last line of each block is the text that appears in " +
+        "TRANSCRIPT above; earlier lines may contain words the final version dropped. " +
+        "Phrases that only grew, or never changed, are omitted.",
     )
     lines.push("")
     for (const entry of revised) {

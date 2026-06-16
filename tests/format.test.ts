@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { debugLogFileName, formatDebugLog, formatMeetingText, meetingFileName, sanitizeFileName, sanitizeFolder } from "../src/background/format"
+import { collapseVersions, debugLogFileName, formatDebugLog, formatMeetingText, meetingFileName, sanitizeFileName, sanitizeFolder } from "../src/background/format"
 import type { DebugEvent, Meeting } from "../src/shared/types"
 
 function makeMeeting(overrides: Partial<Meeting> = {}): Meeting {
@@ -76,15 +76,16 @@ describe("formatMeetingText", () => {
 
   const withVersions = {
     rawVersions: [
-      { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", versions: ["Hello", "Hello everyone"] },
+      // Grew then truncated: the truncation is a revision point the collapse keeps.
+      { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", versions: ["Hello everyone here", "Hello everyone"] },
       { speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", versions: ["Hi Alice"] },
     ],
   }
 
-  it("renders a RAW CAPTION VERSIONS section listing each distinct version", () => {
+  it("renders a RAW CAPTION VERSIONS section listing each kept version", () => {
     const text = formatMeetingText(makeMeeting(withVersions))
     expect(text).toContain("RAW CAPTION VERSIONS")
-    expect(text).toContain("1. Hello")
+    expect(text).toContain("1. Hello everyone here")
     expect(text).toContain("2. Hello everyone")
   })
 
@@ -101,6 +102,13 @@ describe("formatMeetingText", () => {
     expect(text).not.toContain("RAW CAPTION VERSIONS")
   })
 
+  it("omits a phrase that only grew left-to-right (collapses to one frame, no revisions)", () => {
+    const text = formatMeetingText(makeMeeting({
+      rawVersions: [{ speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", versions: ["Hi", "Hi there", "Hi there everyone"] }],
+    }))
+    expect(text).not.toContain("RAW CAPTION VERSIONS")
+  })
+
   it("omits the section for legacy meetings lacking rawVersions", () => {
     expect(formatMeetingText(makeMeeting())).not.toContain("RAW CAPTION VERSIONS")
   })
@@ -108,6 +116,44 @@ describe("formatMeetingText", () => {
   it("places RAW CAPTION VERSIONS after the transcript", () => {
     const text = formatMeetingText(makeMeeting(withVersions))
     expect(text.indexOf("TRANSCRIPT")).toBeLessThan(text.indexOf("RAW CAPTION VERSIONS"))
+  })
+})
+
+describe("collapseVersions", () => {
+  it("drops frames that are a pure prefix of the next (left-to-right typing)", () => {
+    expect(collapseVersions(["за", "запи", "записи всех"])).toEqual(["записи всех"])
+  })
+
+  it("keeps a frame the next one shortened (truncation point)", () => {
+    expect(collapseVersions(["a b c d", "a b c"])).toEqual(["a b c d", "a b c"])
+  })
+
+  it("keeps a frame edited mid-string (not a prefix relationship)", () => {
+    expect(collapseVersions(["hello wrld", "hello world"])).toEqual(["hello wrld", "hello world"])
+  })
+
+  it("keeps case/punctuation flicker — conservative, never assumes it is noise", () => {
+    expect(collapseVersions(["так", "Так."])).toEqual(["так", "Так."])
+  })
+
+  it("collapses a pure-growth chain down to just the final frame", () => {
+    expect(collapseVersions(["a", "ab", "abc"])).toEqual(["abc"])
+  })
+
+  it("returns a single-element list unchanged", () => {
+    expect(collapseVersions(["only"])).toEqual(["only"])
+  })
+
+  it("is lossless: every dropped frame is a verbatim prefix of the next frame", () => {
+    const chain = ["a", "ab", "abc", "abcd", "abc", "abce"]
+    const kept = new Set(collapseVersions(chain))
+    chain.forEach((v, i) => {
+      if (!kept.has(v) && i < chain.length - 1) {
+        // A dropped frame must be fully reproduced by appending to it: the next
+        // frame starts with it, so no character of it is ever lost.
+        expect(chain[i + 1].startsWith(v)).toBe(true)
+      }
+    })
   })
 })
 
