@@ -6,6 +6,13 @@ export interface Utterance {
   text: string
 }
 
+export interface CaptionHistory {
+  speaker: string
+  startedAt: string // ISO 8601
+  /** Every distinct caption version, in arrival order; last is the final text. */
+  versions: string[]
+}
+
 export interface ChatMessage {
   sender: string
   sentAt: string // ISO 8601

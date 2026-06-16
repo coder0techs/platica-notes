@@ -2,7 +2,7 @@
 // transcript/chat arrays. No DOM, no chrome.*, no timers — callers stamp
 // timestamps in, so the whole thing is unit-testable.
 
-import type { ChatMessage, Utterance } from "../../shared/types"
+import type { CaptionHistory, ChatMessage, Utterance } from "../../shared/types"
 import { ChatLog } from "../core/collector"
 import type { RtcCaptionEvent, RtcChatEvent } from "./bridge"
 
@@ -16,6 +16,9 @@ interface CaptionState {
   startedAt: string
   text: string
   version: number
+  // Every distinct text this caption took, in order. Consecutive identical
+  // frames (Meet bumps messageVersion without changing text) are deduped on push.
+  versions: string[]
 }
 
 export class RtcFeed {
@@ -48,6 +51,9 @@ export class RtcFeed {
       if (ev.messageVersion <= existing.version) return false
       existing.text = ev.text
       existing.version = ev.messageVersion
+      if (existing.versions[existing.versions.length - 1] !== ev.text) {
+        existing.versions.push(ev.text)
+      }
       return true
     }
     this.captions.set(key, {
@@ -56,6 +62,7 @@ export class RtcFeed {
       startedAt: at,
       text: ev.text,
       version: ev.messageVersion,
+      versions: [ev.text],
     })
     return true
   }
@@ -81,6 +88,16 @@ export class RtcFeed {
     return [...this.captions.values()]
       .sort((a, b) => a.order - b.order)
       .map((c) => ({ speaker: this.speakerFor(c.deviceId), startedAt: c.startedAt, text: c.text }))
+  }
+
+  versionsSnapshot(): CaptionHistory[] {
+    return [...this.captions.values()]
+      .sort((a, b) => a.order - b.order)
+      .map((c) => ({
+        speaker: this.speakerFor(c.deviceId),
+        startedAt: c.startedAt,
+        versions: [...c.versions],
+      }))
   }
 
   chatSnapshot(): ChatMessage[] {

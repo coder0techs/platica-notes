@@ -184,3 +184,46 @@ describe("RtcFeed shared roster", () => {
     expect(feed.transcriptSnapshot()[0].speaker).toBe("Alice García")
   })
 })
+
+describe("RtcFeed version history", () => {
+  it("accumulates distinct versions per caption in order", () => {
+    const feed = new RtcFeed()
+    feed.handleCaption(caption(ALICE, 1, 1, "Hel"), at)
+    feed.handleCaption(caption(ALICE, 1, 2, "Hello"), later)
+    feed.handleCaption(caption(ALICE, 1, 3, "Hello there"), later)
+    expect(feed.versionsSnapshot()).toEqual([
+      { speaker: "Speaker 1", startedAt: at, versions: ["Hel", "Hello", "Hello there"] },
+    ])
+  })
+
+  it("dedupes consecutive identical text even when the version bumps", () => {
+    const feed = new RtcFeed()
+    feed.handleCaption(caption(ALICE, 1, 1, "Done"), at)
+    feed.handleCaption(caption(ALICE, 1, 2, "Done"), later) // identical text, higher version
+    feed.handleCaption(caption(ALICE, 1, 3, "Done."), later)
+    expect(feed.versionsSnapshot()[0].versions).toEqual(["Done", "Done."])
+  })
+
+  it("keeps stale revisions out of the history", () => {
+    const feed = new RtcFeed()
+    feed.handleCaption(caption(ALICE, 1, 3, "Final"), at)
+    feed.handleCaption(caption(ALICE, 1, 2, "Older"), later)
+    expect(feed.versionsSnapshot()[0].versions).toEqual(["Final"])
+  })
+
+  it("keeps a single-version phrase as a one-element history", () => {
+    const feed = new RtcFeed()
+    feed.handleCaption(caption(ALICE, 1, 1, "Hi"), at)
+    expect(feed.versionsSnapshot()).toEqual([
+      { speaker: "Speaker 1", startedAt: at, versions: ["Hi"] },
+    ])
+  })
+
+  it("resolves speaker names retroactively like the transcript", () => {
+    const roster = new Map<string, string>()
+    const feed = new RtcFeed(roster)
+    feed.handleCaption(caption(ALICE, 1, 1, "Hi"), at)
+    roster.set(ALICE, "Alice García")
+    expect(feed.versionsSnapshot()[0].speaker).toBe("Alice García")
+  })
+})
