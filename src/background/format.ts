@@ -1,5 +1,10 @@
 import type { DebugEvent, Meeting } from "../shared/types"
 
+// Injected by esbuild's define at build time; typeof-guarded so vitest (which
+// does not define them) falls back to "dev" instead of throwing ReferenceError.
+const VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev"
+const COMMIT = typeof __BUILD_COMMIT__ === "string" ? __BUILD_COMMIT__ : "dev"
+
 const PLATFORM_LABELS: Record<Meeting["platform"], string> = {
   meet: "Google Meet",
   zoom: "Zoom",
@@ -41,6 +46,8 @@ export function formatMeetingText(meeting: Meeting): string {
       lines.push("")
     }
   }
+  lines.push("")
+  lines.push(`— Plática Notes ${VERSION} (${COMMIT})`)
   return lines.join("\n")
 }
 

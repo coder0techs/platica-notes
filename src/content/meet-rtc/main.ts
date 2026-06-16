@@ -668,7 +668,11 @@ function install(): boolean {
   w.RTCPeerConnection = Wrapped
 
   log("installed")
-  record({ phase: "installed" })
+  // Stamp the build so the very first debug event identifies which build ran.
+  // typeof-guarded: these globals are undefined under vitest.
+  const version = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev"
+  const commit = typeof __BUILD_COMMIT__ === "string" ? __BUILD_COMMIT__ : "dev"
+  record({ phase: "installed", version, commit })
   return true
 }
 

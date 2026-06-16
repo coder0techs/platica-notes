@@ -32,6 +32,13 @@ describe("formatMeetingText", () => {
     expect(formatMeetingText(makeMeeting())).not.toContain("CHAT")
   })
 
+  it("appends a build-stamp footer (dev fallback under vitest, no globals defined)", () => {
+    const text = formatMeetingText(makeMeeting())
+    expect(text).toContain("Plática Notes")
+    // Globals are not defined under vitest, so both fields fall back to "dev".
+    expect(text.trimEnd().endsWith("— Plática Notes dev (dev)")).toBe(true)
+  })
+
   it("renders chat messages when present", () => {
     const text = formatMeetingText(makeMeeting({
       chat: [{ sender: "Bob", sentAt: "2026-06-10T10:05:00.000Z", text: "see link" }],

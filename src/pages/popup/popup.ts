@@ -8,6 +8,13 @@ const folderPublic = document.querySelector<HTMLInputElement>("#folder-public")!
 const folderPrivate = document.querySelector<HTMLInputElement>("#folder-private")!
 const folderDebug = document.querySelector<HTMLInputElement>("#folder-debug")!
 
+// Build stamp shown at the bottom of the popup. typeof-guarded so vitest and
+// any non-build eval fall back to "dev" instead of throwing ReferenceError.
+const buildVersion = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev"
+const buildCommit = typeof __BUILD_COMMIT__ === "string" ? __BUILD_COMMIT__ : "dev"
+const buildInfo = document.querySelector<HTMLParagraphElement>("#build-info")
+if (buildInfo) buildInfo.textContent = `v${buildVersion} (${buildCommit})`
+
 for (const lang of CAPTION_LANGUAGES) {
   const opt = document.createElement("option")
   opt.value = lang.value
