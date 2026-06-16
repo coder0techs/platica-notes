@@ -10,7 +10,8 @@
     "test": "vitest run",
     "build": "node build.mjs",
     "watch": "node build.mjs --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "release": "node scripts/release.mjs"
   },
   "keywords": [],
   "author": "",
