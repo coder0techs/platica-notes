@@ -3,6 +3,7 @@ import { getLocal, getSettings, saveSettings, sessionKey, setLocal, withDefaults
 import type { ActiveSession, DebugEvent, Settings } from "../../shared/types"
 import { SessionWriter } from "../core/persistence"
 import { mountMeetingControls, pulseActivity, showToast } from "../core/ui"
+import { mountTranscriptPanel } from "../core/transcript-panel"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
 import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
 import { RtcFeed } from "../meet-rtc/feed"
@@ -252,6 +253,8 @@ async function runMeeting(tabId: number): Promise<void> {
     onLanguageChange: (language) => { void saveSettings({ captionLanguage: language }) },
   })
 
+  const panel = mountTranscriptPanel()
+
   // Meet fills the real meeting name in with a delay.
   setTimeout(() => {
     if (ending) return
@@ -269,6 +272,7 @@ async function runMeeting(tabId: number): Promise<void> {
       }
       session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
       session.rawVersions = [...prefixRawVersions, ...feed.versionsSnapshot()]
+      panel.update(session.transcript)
       writer.requestWrite()
       pulseActivity()
     } else if (event.type === "chat") {
@@ -336,6 +340,7 @@ async function runMeeting(tabId: number): Promise<void> {
     recordAttendee = null
     onDebugEvent = null
     unmountControls()
+    panel.unmount()
     // Final snapshot resolves speaker names from the roster as it stands now,
     // and includes anything the flush wait above let land.
     session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
