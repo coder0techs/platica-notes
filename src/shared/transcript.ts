@@ -20,3 +20,11 @@ export function mergeUtterances(utterances: Utterance[]): Utterance[] {
   }
   return out
 }
+
+// Panel scroll helper, kept here (pure) so its threshold logic is unit-testable
+// without a DOM. True when the scroll position is close enough to the bottom that
+// new content should auto-scroll into view. Caller passes
+// distanceFromBottom = scrollHeight - scrollTop - clientHeight.
+export function isNearBottom(distanceFromBottom: number, threshold = 40): boolean {
+  return distanceFromBottom <= threshold
+}
