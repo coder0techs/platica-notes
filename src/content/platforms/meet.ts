@@ -45,6 +45,11 @@ let activeMeetingHandler: ((event: RtcCaptionEvent | RtcChatEvent) => void) | nu
 // roster device events and the self name. Meeting-scoped (not the page-level roster
 // map) so names never bleed from a previous meeting in the same tab.
 let recordAttendee: ((name: string) => void) | null = null
+// Set by runMeeting; re-resolves the live transcript (speaker names resolve from
+// the roster at snapshot time) and pushes it to the panel. Called when a roster
+// device event arrives so a name learned mid-meeting shows up in the panel without
+// waiting for the next caption.
+let refreshTranscript: (() => void) | null = null
 
 // Optional debug trail. Like roster, the buffer lives for the whole tab; the
 // active meeting slices its own window out of it and flushes via onDebugEvent.
@@ -104,6 +109,7 @@ async function main(): Promise<void> {
       if (typeof parsed.deviceId === "string" && parsed.deviceId && typeof parsed.deviceName === "string" && parsed.deviceName) {
         roster.set(parsed.deviceId, parsed.deviceName)
         recordAttendee?.(parsed.deviceName)
+        refreshTranscript?.()
       }
       return
     }
@@ -263,6 +269,15 @@ async function runMeeting(tabId: number): Promise<void> {
   })
   panel.update(session.transcript)
 
+  // Re-resolve speaker names (they resolve from the roster at snapshot time) and
+  // push the fresh transcript to the panel. Invoked by the page-level roster
+  // handler so a name learned mid-meeting appears without waiting for a caption.
+  refreshTranscript = () => {
+    session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
+    panel.update(session.transcript)
+    writer.requestWrite()
+  }
+
   // Meet fills the real meeting name in with a delay.
   setTimeout(() => {
     if (ending) return
@@ -345,6 +360,7 @@ async function runMeeting(tabId: number): Promise<void> {
     // so a late debug event can't resurrect the session.
     activeMeetingHandler = null
     recordAttendee = null
+    refreshTranscript = null
     onDebugEvent = null
     controls.unmount()
     panel.unmount()
