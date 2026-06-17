@@ -80,8 +80,9 @@ export function formatMeetingText(meeting: Meeting): string {
         "Google shortened or rewrote already-typed text, plus the final version. Pure " +
         "left-to-right typing between these points is collapsed (losslessly: a dropped " +
         "frame is always a prefix of the next). For transcript-reconstruction agents, " +
-        "not human reading. The last line of each block is the text that appears in " +
-        "TRANSCRIPT above; earlier lines may contain words the final version dropped. " +
+        "not human reading. The last line of each block is the text that appears within " +
+        "the corresponding TRANSCRIPT block above; earlier lines may contain words the " +
+        "final version dropped. " +
         "Phrases that only grew, or never changed, are omitted.",
     )
     lines.push("")

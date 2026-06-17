@@ -254,6 +254,7 @@ async function runMeeting(tabId: number): Promise<void> {
   })
 
   const panel = mountTranscriptPanel()
+  panel.update(session.transcript)
 
   // Meet fills the real meeting name in with a delay.
   setTimeout(() => {
