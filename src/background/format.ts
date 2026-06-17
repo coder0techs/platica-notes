@@ -1,4 +1,5 @@
 import type { DebugEvent, Meeting } from "../shared/types"
+import { mergeUtterances } from "../shared/transcript"
 
 // Injected by esbuild's define at build time; typeof-guarded so vitest (which
 // does not define them) falls back to "dev" instead of throwing ReferenceError.
@@ -46,7 +47,7 @@ export function formatMeetingText(meeting: Meeting): string {
     }
   }
   lines.push("", "TRANSCRIPT", "----------", "")
-  for (const utterance of meeting.transcript) {
+  for (const utterance of mergeUtterances(meeting.transcript)) {
     lines.push(`${utterance.speaker} (${formatTimestamp(utterance.startedAt)}):`)
     lines.push(utterance.text)
     lines.push("")

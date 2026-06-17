@@ -117,6 +117,32 @@ describe("formatMeetingText", () => {
     const text = formatMeetingText(makeMeeting(withVersions))
     expect(text.indexOf("TRANSCRIPT")).toBeLessThan(text.indexOf("RAW CAPTION VERSIONS"))
   })
+
+  it("merges consecutive same-speaker utterances into a single block", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "Hello" },
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:05.000Z", text: "everyone here" },
+      ],
+    }))
+    const aliceHeaders = text.split("\n").filter((l) => /^Alice \(/.test(l))
+    expect(aliceHeaders).toHaveLength(1)
+    expect(text).toContain("Hello everyone here")
+  })
+
+  it("keeps an interruption as three ordered blocks (A-B-A)", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "first" },
+        { speaker: "Bob", startedAt: "2026-06-10T10:01:02.000Z", text: "interject" },
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:05.000Z", text: "second" },
+      ],
+    }))
+    const aliceHeaders = text.split("\n").filter((l) => /^Alice \(/.test(l))
+    expect(aliceHeaders).toHaveLength(2)
+    expect(text.indexOf("interject")).toBeGreaterThan(text.indexOf("first"))
+    expect(text.indexOf("second")).toBeGreaterThan(text.indexOf("interject"))
+  })
 })
 
 describe("collapseVersions", () => {
