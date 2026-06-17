@@ -13,7 +13,7 @@ export function mergeUtterances(utterances: Utterance[]): Utterance[] {
     const last = out[out.length - 1]
     const piece = utterance.text.trim()
     if (last && last.speaker === utterance.speaker) {
-      last.text = last.text ? (piece ? `${last.text} ${piece}` : last.text) : piece
+      if (piece) last.text = last.text ? `${last.text} ${piece}` : piece
     } else {
       out.push({ speaker: utterance.speaker, startedAt: utterance.startedAt, text: piece })
     }
