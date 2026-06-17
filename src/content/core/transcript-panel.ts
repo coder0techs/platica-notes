@@ -9,21 +9,21 @@ const SPEAKER_COLORS = ["#8ab4f8", "#81c995", "#fdd663", "#f28b82", "#c58af9", "
 
 const FONT = "'Google Sans',Roboto,system-ui,sans-serif"
 
-const PILL_CSS =
-  "position:fixed;right:16px;bottom:84px;z-index:2147483647;height:34px;" +
-  "display:flex;align-items:center;gap:6px;background:rgba(32,33,36,.92);color:#e8eaed;" +
-  "border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:0 14px;" +
-  `font:500 13px ${FONT};cursor:pointer;`
-
+// Floating card pinned to the right, in the top half of the screen by default
+// (top:60px, half-viewport height). The height is explicit (not content-driven) so
+// it does not grow as the transcript fills. The user can resize it from the
+// bottom-right corner (resize:both) and drag it by the header (startDrag freezes
+// the current size into top/left so it moves freely).
 const CARD_CSS =
-  "position:fixed;right:16px;bottom:84px;z-index:2147483647;width:320px;max-height:60vh;" +
+  "position:fixed;top:60px;right:16px;z-index:2147483647;width:360px;height:50vh;" +
+  "min-width:280px;min-height:200px;resize:both;" +
   "display:flex;flex-direction:column;background:rgba(32,33,36,.96);" +
   "border:1px solid rgba(255,255,255,.14);border-radius:12px;" +
   "box-shadow:0 6px 24px rgba(0,0,0,.4);overflow:hidden;"
 
 const HEADER_CSS =
   "flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;" +
-  "padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.1);"
+  "padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.1);cursor:move;user-select:none;"
 
 const CLOSE_CSS =
   "background:none;border:none;color:#9aa0a6;font-size:14px;line-height:1;cursor:pointer;padding:2px 6px;"
@@ -39,18 +39,24 @@ function formatClock(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
 /**
- * A self-contained floating transcript widget mounted bottom-right. Collapsed it
- * is a small "Transcript" pill; expanded it is a scrollable card showing the live,
- * merged transcript. It owns its own open/closed state and does not touch the
- * top-center meeting controls. Returns `update` (feed it the raw per-segment
- * transcript; it merges before rendering) and `unmount`.
+ * A floating, draggable transcript card showing the live, merged transcript. It
+ * is shown/hidden by an external toggle (the "Transcript" pill in the top-center
+ * meeting controls) via `toggle`/`setVisible`; `onVisibilityChange` lets that pill
+ * mirror the open/closed state. Feed `update` the raw per-segment transcript; the
+ * card merges before rendering. The card has a fixed height and can be dragged by
+ * its header out of the way of screen-share.
  */
-export function mountTranscriptPanel(): {
+export function mountTranscriptPanel(opts: { onVisibilityChange?: (visible: boolean) => void } = {}): {
   update(utterances: Utterance[]): void
+  toggle(): void
   unmount(): void
 } {
-  let expanded = false
+  let visible = false
   let latest: Utterance[] = []
   let stickToBottom = true
   let throttleTimer: number | null = null
@@ -66,12 +72,6 @@ export function mountTranscriptPanel(): {
     return color
   }
 
-  const pill = document.createElement("button")
-  pill.type = "button"
-  pill.textContent = "📄 Transcript"
-  pill.style.cssText = PILL_CSS
-  pill.addEventListener("click", () => setExpanded(true))
-
   const card = document.createElement("div")
   card.style.cssText = CARD_CSS
   card.style.display = "none"
@@ -80,12 +80,12 @@ export function mountTranscriptPanel(): {
   header.style.cssText = HEADER_CSS
   const title = document.createElement("span")
   title.textContent = "Transcript"
-  title.style.cssText = `color:#e8eaed;font:500 14px ${FONT};`
+  title.style.cssText = `color:#e8eaed;font:500 14px ${FONT};pointer-events:none;`
   const close = document.createElement("button")
   close.type = "button"
   close.textContent = "✕"
   close.style.cssText = CLOSE_CSS
-  close.addEventListener("click", () => setExpanded(false))
+  close.addEventListener("click", () => setVisible(false))
   header.append(title, close)
 
   const body = document.createElement("div")
@@ -107,26 +107,64 @@ export function mountTranscriptPanel(): {
   })
 
   card.append(header, body, jump)
-  document.documentElement.append(pill, card)
+  document.documentElement.append(card)
+
+  // --- dragging: grab the header to move the card. The first drag freezes the
+  // current top/bottom/right anchoring into explicit top/left + fixed size, then
+  // moves via left/top clamped to the viewport so the header stays reachable. ---
+  let dragOffsetX = 0
+  let dragOffsetY = 0
+
+  function onDragMove(event: MouseEvent): void {
+    const left = clamp(event.clientX - dragOffsetX, 0, window.innerWidth - card.offsetWidth)
+    const top = clamp(event.clientY - dragOffsetY, 0, window.innerHeight - card.offsetHeight)
+    card.style.left = `${left}px`
+    card.style.top = `${top}px`
+  }
+
+  function onDragEnd(): void {
+    document.removeEventListener("mousemove", onDragMove)
+    document.removeEventListener("mouseup", onDragEnd)
+  }
+
+  function startDrag(event: MouseEvent): void {
+    if (event.target === close) return
+    event.preventDefault()
+    const rect = card.getBoundingClientRect()
+    // Freeze the auto (top+bottom) height and right anchor into explicit values.
+    card.style.height = `${rect.height}px`
+    card.style.width = `${rect.width}px`
+    card.style.top = `${rect.top}px`
+    card.style.left = `${rect.left}px`
+    card.style.right = "auto"
+    card.style.bottom = "auto"
+    dragOffsetX = event.clientX - rect.left
+    dragOffsetY = event.clientY - rect.top
+    document.addEventListener("mousemove", onDragMove)
+    document.addEventListener("mouseup", onDragEnd)
+  }
+
+  header.addEventListener("mousedown", startDrag)
 
   function scrollToBottom(): void {
     body.scrollTop = body.scrollHeight
   }
 
   function updateJumpVisibility(): void {
-    jump.style.display = expanded && !stickToBottom ? "block" : "none"
+    jump.style.display = visible && !stickToBottom ? "block" : "none"
   }
 
-  function setExpanded(next: boolean): void {
-    expanded = next
+  function setVisible(next: boolean): void {
+    if (next === visible) return
+    visible = next
     card.style.display = next ? "flex" : "none"
-    pill.style.display = next ? "none" : "flex"
     if (next) {
       stickToBottom = true
       render()
       scrollToBottom()
       updateJumpVisibility()
     }
+    opts.onVisibilityChange?.(visible)
   }
 
   function render(): void {
@@ -149,9 +187,9 @@ export function mountTranscriptPanel(): {
   }
 
   // Leading-edge render, then a coalesced trailing render at most once per
-  // RERENDER_THROTTLE_MS while updates keep arriving. No work while collapsed.
+  // RERENDER_THROTTLE_MS while updates keep arriving. No work while hidden.
   function scheduleRender(): void {
-    if (!expanded) return
+    if (!visible) return
     if (throttleTimer !== null) {
       pending = true
       return
@@ -171,9 +209,12 @@ export function mountTranscriptPanel(): {
       latest = utterances
       scheduleRender()
     },
+    toggle(): void {
+      setVisible(!visible)
+    },
     unmount(): void {
       if (throttleTimer !== null) window.clearTimeout(throttleTimer)
-      pill.remove()
+      onDragEnd()
       card.remove()
     },
   }

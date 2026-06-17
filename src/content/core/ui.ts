@@ -41,14 +41,17 @@ const PILL_BG_HOVER = "rgba(60,64,67,.95)"
 
 /**
  * Per-meeting on-screen controls, mounted top-center as one cohesive native-looking
- * group: a caption-language select and a privacy toggle. Returns an unmount.
+ * group: a caption-language select, a transcript-panel toggle, and a privacy
+ * toggle. Returns `unmount` plus `setTranscriptActive` so the caller can mirror the
+ * panel's open/closed state on the toggle pill.
  */
 export function mountMeetingControls(opts: {
   initialLanguage: string
   initialPrivate: boolean
   onLanguageChange: (language: string) => void
   onPrivateChange: (isPrivate: boolean) => void
-}): () => void {
+  onToggleTranscript: () => void
+}): { unmount: () => void; setTranscriptActive: (active: boolean) => void } {
   const container = document.createElement("div")
   container.style.cssText =
     "position:fixed;top:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:2147483647;"
@@ -102,6 +105,25 @@ export function mountMeetingControls(opts: {
 
   langPill.append(langVisual, select)
 
+  // --- transcript pill: toggles the live transcript panel. Highlighted (purple)
+  // while the panel is open; the caller keeps this in sync via setTranscriptActive. ---
+  const TRANSCRIPT_BG_ACTIVE = "rgba(103,80,164,.95)"
+  let transcriptActive = false
+  const transcriptPill = document.createElement("button")
+  transcriptPill.type = "button"
+  transcriptPill.style.cssText = PILL_BASE
+  transcriptPill.textContent = "📄 Transcript"
+  transcriptPill.title = "Plática Notes: show/hide the live transcript panel"
+  const renderTranscript = () => {
+    transcriptPill.style.background = transcriptActive ? TRANSCRIPT_BG_ACTIVE : PILL_BG
+  }
+  transcriptPill.addEventListener("mouseenter", () => {
+    if (!transcriptActive) transcriptPill.style.background = PILL_BG_HOVER
+  })
+  transcriptPill.addEventListener("mouseleave", renderTranscript)
+  transcriptPill.addEventListener("click", () => { opts.onToggleTranscript() })
+  renderTranscript()
+
   // --- privacy pill: same dark style; the mode is conveyed by text color —
   // Public in red (goes to the synced folder), Private in green (local-only). ---
   let isPrivate = opts.initialPrivate
@@ -122,7 +144,13 @@ export function mountMeetingControls(opts: {
   })
   renderPrivacy()
 
-  container.append(langPill, privacyPill)
+  container.append(langPill, transcriptPill, privacyPill)
   document.documentElement.appendChild(container)
-  return () => container.remove()
+  return {
+    unmount: () => container.remove(),
+    setTranscriptActive: (active: boolean) => {
+      transcriptActive = active
+      renderTranscript()
+    },
+  }
 }

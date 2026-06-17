@@ -241,7 +241,7 @@ async function runMeeting(tabId: number): Promise<void> {
   }
   onDebugEvent()
 
-  const unmountControls = mountMeetingControls({
+  const controls = mountMeetingControls({
     initialLanguage: settings.captionLanguage,
     initialPrivate: session.isPrivate,
     onPrivateChange: (isPrivate) => {
@@ -251,9 +251,12 @@ async function runMeeting(tabId: number): Promise<void> {
     // Writes the global captionLanguage; the watchSettings listener picks up the
     // chrome.storage change and resubscribes the live caption stream.
     onLanguageChange: (language) => { void saveSettings({ captionLanguage: language }) },
+    onToggleTranscript: () => panel.toggle(),
   })
 
-  const panel = mountTranscriptPanel()
+  const panel = mountTranscriptPanel({
+    onVisibilityChange: (open) => controls.setTranscriptActive(open),
+  })
   panel.update(session.transcript)
 
   // Meet fills the real meeting name in with a delay.
@@ -340,7 +343,7 @@ async function runMeeting(tabId: number): Promise<void> {
     applySelfName = null
     recordAttendee = null
     onDebugEvent = null
-    unmountControls()
+    controls.unmount()
     panel.unmount()
     // Final snapshot resolves speaker names from the roster as it stands now,
     // and includes anything the flush wait above let land.
