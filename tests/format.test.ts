@@ -158,8 +158,16 @@ describe("collapseVersions", () => {
     expect(collapseVersions(["hello wrld", "hello world"])).toEqual(["hello wrld", "hello world"])
   })
 
-  it("keeps case/punctuation flicker — conservative, never assumes it is noise", () => {
+  it("keeps a case+punctuation change (repunctuation is a real revision, not pure case)", () => {
     expect(collapseVersions(["так", "Так."])).toEqual(["так", "Так."])
+  })
+
+  it("collapses pure case flicker, keeping the later casing", () => {
+    expect(collapseVersions(["так", "Так"])).toEqual(["Так"])
+  })
+
+  it("collapses a back-and-forth case flicker run to the final frame", () => {
+    expect(collapseVersions(["да", "Да", "да", "Да"])).toEqual(["Да"])
   })
 
   it("collapses a pure-growth chain down to just the final frame", () => {
@@ -170,14 +178,16 @@ describe("collapseVersions", () => {
     expect(collapseVersions(["only"])).toEqual(["only"])
   })
 
-  it("is lossless: every dropped frame is a verbatim prefix of the next frame", () => {
-    const chain = ["a", "ab", "abc", "abcd", "abc", "abce"]
+  it("is word-lossless: every dropped frame is a prefix of, or case-equal to, the next frame", () => {
+    const chain = ["a", "ab", "abc", "ABC", "abc d"]
     const kept = new Set(collapseVersions(chain))
     chain.forEach((v, i) => {
       if (!kept.has(v) && i < chain.length - 1) {
-        // A dropped frame must be fully reproduced by appending to it: the next
-        // frame starts with it, so no character of it is ever lost.
-        expect(chain[i + 1].startsWith(v)).toBe(true)
+        // A dropped frame's words are always reproduced in the next frame: either it
+        // is a verbatim prefix (next appended to it) or it is the same text ignoring
+        // case (only the casing differs). No word is ever lost.
+        const next = chain[i + 1]
+        expect(next.startsWith(v) || next.toLowerCase() === v.toLowerCase()).toBe(true)
       }
     })
   })

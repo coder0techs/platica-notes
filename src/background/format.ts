@@ -21,14 +21,21 @@ function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString("en-GB", TIME_FORMAT)
 }
 
-// Strips pure left-to-right typing from a caption's version history, keeping only
-// the revision points. A frame is dropped ONLY when it is a verbatim prefix of the
-// next frame (the next frame just appended to it) — so every character of a dropped
-// frame is reproduced later, making this provably lossless for reconstruction. Any
-// frame where text was shortened, rewritten mid-string, recased, or repunctuated is
-// NOT a prefix of its successor and is kept. The final frame is always kept.
+// Strips noise from a caption's version history, keeping only the revision points.
+// A frame is dropped ONLY when, relative to the next frame, it is either (a) a
+// verbatim prefix (the next frame just appended to it) or (b) the same text
+// ignoring case (Meet flickers the first letter's case back and forth on the same
+// words). In both cases every WORD of the dropped frame survives in the kept next
+// frame, so this stays word-lossless for reconstruction — only the casing of
+// intermediate frames is discarded. A frame where text was shortened, rewritten
+// mid-string, or repunctuated is neither, and is kept. The final frame is always
+// kept (so the canonical casing that appears in TRANSCRIPT survives).
 export function collapseVersions(versions: string[]): string[] {
-  return versions.filter((v, i) => i === versions.length - 1 || !versions[i + 1].startsWith(v))
+  return versions.filter((v, i) => {
+    if (i === versions.length - 1) return true
+    const next = versions[i + 1]
+    return !next.startsWith(v) && next.toLowerCase() !== v.toLowerCase()
+  })
 }
 
 export function formatMeetingText(meeting: Meeting): string {
@@ -78,11 +85,11 @@ export function formatMeetingText(meeting: Meeting): string {
     lines.push(
       "Machine-generated revision points of each caption: the form before each time " +
         "Google shortened or rewrote already-typed text, plus the final version. Pure " +
-        "left-to-right typing between these points is collapsed (losslessly: a dropped " +
-        "frame is always a prefix of the next). For transcript-reconstruction agents, " +
-        "not human reading. The last line of each block is the text that appears within " +
-        "the corresponding TRANSCRIPT block above; earlier lines may contain words the " +
-        "final version dropped. " +
+        "left-to-right typing and pure case flicker between these points is collapsed " +
+        "(word-losslessly: a dropped frame's words are always reproduced in the next). " +
+        "For transcript-reconstruction agents, not human reading. The last line of each " +
+        "block is the text that appears within the corresponding TRANSCRIPT block above; " +
+        "earlier lines may contain words the final version dropped. " +
         "Phrases that only grew, or never changed, are omitted.",
     )
     lines.push("")
