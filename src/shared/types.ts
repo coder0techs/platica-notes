@@ -38,6 +38,15 @@ export interface ActiveSession {
   participants: string[]
   /** Per-caption revision history. Rides alongside transcript so reload/orphan recovery keep it. */
   rawVersions?: CaptionHistory[]
+  /**
+   * Learned deviceId -> display name map and the local user's own name. Persisted
+   * so a mid-meeting page reload keeps resolving speaker names: Meet only streams
+   * the collections roster and fires GetUser at the initial join, not after a
+   * reload, so a resumed session must re-seed these or every speaker falls back to
+   * "Speaker N".
+   */
+  roster?: Record<string, string>
+  selfName?: string
   debug?: DebugEvent[]
 }
 

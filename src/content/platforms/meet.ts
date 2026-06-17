@@ -180,6 +180,14 @@ async function runMeeting(tabId: number): Promise<void> {
   const previous = await getLocal<ActiveSession>(sessionKey(tabId))
   const resumed = previous && previous.path === meetingPath ? previous : null
   if (resumed) dlog("resuming session after reload")
+  // A full page reload resets the page-level roster/selfName, but Meet only
+  // broadcasts the collections roster and fires GetUser at the initial join — not
+  // after a reload — so neither is re-delivered to the resumed session. Re-seed
+  // both from the snapshot, otherwise every speaker falls back to "Speaker N".
+  if (resumed) {
+    for (const [id, name] of Object.entries(resumed.roster ?? {})) roster.set(id, name)
+    if (!selfName && resumed.selfName) selfName = resumed.selfName
+  }
   const prefixTranscript = resumed ? resumed.transcript : []
   const prefixChat = resumed ? resumed.chat : []
   // Debug from a resumed snapshot is prepended, mirroring transcript/chat.
@@ -209,7 +217,9 @@ async function runMeeting(tabId: number): Promise<void> {
   applySelfName = (name) => feed.setSelfName(name)
   const writer = new SessionWriter<ActiveSession>(
     (snapshot) => setLocal({ [sessionKey(tabId)]: snapshot }),
-    () => session,
+    // Stamp the current page-level roster and self name into every persisted
+    // snapshot so a reload can re-seed them (see the resume block above).
+    () => ({ ...session, roster: Object.fromEntries(roster), selfName: selfName ?? undefined }),
   )
   writer.requestWrite()
 
