@@ -145,58 +145,38 @@ describe("RtcFeed chat harvests sender into roster", () => {
   })
 })
 
-describe("RtcFeed self name", () => {
-  it("resolves an unrostered transcript speaker to the self name", () => {
-    const feed = new RtcFeed()
-    feed.setSelfName("Grace Hopper")
+describe("RtcFeed local user resolution", () => {
+  // The local user's own deviceId -> name is seeded into the roster (from the
+  // UpdateMeetingDevice RPC) like any participant, so self resolves through the
+  // roster — the feed has no separate self-name path.
+  it("resolves the local user's lines via their roster entry", () => {
+    const roster = new Map([[ALICE, "Grace Hopper"]])
+    const feed = new RtcFeed(roster)
     feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
     expect(feed.transcriptSnapshot()[0].speaker).toBe("Grace Hopper")
   })
 
-  it("lets the roster win over the self name for a rostered device", () => {
-    const roster = new Map([[ALICE, "Alice García"]])
-    const feed = new RtcFeed(roster)
-    feed.setSelfName("Grace Hopper")
-    feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
-    expect(feed.transcriptSnapshot()[0].speaker).toBe("Alice García")
-  })
-
-  it("falls back to the deviceId tail when no self name is set", () => {
+  it("falls back to a stable per-device Speaker label when the roster has no entry", () => {
     const feed = new RtcFeed()
     feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
     expect(feed.transcriptSnapshot()[0].speaker).toBe("Speaker 1")
   })
 
-  it("ignores a blank self name", () => {
+  it("does not collapse two unrostered speakers onto one label", () => {
     const feed = new RtcFeed()
-    feed.setSelfName("   ")
-    feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
-    expect(feed.transcriptSnapshot()[0].speaker).toBe("Speaker 1")
-  })
-
-  it("does not label a not-yet-rostered remote as self (two unrostered speakers stay distinct)", () => {
-    // The bug: before a remote's roster entry arrives, both their device and the
-    // local user's device are unrostered. Attributing the self name to every
-    // unrostered device collapses two different people onto one name.
-    const feed = new RtcFeed()
-    feed.setSelfName("Grace Hopper")
     feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
     feed.handleCaption(caption(BOB, 2, 1, "Hi"), at)
     const speakers = feed.transcriptSnapshot().map((u) => u.speaker)
     expect(new Set(speakers).size).toBe(2)
-    expect(speakers).not.toContain("Grace Hopper")
   })
 
-  it("resolves self once every other speaker is rostered (sole remaining unrostered device is self)", () => {
+  it("resolves retroactively once the local device's name is seeded into the roster", () => {
     const roster = new Map<string, string>()
     const feed = new RtcFeed(roster)
-    feed.setSelfName("Grace Hopper")
-    feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at) // local user
-    feed.handleCaption(caption(BOB, 2, 1, "Hi"), at) // remote, roster still in flight
-    roster.set(BOB, "Bob García") // remote's roster entry arrives
-    const snap = feed.transcriptSnapshot()
-    expect(snap.find((u) => u.text === "Hi")!.speaker).toBe("Bob García")
-    expect(snap.find((u) => u.text === "Hello")!.speaker).toBe("Grace Hopper")
+    feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
+    expect(feed.transcriptSnapshot()[0].speaker).toBe("Speaker 1")
+    roster.set(ALICE, "Grace Hopper")
+    expect(feed.transcriptSnapshot()[0].speaker).toBe("Grace Hopper")
   })
 })
 

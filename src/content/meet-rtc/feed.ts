@@ -27,20 +27,14 @@ export class RtcFeed {
   private nextOrder = 0
   private chat = new ChatLog()
   private roster: Map<string, string>
-  // The local user's own display name (from the GetUser RPC). Meet never lists
-  // the local user in the collections roster, so a transcript deviceId absent
-  // from the roster is the local user and resolves to this name.
-  private selfName: string | null = null
 
   // The roster map can be shared with the caller (it streams from join time,
   // before a meeting's feed exists) — names then resolve retroactively at
-  // snapshot time without replaying device events into the feed.
+  // snapshot time without replaying device events into the feed. The local user's
+  // own deviceId → name is added to it like any participant (from the
+  // UpdateMeetingDevice RPC), so self resolves through the roster too.
   constructor(roster: Map<string, string> = new Map()) {
     this.roster = roster
-  }
-
-  setSelfName(name: string): void {
-    if (name && name.trim()) this.selfName = name
   }
 
   /** Returns true if the revision was accepted (not stale). */
@@ -85,18 +79,16 @@ export class RtcFeed {
   }
 
   transcriptSnapshot(): Utterance[] {
-    const selfDevice = this.selfDeviceId()
     return [...this.captions.values()]
       .sort((a, b) => a.order - b.order)
-      .map((c) => ({ speaker: this.speakerFor(c.deviceId, selfDevice), startedAt: c.startedAt, text: c.text }))
+      .map((c) => ({ speaker: this.speakerFor(c.deviceId), startedAt: c.startedAt, text: c.text }))
   }
 
   versionsSnapshot(): CaptionHistory[] {
-    const selfDevice = this.selfDeviceId()
     return [...this.captions.values()]
       .sort((a, b) => a.order - b.order)
       .map((c) => ({
-        speaker: this.speakerFor(c.deviceId, selfDevice),
+        speaker: this.speakerFor(c.deviceId),
         startedAt: c.startedAt,
         versions: [...c.versions],
       }))
@@ -106,32 +98,14 @@ export class RtcFeed {
     return this.chat.snapshot()
   }
 
-  // The local user is the one speaking device Meet never lists in the collections
-  // roster. We can only safely identify it when it is the SOLE unrostered speaker:
-  // while a remote's roster entry is still in flight there are several unrostered
-  // devices and we cannot tell which is self, so none is claimed (they stay distinct
-  // "Speaker N" labels and never collapse onto the self name). As the roster fills
-  // in, self becomes the last unrostered speaker and resolves to its real name.
-  // Recomputed per snapshot, so resolution corrects itself as the roster arrives.
-  private selfDeviceId(): string | null {
-    if (!this.selfName) return null
-    let candidate: string | null = null
-    for (const c of this.captions.values()) {
-      if (this.roster.has(c.deviceId)) continue
-      if (candidate === null) candidate = c.deviceId
-      else if (candidate !== c.deviceId) return null // more than one unrostered speaker
-    }
-    return candidate
-  }
-
-  private speakerFor(deviceId: string, selfDevice: string | null = this.selfDeviceId()): string {
-    // Precedence: roster wins (the real name for others, including names harvested
-    // from chat). Otherwise the local user, but only the device identified as self
-    // by selfDeviceId() — never every unrostered device, which would merge a
-    // not-yet-rostered remote into the local user's lines.
+  private speakerFor(deviceId: string): string {
+    // The roster is the single source of names — for remote participants and for
+    // the local user, whose own deviceId → name the caller seeds from the
+    // UpdateMeetingDevice RPC. A device with no roster entry yet falls back to a
+    // stable per-device label; the snapshot re-resolves, so it picks up the real
+    // name retroactively once the roster learns it.
     const name = this.roster.get(deviceId)
     if (name) return name
-    if (selfDevice !== null && deviceId === selfDevice) return this.selfName as string
     // Meet device ids look like spaces/<id>/devices/<n> — the tail is short and
     // stable enough to tell speakers apart when the roster has no entry (yet).
     const tail = deviceId.slice(deviceId.lastIndexOf("/") + 1)

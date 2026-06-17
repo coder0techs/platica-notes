@@ -112,6 +112,8 @@ function dispatch(event: RtcEvent): void {
 
 // Last self name dispatched, so we emit at most once per distinct name.
 let lastSelfName: string | null = null
+// Last local-device id dispatched (from UpdateMeetingDevice), same dedup intent.
+let lastSelfDeviceId: string | null = null
 
 // Strip non-base64 chars defensively, then decode to bytes. Returns null on
 // failure so the caller's try/catch stays simple.
@@ -134,6 +136,64 @@ function looksLikeName(s: string): boolean {
   if (s.startsWith("http")) return false
   if (s.includes("/")) return false
   return /\p{L}/u.test(s)
+}
+
+// Parse the UpdateMeetingDevice RPC body: a flat protobuf whose field 1 is the
+// local device's resource name (spaces/<id>/devices/<n>) and field 2 its display
+// name. This is the only place Meet hands us the local user's own deviceId → name
+// — self is never in the collections roster — so seeding it lets self resolve to a
+// real name like any participant instead of "Speaker N". Returns null on anything
+// unexpected; the caller is fully try/caught.
+function extractSelfDevice(bytes: Uint8Array): { deviceId: string; deviceName: string } | null {
+  const decoder = new TextDecoder("utf-8", { fatal: false })
+  let i = 0
+  let deviceId: string | null = null
+  let deviceName: string | null = null
+  while (i < bytes.length && (deviceId === null || deviceName === null)) {
+    let tag = 0
+    let shift = 0
+    let ok = false
+    while (i < bytes.length) {
+      const b = bytes[i++]
+      tag |= (b & 0x7f) << shift
+      if ((b & 0x80) === 0) { ok = true; break }
+      shift += 7
+      if (shift > 28) return null
+    }
+    if (!ok) return null
+    const field = tag >> 3
+    const wire = tag & 0x7
+    if (wire === 2) {
+      let len = 0
+      let s = 0
+      let lok = false
+      while (i < bytes.length) {
+        const b = bytes[i++]
+        len |= (b & 0x7f) << s
+        if ((b & 0x80) === 0) { lok = true; break }
+        s += 7
+        if (s > 28) return null
+      }
+      if (!lok || i + len > bytes.length) return null
+      const val = decoder.decode(bytes.subarray(i, i + len))
+      i += len
+      if (field === 1 && deviceId === null) deviceId = val
+      else if (field === 2 && deviceName === null) deviceName = val
+    } else if (wire === 0) {
+      while (i < bytes.length && (bytes[i] & 0x80) !== 0) i++
+      i++
+    } else if (wire === 1) {
+      i += 8
+    } else if (wire === 5) {
+      i += 4
+    } else {
+      return null
+    }
+  }
+  if (deviceId && deviceName && deviceId.includes("/devices/") && looksLikeName(deviceName)) {
+    return { deviceId, deviceName }
+  }
+  return null
 }
 
 // Protobuf-walk GetUser bytes and return the first name-like UTF-8 string,
@@ -540,6 +600,24 @@ function install(): boolean {
           }
         } catch (err) {
           record({ phase: "self-error", error: String(err) })
+        }
+      }
+      // Local-device resolution: the UpdateMeetingDevice RPC carries the local
+      // user's own deviceId → name (the one absent from the collections roster).
+      // Seed it as a normal roster device so self resolves to a real name. Runs
+      // regardless of debugEnabled; fully try/caught so it never throws into Meet.
+      if (url.endsWith("MeetingDeviceService/UpdateMeetingDevice")) {
+        try {
+          const text = new TextDecoder("utf-8").decode(bytes)
+          const decoded = base64ToBytes(text)
+          const self = decoded ? extractSelfDevice(decoded) : null
+          if (self && self.deviceId !== lastSelfDeviceId) {
+            lastSelfDeviceId = self.deviceId
+            dispatch({ type: "device", deviceId: self.deviceId, deviceName: self.deviceName })
+            record({ phase: "self-device", deviceId: self.deviceId, name: self.deviceName })
+          }
+        } catch (err) {
+          record({ phase: "self-device-error", error: String(err) })
         }
       }
       const lower = url.toLowerCase()
