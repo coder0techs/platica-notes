@@ -85,16 +85,18 @@ export class RtcFeed {
   }
 
   transcriptSnapshot(): Utterance[] {
+    const selfDevice = this.selfDeviceId()
     return [...this.captions.values()]
       .sort((a, b) => a.order - b.order)
-      .map((c) => ({ speaker: this.speakerFor(c.deviceId), startedAt: c.startedAt, text: c.text }))
+      .map((c) => ({ speaker: this.speakerFor(c.deviceId, selfDevice), startedAt: c.startedAt, text: c.text }))
   }
 
   versionsSnapshot(): CaptionHistory[] {
+    const selfDevice = this.selfDeviceId()
     return [...this.captions.values()]
       .sort((a, b) => a.order - b.order)
       .map((c) => ({
-        speaker: this.speakerFor(c.deviceId),
+        speaker: this.speakerFor(c.deviceId, selfDevice),
         startedAt: c.startedAt,
         versions: [...c.versions],
       }))
@@ -104,14 +106,32 @@ export class RtcFeed {
     return this.chat.snapshot()
   }
 
-  private speakerFor(deviceId: string): string {
-    // Precedence: roster wins (the real name for others, including names
-    // harvested from chat). Otherwise the local user — a deviceId absent from
-    // the roster is the local user, since Meet never rosters self; at the final
-    // snapshot all remote speakers are rostered, so only self stays unresolved.
+  // The local user is the one speaking device Meet never lists in the collections
+  // roster. We can only safely identify it when it is the SOLE unrostered speaker:
+  // while a remote's roster entry is still in flight there are several unrostered
+  // devices and we cannot tell which is self, so none is claimed (they stay distinct
+  // "Speaker N" labels and never collapse onto the self name). As the roster fills
+  // in, self becomes the last unrostered speaker and resolves to its real name.
+  // Recomputed per snapshot, so resolution corrects itself as the roster arrives.
+  private selfDeviceId(): string | null {
+    if (!this.selfName) return null
+    let candidate: string | null = null
+    for (const c of this.captions.values()) {
+      if (this.roster.has(c.deviceId)) continue
+      if (candidate === null) candidate = c.deviceId
+      else if (candidate !== c.deviceId) return null // more than one unrostered speaker
+    }
+    return candidate
+  }
+
+  private speakerFor(deviceId: string, selfDevice: string | null = this.selfDeviceId()): string {
+    // Precedence: roster wins (the real name for others, including names harvested
+    // from chat). Otherwise the local user, but only the device identified as self
+    // by selfDeviceId() — never every unrostered device, which would merge a
+    // not-yet-rostered remote into the local user's lines.
     const name = this.roster.get(deviceId)
     if (name) return name
-    if (this.selfName) return this.selfName
+    if (selfDevice !== null && deviceId === selfDevice) return this.selfName as string
     // Meet device ids look like spaces/<id>/devices/<n> — the tail is short and
     // stable enough to tell speakers apart when the roster has no entry (yet).
     const tail = deviceId.slice(deviceId.lastIndexOf("/") + 1)

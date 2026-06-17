@@ -173,6 +173,31 @@ describe("RtcFeed self name", () => {
     feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
     expect(feed.transcriptSnapshot()[0].speaker).toBe("Speaker 1")
   })
+
+  it("does not label a not-yet-rostered remote as self (two unrostered speakers stay distinct)", () => {
+    // The bug: before a remote's roster entry arrives, both their device and the
+    // local user's device are unrostered. Attributing the self name to every
+    // unrostered device collapses two different people onto one name.
+    const feed = new RtcFeed()
+    feed.setSelfName("Grace Hopper")
+    feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
+    feed.handleCaption(caption(BOB, 2, 1, "Hi"), at)
+    const speakers = feed.transcriptSnapshot().map((u) => u.speaker)
+    expect(new Set(speakers).size).toBe(2)
+    expect(speakers).not.toContain("Grace Hopper")
+  })
+
+  it("resolves self once every other speaker is rostered (sole remaining unrostered device is self)", () => {
+    const roster = new Map<string, string>()
+    const feed = new RtcFeed(roster)
+    feed.setSelfName("Grace Hopper")
+    feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at) // local user
+    feed.handleCaption(caption(BOB, 2, 1, "Hi"), at) // remote, roster still in flight
+    roster.set(BOB, "Bob García") // remote's roster entry arrives
+    const snap = feed.transcriptSnapshot()
+    expect(snap.find((u) => u.text === "Hi")!.speaker).toBe("Bob García")
+    expect(snap.find((u) => u.text === "Hello")!.speaker).toBe("Grace Hopper")
+  })
 })
 
 describe("RtcFeed shared roster", () => {
