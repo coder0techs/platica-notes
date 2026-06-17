@@ -20,7 +20,10 @@ Everything is decoded in the page and kept on your machine.
 
 ## Features
 
-- Live transcript + in-meeting chat, saved as a `.md` per meeting.
+- Live transcript + in-meeting chat, saved as a `.md` per meeting; consecutive
+  lines from one speaker are merged into a single block for readability.
+- **In-meeting transcript panel** — a floating, scrollable live transcript inside
+  the Meet window, so you can scroll back and re-read without leaving the call.
 - Full caption revision history appended at the bottom (`RAW CAPTION VERSIONS`):
   every distinct version Google streamed, so an agent can recover words the
   final caption dropped. Machine artifact, not for human reading.
