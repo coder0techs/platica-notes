@@ -78,6 +78,20 @@ npm run typecheck  # tsc --noEmit
 Load `dist/` as an unpacked extension (`chrome://extensions` →
 "Load unpacked", or `arc://extensions` in Arc). Reload it after each build.
 
+### Building for the Chrome Web Store
+
+```bash
+npm ci             # install the exact locked dependency tree
+npm run package    # typecheck + test + build, then zip dist/ for upload
+```
+
+`npm run package` gates on a clean typecheck and a green test run, rebuilds
+`dist/` from source, and writes `platica-notes-<version>.zip` whose root is the
+contents of `dist/` (with `manifest.json` at the top level, as the store
+requires). Upload that zip in the Developer Dashboard. Package from a clean,
+tagged commit so the build stamp (`version_name`) is not marked `-dirty`.
+Node 20+ is recommended; the build is deterministic and needs no network.
+
 ## Architecture
 
 Three contexts, split by responsibility:
