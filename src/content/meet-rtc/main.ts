@@ -560,7 +560,6 @@ function handleCaptions(bytes: Uint8Array): void {
     messageId: m.messageId,
     messageVersion: m.messageVersion,
     text: m.text,
-    langId: m.langId,
   })
 }
 
@@ -757,9 +756,10 @@ function install(): boolean {
   // untouched; only the logging is conditional (record() drops when debug off).
   // Every wrapper is fully try/caught so it can never throw into Meet's request.
 
-  // Apply a noise filter, then record matching responses through record(). Use a
-  // 600-byte hex window (vs 160 for channels) since RPC bodies are bigger and the
-  // self-device name may be nested deep.
+  // Parse the three name RPCs (always), then — only when the debug log is on —
+  // record other matching responses through record() with the FULL body hex
+  // (RPC bodies are bigger than channel messages and the self-device name may be
+  // nested deep, so the diagnostic keeps the whole body rather than a window).
   function logRpc(method: string, url: string, status: number, bytes: Uint8Array): void {
     try {
       if (!url.includes("meet.google.com")) return

@@ -48,7 +48,17 @@ const next =
 
 pkg.version = next
 writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n")
-sh("git add package.json")
+
+// Keep the committed manifest version in lockstep with package.json so the
+// source-of-truth manifest is never stale (build.mjs also stamps the dist copy,
+// but the committed public/manifest.json should match the tag too — a reviewer
+// reading the source, or anyone Load-unpacking public/, must see the real version).
+const manifestPath = "public/manifest.json"
+const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
+manifest.version = next
+writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n")
+
+sh("git add package.json public/manifest.json")
 sh(`git commit -m "chore(release): v${next}"`)
 sh(`git tag v${next}`)
 console.log(`${pkg.name}: ${maj}.${min}.${pat} → ${next} (${level}, ${subjects.length} commits) — tagged v${next}`)

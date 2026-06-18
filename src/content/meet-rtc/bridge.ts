@@ -25,7 +25,6 @@ export interface RtcCaptionEvent {
   messageId: number
   messageVersion: number
   text: string
-  langId?: number
 }
 
 // No timestamp here: Meet's wire timestamp unit is unverified, so the adapter

@@ -1,5 +1,5 @@
 import type { ActiveSession, DebugEvent, Meeting } from "../shared/types"
-import { getLocal, getSettings, removeLocal, sessionKey, setLocal } from "../shared/storage"
+import { getLocal, getSettings, removeLocal, sessionKey, setLocal, tabIdFromSessionKey } from "../shared/storage"
 import { addMeeting, addPendingExport, enqueue } from "./store"
 
 const finalizing = new Set<number>()
@@ -91,9 +91,8 @@ export async function recoverOrphanSessions(): Promise<FinalizeResult[]> {
   const all = await chrome.storage.local.get(null)
   const recovered: FinalizeResult[] = []
   for (const key of Object.keys(all)) {
-    const match = key.match(/^session_(\d+)$/)
-    if (!match) continue
-    const tabId = Number(match[1])
+    const tabId = tabIdFromSessionKey(key)
+    if (tabId === null) continue
     // Only finalize when the tab is *confirmably* gone. chrome.tabs.get rejects
     // with "No tab with id" for a closed tab — but a transient rejection during
     // SW teardown must NOT be read as "dead", or we would finalize a meeting that

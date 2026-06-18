@@ -29,13 +29,6 @@ export function addMeeting(meeting: Meeting, limit: number): Promise<void> {
   })
 }
 
-export function updateMeeting(id: string, patch: Partial<Meeting>): Promise<void> {
-  return enqueue(async () => {
-    const meetings = await listMeetings()
-    await setLocal({ meetings: meetings.map(m => (m.id === id ? { ...m, ...patch } : m)) })
-  })
-}
-
 export function deleteMeeting(id: string): Promise<void> {
   return enqueue(async () => {
     const meetings = await listMeetings()

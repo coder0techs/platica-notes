@@ -71,7 +71,6 @@ function buildTranscriptMessage(opts: {
   messageId?: number
   messageVersion?: number
   text?: string
-  langId?: number
   extraField?: boolean
 }): number[] {
   const out: number[] = []
@@ -79,7 +78,6 @@ function buildTranscriptMessage(opts: {
   if (opts.messageId !== undefined) { tagBytes(2, 0, out); writeVarint(opts.messageId, out) }
   if (opts.messageVersion !== undefined) { tagBytes(3, 0, out); writeVarint(opts.messageVersion, out) }
   if (opts.text !== undefined) lenField(6, strBytes(opts.text), out)
-  if (opts.langId !== undefined) { tagBytes(8, 0, out); writeVarint(opts.langId, out) }
   // unknown extra field (field 99, wire 0, value 42)
   if (opts.extraField) { tagBytes(99, 0, out); writeVarint(42, out) }
   return out
@@ -102,7 +100,6 @@ describe("decodeTranscriptWrapper", () => {
       messageId: 42,
       messageVersion: 1,
       text: "Hello world",
-      langId: 7,
     })
     const result = decodeTranscriptWrapper(buildTranscriptWrapper(inner))
     expect(result).not.toBeNull()
@@ -110,7 +107,6 @@ describe("decodeTranscriptWrapper", () => {
     expect(result!.messageId).toBe(42)
     expect(result!.messageVersion).toBe(1)
     expect(result!.text).toBe("Hello world")
-    expect(result!.langId).toBe(7)
   })
 
   it("returns null when field 2 (unknown2) is present", () => {

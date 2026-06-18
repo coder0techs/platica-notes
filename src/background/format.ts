@@ -98,10 +98,17 @@ export function formatMeetingText(meeting: Meeting): string {
   return lines.join("\n")
 }
 
+// Cap the per-segment length so a pathological multi-KB meeting title cannot
+// produce a filename the OS rejects. 120 chars leaves room for the date stamp
+// and extension well under the common ~255-byte filename limit.
+const MAX_NAME_LEN = 120
+
 export function sanitizeFileName(name: string): string {
   const cleaned = name
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
     .replace(/^[.\s]+|[.\s]+$/g, "")
+    .slice(0, MAX_NAME_LEN)
+    .replace(/[.\s]+$/, "") // re-trim: the slice may have ended on a dot/space
   return cleaned || "Meeting"
 }
 

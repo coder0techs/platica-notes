@@ -27,4 +27,12 @@ export async function saveSettings(patch: Partial<Settings>): Promise<void> {
   await chrome.storage.sync.set({ settings: { ...current, ...patch } })
 }
 
-export const sessionKey = (tabId: number): string => `session_${tabId}`
+// One place owns the session-key format, so the builder and the orphan-recovery
+// parser can never drift (a silent drift would break crash recovery unnoticed).
+export const SESSION_KEY_PREFIX = "session_"
+export const sessionKey = (tabId: number): string => `${SESSION_KEY_PREFIX}${tabId}`
+export function tabIdFromSessionKey(key: string): number | null {
+  if (!key.startsWith(SESSION_KEY_PREFIX)) return null
+  const rest = key.slice(SESSION_KEY_PREFIX.length)
+  return /^\d+$/.test(rest) ? Number(rest) : null
+}

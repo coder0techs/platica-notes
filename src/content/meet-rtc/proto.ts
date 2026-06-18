@@ -12,7 +12,6 @@ export interface Transcript {
   messageId?: number
   messageVersion?: number
   text?: string
-  langId?: number
 }
 
 export interface ChatPayload {
@@ -116,7 +115,6 @@ function decodeTranscriptMessage(buf: Uint8Array, start: number, end: number): T
     else if (field === 2 && wire === 0) out.messageId = readVarint(c)
     else if (field === 3 && wire === 0) out.messageVersion = readVarint(c)
     else if (field === 6 && wire === 2) out.text = readString(c)
-    else if (field === 8 && wire === 0) out.langId = readVarint(c)
     else skip(c, wire)
   }
   return out
