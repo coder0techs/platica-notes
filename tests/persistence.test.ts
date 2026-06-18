@@ -109,6 +109,18 @@ describe("SessionWriter", () => {
     expect(writes[1]).toBeGreaterThan(writes[0])
   })
 
+  it("close() makes subsequent requestWrite a no-op (no session-key resurrection)", async () => {
+    const writes: number[] = []
+    const writer = makeWriter(writes)
+    await writer.writeNow()
+    const countAfterWriteNow = writes.length
+    writer.close()
+
+    writer.requestWrite() // a late/stray request after teardown
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(writes).toHaveLength(countAfterWriteNow) // nothing more was written
+  })
+
   it("writeNow cancels an armed trailing write so no extra write fires after", async () => {
     const writes: number[] = []
     const writer = makeWriter(writes)

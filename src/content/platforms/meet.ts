@@ -278,8 +278,9 @@ async function runMeeting(tabId: number): Promise<void> {
     writer.requestWrite()
   }
 
-  // Meet fills the real meeting name in with a delay.
-  setTimeout(() => {
+  // Meet fills the real meeting name in with a delay. Cleared in endMeeting so a
+  // short meeting (<7s) leaves no stray timer firing after teardown.
+  const titleTimer = setTimeout(() => {
     if (ending) return
     session.title = readMeetingTitle()
     writer.requestWrite()
@@ -350,6 +351,7 @@ async function runMeeting(tabId: number): Promise<void> {
     // Stop the end-detection machinery first so neither the poller nor a
     // residual leave click can re-enter during the flush wait below.
     clearInterval(endWatcher)
+    clearTimeout(titleTimer)
     document.removeEventListener("click", onDocumentClick, true)
     // Leave the page-level RTC routing attached and wait: Meet keeps streaming
     // the final caption revision for a couple of seconds after Leave (same
@@ -378,6 +380,9 @@ async function runMeeting(tabId: number): Promise<void> {
     // final snapshot. Stays undefined when disabled — no behavioural change.
     if (debugEnabled) session.debug = [...prefixDebug, ...debugEvents.slice(debugStart)]
     await writer.writeNow()
+    // Seal the writer: any late event/timer must not re-create the session key
+    // the background is about to clean up in meetingEnded.
+    writer.close()
     const response = await sendToBackground({ kind: "meetingEnded" })
     if (!response.ok) {
       console.error("[platica-notes] finalize failed:", response.error)

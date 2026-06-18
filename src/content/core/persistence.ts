@@ -1,6 +1,7 @@
 export class SessionWriter<T> {
   private timer: ReturnType<typeof setTimeout> | null = null
   private pending = false
+  private closed = false
   private chain: Promise<void> = Promise.resolve()
 
   constructor(
@@ -10,6 +11,10 @@ export class SessionWriter<T> {
   ) {}
 
   requestWrite(): void {
+    // Once closed (after the final writeNow at meeting end), ignore late writes:
+    // a stray debounce or out-of-band event must not re-create the session key
+    // the background just cleaned up.
+    if (this.closed) return
     if (this.timer) {
       this.pending = true
       return
@@ -32,6 +37,16 @@ export class SessionWriter<T> {
     }
     this.pending = false
     await this.enqueueWrite()
+  }
+
+  /** Seal the writer: after this, requestWrite() is a no-op. Call once, after the final writeNow. */
+  close(): void {
+    this.closed = true
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+    this.pending = false
   }
 
   /** Writes are serialized so an older snapshot can never overwrite a newer one. */

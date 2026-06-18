@@ -42,3 +42,30 @@ export function deleteMeeting(id: string): Promise<void> {
     await setLocal({ meetings: meetings.filter(m => m.id !== id) })
   })
 }
+
+// "Pending export" tracks meetings that were committed to the history store but
+// whose .md file has not been confirmed written. finalizeSession marks a meeting
+// pending before it hands the result to the downloader; the downloader clears it
+// only after chrome.downloads succeeds. On every service-worker start the
+// background re-exports anything still pending — so an SW eviction between commit
+// and download can no longer silently skip the auto-export. (The transcript was
+// never at risk; it lives in the history store and is re-downloadable by hand.)
+const PENDING_EXPORTS_KEY = "pendingExports"
+
+export async function listPendingExports(): Promise<string[]> {
+  return (await getLocal<string[]>(PENDING_EXPORTS_KEY)) ?? []
+}
+
+export function addPendingExport(id: string): Promise<void> {
+  return enqueue(async () => {
+    const ids = (await getLocal<string[]>(PENDING_EXPORTS_KEY)) ?? []
+    if (!ids.includes(id)) await setLocal({ [PENDING_EXPORTS_KEY]: [...ids, id] })
+  })
+}
+
+export function clearPendingExport(id: string): Promise<void> {
+  return enqueue(async () => {
+    const ids = (await getLocal<string[]>(PENDING_EXPORTS_KEY)) ?? []
+    await setLocal({ [PENDING_EXPORTS_KEY]: ids.filter(x => x !== id) })
+  })
+}

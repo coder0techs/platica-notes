@@ -1,6 +1,6 @@
 import type { ActiveSession, DebugEvent, Meeting } from "../shared/types"
 import { getLocal, getSettings, removeLocal, sessionKey, setLocal } from "../shared/storage"
-import { addMeeting, enqueue } from "./store"
+import { addMeeting, addPendingExport, enqueue } from "./store"
 
 const finalizing = new Set<number>()
 
@@ -73,6 +73,9 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
     }
     const settings = await getSettings()
     await addMeeting(meeting, settings.retentionLimit)
+    // Mark it for export BEFORE removing the session key / returning, so a crash
+    // before the caller's download still leaves a trail for SW-start recovery.
+    await addPendingExport(meeting.id)
     await removeLocal(sessionKey(tabId))
     // Untrack only after the session key is gone — a failed finalization must
     // keep the tab tracked so the update-deferral guard still sees it.
@@ -91,8 +94,16 @@ export async function recoverOrphanSessions(): Promise<FinalizeResult[]> {
     const match = key.match(/^session_(\d+)$/)
     if (!match) continue
     const tabId = Number(match[1])
-    const tabAlive = await chrome.tabs.get(tabId).then(() => true, () => false)
-    if (!tabAlive) {
+    // Only finalize when the tab is *confirmably* gone. chrome.tabs.get rejects
+    // with "No tab with id" for a closed tab — but a transient rejection during
+    // SW teardown must NOT be read as "dead", or we would finalize a meeting that
+    // is still running (the session key gets recreated by the live content
+    // script → a split/duplicate meeting, the phantom class fought before).
+    const tabGone = await chrome.tabs.get(tabId).then(
+      () => false,
+      (err: unknown) => /no tab with id/i.test(err instanceof Error ? err.message : String(err)),
+    )
+    if (tabGone) {
       const result = await finalizeSession(tabId)
       if (result) recovered.push(result)
     }
