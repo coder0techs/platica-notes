@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { isNearBottom, mergeUtterances } from "../src/shared/transcript"
-import type { Utterance } from "../src/shared/types"
+import { isNearBottom, mergeTimeline, mergeUtterances } from "../src/shared/transcript"
+import type { ChatMessage, Utterance } from "../src/shared/types"
 
 const u = (speaker: string, startedAt: string, text: string): Utterance => ({ speaker, startedAt, text })
+const cm = (sender: string, sentAt: string, text: string): ChatMessage => ({ sender, sentAt, text })
 
 describe("mergeUtterances", () => {
   it("merges consecutive same-speaker utterances into one block joined by spaces", () => {
@@ -65,6 +66,60 @@ describe("mergeUtterances", () => {
       u("Alice", "2026-06-10T10:01:01.000Z", "  "),
     ])
     expect(out).toEqual([u("Alice", "2026-06-10T10:01:00.000Z", "")])
+  })
+})
+
+describe("mergeTimeline", () => {
+  it("interleaves speech and chat in chronological order", () => {
+    const out = mergeTimeline(
+      [
+        u("Alice", "2026-06-10T10:01:00.000Z", "morning"),
+        u("Alice", "2026-06-10T10:03:00.000Z", "as I said"),
+      ],
+      [cm("Bob", "2026-06-10T10:02:00.000Z", "here is the link")],
+    )
+    expect(out.map((e) => [e.kind, e.speaker, e.at])).toEqual([
+      ["speech", "Alice", "2026-06-10T10:01:00.000Z"],
+      ["chat", "Bob", "2026-06-10T10:02:00.000Z"],
+      ["speech", "Alice", "2026-06-10T10:03:00.000Z"],
+    ])
+  })
+
+  it("keeps chat as its own entry — never merged into a speaker's speech", () => {
+    const out = mergeTimeline(
+      [u("Alice", "2026-06-10T10:01:00.000Z", "hi")],
+      [cm("Alice", "2026-06-10T10:01:30.000Z", "(see chat)")],
+    )
+    expect(out).toHaveLength(2)
+    expect(out[1]).toEqual({ kind: "chat", speaker: "Alice", text: "(see chat)", at: "2026-06-10T10:01:30.000Z" })
+  })
+
+  it("orders speech before chat at the same instant", () => {
+    const out = mergeTimeline(
+      [u("Alice", "2026-06-10T10:01:00.000Z", "look")],
+      [cm("Alice", "2026-06-10T10:01:00.000Z", "https://x")],
+    )
+    expect(out.map((e) => e.kind)).toEqual(["speech", "chat"])
+  })
+
+  it("collapses consecutive same-speaker speech before interleaving", () => {
+    const out = mergeTimeline(
+      [
+        u("Alice", "2026-06-10T10:01:00.000Z", "one"),
+        u("Alice", "2026-06-10T10:01:05.000Z", "two"),
+      ],
+      [],
+    )
+    expect(out).toEqual([{ kind: "speech", speaker: "Alice", text: "one two", at: "2026-06-10T10:01:00.000Z" }])
+  })
+
+  it("returns only chat when there is no transcript", () => {
+    const out = mergeTimeline([], [cm("Bob", "2026-06-10T10:00:00.000Z", "hello")])
+    expect(out).toEqual([{ kind: "chat", speaker: "Bob", text: "hello", at: "2026-06-10T10:00:00.000Z" }])
+  })
+
+  it("returns an empty array when both inputs are empty", () => {
+    expect(mergeTimeline([], [])).toEqual([])
   })
 })
 

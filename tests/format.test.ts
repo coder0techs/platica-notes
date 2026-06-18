@@ -29,8 +29,8 @@ describe("formatMeetingText", () => {
     expect(text).toContain("Bob")
   })
 
-  it("omits the chat section when there are no messages", () => {
-    expect(formatMeetingText(makeMeeting())).not.toContain("CHAT")
+  it("shows no chat marker when there are no messages", () => {
+    expect(formatMeetingText(makeMeeting())).not.toContain("(chat)")
   })
 
   it("appends a build-stamp footer (dev fallback under vitest, no globals defined)", () => {
@@ -40,12 +40,16 @@ describe("formatMeetingText", () => {
     expect(text.trimEnd().endsWith("— Plática Notes dev (dev)")).toBe(true)
   })
 
-  it("renders chat messages when present", () => {
+  it("interleaves chat into the transcript, tagged (chat), in time order", () => {
     const text = formatMeetingText(makeMeeting({
       chat: [{ sender: "Bob", sentAt: "2026-06-10T10:05:00.000Z", text: "see link" }],
     }))
-    expect(text).toContain("CHAT")
+    expect(text).toContain("Bob (chat)")
     expect(text).toContain("see link")
+    // No separate CHAT section header anymore — it lives in the timeline.
+    expect(text).not.toContain("\nCHAT\n")
+    // Chat at 10:05 sorts after the last speech line at 10:02.
+    expect(text.indexOf("see link")).toBeGreaterThan(text.indexOf("Hi Alice"))
   })
 
   it("omits the PARTICIPANTS section when the list is empty", () => {

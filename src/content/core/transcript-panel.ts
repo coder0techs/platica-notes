@@ -1,5 +1,5 @@
-import type { Utterance } from "../../shared/types"
-import { isNearBottom, mergeUtterances } from "../../shared/transcript"
+import type { ChatMessage, Utterance } from "../../shared/types"
+import { isNearBottom, mergeTimeline } from "../../shared/transcript"
 
 const RERENDER_THROTTLE_MS = 400
 
@@ -44,20 +44,22 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * A floating, draggable transcript card showing the live, merged transcript. It
- * is shown/hidden by an external toggle (the "Transcript" pill in the top-center
+ * A floating, draggable transcript card showing the live meeting timeline —
+ * speech and chat interleaved chronologically, chat tagged "(chat)". It is
+ * shown/hidden by an external toggle (the "Transcript" pill in the top-center
  * meeting controls) via `toggle`/`setVisible`; `onVisibilityChange` lets that pill
- * mirror the open/closed state. Feed `update` the raw per-segment transcript; the
- * card merges before rendering. The card has a fixed height and can be dragged by
- * its header out of the way of screen-share.
+ * mirror the open/closed state. Feed `update` the raw per-segment transcript and
+ * the chat log; the card merges before rendering. The card has a fixed height and
+ * can be dragged by its header out of the way of screen-share.
  */
 export function mountTranscriptPanel(opts: { onVisibilityChange?: (visible: boolean) => void } = {}): {
-  update(utterances: Utterance[]): void
+  update(transcript: Utterance[], chat: ChatMessage[]): void
   toggle(): void
   unmount(): void
 } {
   let visible = false
-  let latest: Utterance[] = []
+  let latestTranscript: Utterance[] = []
+  let latestChat: ChatMessage[] = []
   let stickToBottom = true
   let throttleTimer: number | null = null
   let pending = false
@@ -168,18 +170,20 @@ export function mountTranscriptPanel(opts: { onVisibilityChange?: (visible: bool
   }
 
   function render(): void {
-    const merged = mergeUtterances(latest)
+    const timeline = mergeTimeline(latestTranscript, latestChat)
     body.replaceChildren()
-    for (const utterance of merged) {
+    for (const entry of timeline) {
       const block = document.createElement("div")
       block.style.cssText = "margin-bottom:12px;"
       const head = document.createElement("div")
-      head.style.cssText = `color:${colorFor(utterance.speaker)};font:500 12px ${FONT};margin-bottom:2px;`
-      head.textContent = `${utterance.speaker} ${formatClock(utterance.startedAt)}`
+      head.style.cssText = `color:${colorFor(entry.speaker)};font:500 12px ${FONT};margin-bottom:2px;`
+      // Chat is tagged so a pasted line is never mistaken for something said aloud.
+      const label = entry.kind === "chat" ? `${entry.speaker} (chat)` : entry.speaker
+      head.textContent = `${label} ${formatClock(entry.at)}`
       const text = document.createElement("div")
       text.style.cssText =
         "color:#e8eaed;font:400 13px/1.5 Roboto,system-ui,sans-serif;white-space:pre-wrap;overflow-wrap:anywhere;"
-      text.textContent = utterance.text
+      text.textContent = entry.text
       block.append(head, text)
       body.append(block)
     }
@@ -205,8 +209,9 @@ export function mountTranscriptPanel(opts: { onVisibilityChange?: (visible: bool
   }
 
   return {
-    update(utterances: Utterance[]): void {
-      latest = utterances
+    update(transcript: Utterance[], chat: ChatMessage[]): void {
+      latestTranscript = transcript
+      latestChat = chat
       scheduleRender()
     },
     toggle(): void {

@@ -1,5 +1,5 @@
 import type { DebugEvent, Meeting } from "../shared/types"
-import { mergeUtterances } from "../shared/transcript"
+import { mergeTimeline } from "../shared/transcript"
 
 // Injected by esbuild's define at build time; typeof-guarded so vitest (which
 // does not define them) falls back to "dev" instead of throwing ReferenceError.
@@ -53,21 +53,15 @@ export function formatMeetingText(meeting: Meeting): string {
       lines.push(name)
     }
   }
+  // Speech and chat share one chronological TRANSCRIPT, chat tagged "(chat)" — the
+  // same interleaving the live panel shows. RAW CAPTION VERSIONS below stays
+  // transcript-only.
   lines.push("", "TRANSCRIPT", "----------", "")
-  for (const utterance of mergeUtterances(meeting.transcript)) {
-    lines.push(`${utterance.speaker} (${formatTimestamp(utterance.startedAt)}):`)
-    lines.push(utterance.text)
+  for (const entry of mergeTimeline(meeting.transcript, meeting.chat)) {
+    const label = entry.kind === "chat" ? `${entry.speaker} (chat)` : entry.speaker
+    lines.push(`${label} (${formatTimestamp(entry.at)}):`)
+    lines.push(entry.text)
     lines.push("")
-  }
-  if (meeting.chat.length > 0) {
-    lines.push("CHAT")
-    lines.push("----")
-    lines.push("")
-    for (const message of meeting.chat) {
-      lines.push(`${message.sender} (${formatTimestamp(message.sentAt)}):`)
-      lines.push(message.text)
-      lines.push("")
-    }
   }
   // Machine-readable revision history for transcript-reconstruction agents.
   // Collapse pure left-to-right typing (see collapseVersions) so only revision

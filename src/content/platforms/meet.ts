@@ -267,14 +267,14 @@ async function runMeeting(tabId: number): Promise<void> {
   const panel = mountTranscriptPanel({
     onVisibilityChange: (open) => controls.setTranscriptActive(open),
   })
-  panel.update(session.transcript)
+  panel.update(session.transcript, session.chat)
 
   // Re-resolve speaker names (they resolve from the roster at snapshot time) and
   // push the fresh transcript to the panel. Invoked by the page-level roster
   // handler so a name learned mid-meeting appears without waiting for a caption.
   refreshTranscript = () => {
     session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
-    panel.update(session.transcript)
+    panel.update(session.transcript, session.chat)
     writer.requestWrite()
   }
 
@@ -295,13 +295,17 @@ async function runMeeting(tabId: number): Promise<void> {
       }
       session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
       session.rawVersions = [...prefixRawVersions, ...feed.versionsSnapshot()]
-      panel.update(session.transcript)
+      panel.update(session.transcript, session.chat)
       writer.requestWrite()
       pulseActivity()
     } else if (event.type === "chat") {
       if (!feed.handleChat(event, new Date().toISOString())) return
       session.chat = [...prefixChat, ...feed.chatSnapshot()]
+      // Chat now shares the live timeline, so reflect it in the panel (and pulse)
+      // exactly like a caption.
+      panel.update(session.transcript, session.chat)
       writer.requestWrite()
+      pulseActivity()
     }
     // Unknown event types from future bridge versions are silently ignored.
   }
