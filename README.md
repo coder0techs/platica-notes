@@ -54,7 +54,8 @@ Files land in your Downloads folder:
 Sync `Downloads/Platica Notes/` with your own tooling (e.g. Google Drive for
 desktop, rsync). Keep `Platica Notes private/` **and** `Platica Logs/` out of the
 synced folder — the private folder holds meetings you chose not to sync, and the
-debug logs embed the full transcript regardless of the privacy flag.
+debug logs embed the full transcript. Meetings marked **private are excluded from
+the debug log** entirely, so the privacy flag is honored on every output path.
 
 ## Settings (popup)
 
@@ -63,7 +64,7 @@ debug logs embed the full transcript regardless of the privacy flag.
 - **Private by default** — new meetings start private (route to the private
   folder).
 - **Debug log** — write a full `.jsonl` diagnostic per meeting to
-  `Downloads/Platica Logs/`. Off by default.
+  `Downloads/Platica Logs/`. Off by default. Private meetings are never logged.
 
 ## Development
 
