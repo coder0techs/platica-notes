@@ -62,8 +62,9 @@ let onDebugEvent: (() => void) | null = null
 // debugStart indices never drift (chosen approach for Fix 2).
 const DEBUG_EVENTS_MAX = 5000
 
-// Adapter's own lifecycle events: always to console, plus the debug buffer when
-// enabled. Structured detail rides in `extra`.
+// Adapter's own lifecycle events: to the console and the debug buffer only when
+// debug is enabled (quiet by default; genuine errors use console.error directly).
+// Structured detail rides in `extra`.
 function dlog(msg: string, extra?: Record<string, unknown>): void {
   if (!debugEnabled) return
   console.log("[platica-notes]", msg, extra ?? "")
