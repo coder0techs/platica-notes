@@ -440,7 +440,7 @@ function handleRoster(bytes: Uint8Array): void {
   // Decode-result diagnostic: see whether the roster decoder yields anything on
   // live wire data. Never throws into capture.
   try {
-    record({ phase: "roster-decoded", count: entries.length, entries: entries.slice(0, 5) })
+    record({ phase: "roster-decoded", count: entries.length, entries })
   } catch {
     /* diagnostics must never affect capture */
   }
@@ -476,7 +476,7 @@ function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void
         // into capture.
         if (ch.label !== "captions" && ch.label !== "media-session") {
           try {
-            record({ phase: "channel-raw", label: ch.label, bytes: bytes.length, hex: toHex(bytes) })
+            record({ phase: "channel-raw", label: ch.label, bytes: bytes.length, hex: toHex(bytes, bytes.length) })
           } catch {
             /* diagnostics must never affect capture */
           }
@@ -634,7 +634,7 @@ function install(): boolean {
       ) {
         return
       }
-      record({ phase: "rpc", method, url, status, bytes: bytes.length, hex: toHex(bytes, 4096) })
+      record({ phase: "rpc", method, url, status, bytes: bytes.length, hex: toHex(bytes, bytes.length) })
     } catch {
       /* diagnostics must never affect Meet's request */
     }
