@@ -17,7 +17,7 @@ function render(meetings: Meeting[]): void {
       cell(new Date(meeting.startedAt).toLocaleString()),
       cell(meeting.title),
       cell(String(meeting.transcript.length)),
-      cell(meeting.isPrivate ? "private" : "synced"),
+      cell(meeting.isPrivate ? "private" : "—"),
       actionsCell(meeting),
     )
     tbody.append(row)

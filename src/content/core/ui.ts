@@ -124,16 +124,20 @@ export function mountMeetingControls(opts: {
   transcriptPill.addEventListener("click", () => { opts.onToggleTranscript() })
   renderTranscript()
 
-  // --- privacy pill: same dark style; the mode is conveyed by text color —
-  // Public in red (goes to the synced folder), Private in green (local-only). ---
+  // --- privacy pill: the label is always "Private"; the COLOR conveys state —
+  // red when this meeting is private (routes to the local-only folder), grey
+  // when it is not. The text never changes, so the pill reads as a single
+  // "private" switch you turn on/off. ---
+  const PRIVACY_ON = "#f28b82" // red — private (local-only folder)
+  const PRIVACY_OFF = "#9aa0a6" // grey — not private
   let isPrivate = opts.initialPrivate
   const privacyPill = document.createElement("button")
   privacyPill.type = "button"
   privacyPill.style.cssText = PILL_BASE
-  privacyPill.title = "Plática Notes: where this transcript may go"
+  privacyPill.title = "Plática Notes: mark this meeting private (local-only folder)"
   const renderPrivacy = () => {
-    privacyPill.textContent = isPrivate ? "🔒 Private" : "☁️ Public"
-    privacyPill.style.color = isPrivate ? "#81c995" : "#f28b82"
+    privacyPill.textContent = "🔒 Private"
+    privacyPill.style.color = isPrivate ? PRIVACY_ON : PRIVACY_OFF
   }
   privacyPill.addEventListener("mouseenter", () => { privacyPill.style.background = PILL_BG_HOVER })
   privacyPill.addEventListener("mouseleave", () => { privacyPill.style.background = PILL_BG })
