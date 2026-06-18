@@ -7,6 +7,7 @@ import { mountTranscriptPanel } from "../core/transcript-panel"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
 import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
 import { RtcFeed } from "../meet-rtc/feed"
+import { nextLeaveState, shouldDrainTail } from "./meet-lifecycle"
 
 // --- Google Meet DOM contract. Verify on a live meeting before each release. ---
 const ICON_FONT = ".google-symbols"
@@ -144,7 +145,7 @@ async function main(): Promise<void> {
     // streaming the final caption tail (see CAPTION_TAIL_GRACE_MS). Drain it with
     // no active session, then re-check from the top: after the grace the check is
     // stale, so a genuine rejoin of the same code still runs normally.
-    if (meetingPath === lastMeetingPath && Date.now() - lastMeetingEndedAt < CAPTION_TAIL_GRACE_MS) {
+    if (shouldDrainTail(meetingPath, lastMeetingPath, lastMeetingEndedAt, Date.now(), CAPTION_TAIL_GRACE_MS)) {
       await delay(CAPTION_TAIL_GRACE_MS)
       continue
     }
@@ -329,12 +330,14 @@ async function runMeeting(tabId: number): Promise<void> {
 
   let leaveGoneCount = 0
   const endWatcher = setInterval(() => {
-    if (location.pathname !== meetingPath) {
-      void endMeeting("left meeting page")
-      return
-    }
-    leaveGoneCount = findIcon(LEAVE_ICON_TEXT) ? 0 : leaveGoneCount + 1
-    if (leaveGoneCount >= LEAVE_GONE_CHECKS) void endMeeting("call ended")
+    const decision = nextLeaveState(
+      location.pathname !== meetingPath,
+      !!findIcon(LEAVE_ICON_TEXT),
+      leaveGoneCount,
+      LEAVE_GONE_CHECKS,
+    )
+    leaveGoneCount = decision.goneCount
+    if (decision.end) void endMeeting(decision.reason)
   }, END_WATCH_INTERVAL_MS)
   // ---------------------------------------------------------------------------
 

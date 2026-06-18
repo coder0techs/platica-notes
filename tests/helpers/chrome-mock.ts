@@ -21,10 +21,16 @@ export interface ChromeMock {
   tabs: {
     get(tabId: number): Promise<{ id: number }>
   }
+  downloads: {
+    download(options: { url: string; filename: string; conflictAction?: string }): Promise<number>
+  }
+  storageSync: Record<string, unknown>
   _store: Record<string, unknown>
   _aliveTabs: Set<number>
   /** Tabs whose get() rejects with a NON-"no tab" error (transient SW-teardown race). */
   _transientTabs: Set<number>
+  /** Every chrome.downloads.download call, in order. */
+  _downloads: Array<{ url: string; filename: string; conflictAction?: string }>
 }
 
 export function makeChromeMock(initialLocal: Record<string, unknown> = {}): ChromeMock {
@@ -32,6 +38,8 @@ export function makeChromeMock(initialLocal: Record<string, unknown> = {}): Chro
   const sync: Record<string, unknown> = {}
   const aliveTabs = new Set<number>()
   const transientTabs = new Set<number>()
+  const downloads: Array<{ url: string; filename: string; conflictAction?: string }> = []
+  let nextDownloadId = 1
 
   const get = async (key: string | string[] | Record<string, unknown> | null): Promise<Record<string, unknown>> => {
     if (key === null || key === undefined) return structuredClone(store)
@@ -72,8 +80,16 @@ export function makeChromeMock(initialLocal: Record<string, unknown> = {}): Chro
         return Promise.reject(new Error(`No tab with id: ${tabId}.`))
       },
     },
+    downloads: {
+      download: async (options) => {
+        downloads.push(options)
+        return nextDownloadId++
+      },
+    },
+    storageSync: sync,
     _store: store,
     _aliveTabs: aliveTabs,
     _transientTabs: transientTabs,
+    _downloads: downloads,
   }
 }
