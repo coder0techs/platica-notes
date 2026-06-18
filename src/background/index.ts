@@ -52,7 +52,9 @@ async function finalizeAndProcess(tabId: number): Promise<string | null> {
   const r = await finalizeSession(tabId)
   if (!r) return null
   if (r.meeting) await downloadMeeting(r.meeting)
-  if (r.debug.length > 0) await downloadDebugLog(r, r.debug)
+  // The debug log embeds the full transcript, so a meeting marked private never
+  // gets one — the privacy flag is honored on every export path, not just the .md.
+  if (r.debug.length > 0 && !r.isPrivate) await downloadDebugLog(r, r.debug)
   return r.meeting?.id ?? null
 }
 
@@ -74,6 +76,6 @@ chrome.runtime.onUpdateAvailable.addListener(() => {
 void recoverOrphanSessions().then(async (recovered) => {
   for (const result of recovered) {
     if (result.meeting) await downloadMeeting(result.meeting)
-    if (result.debug.length > 0) await downloadDebugLog(result, result.debug)
+    if (result.debug.length > 0 && !result.isPrivate) await downloadDebugLog(result, result.debug)
   }
 })

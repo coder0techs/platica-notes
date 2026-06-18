@@ -9,6 +9,7 @@ export interface FinalizeResult {
   debug: DebugEvent[]
   title: string // for naming the debug file even when meeting is null
   startedAt: string
+  isPrivate: boolean // gates the debug-log download — private meetings never get one
 }
 
 export function trackTab(tabId: number): Promise<void> {
@@ -56,7 +57,7 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
       // Empty session: do not build/store a Meeting (history stays clean).
       await removeLocal(sessionKey(tabId))
       await untrackTab(tabId)
-      return { meeting: null, debug, title: session.title, startedAt: session.startedAt }
+      return { meeting: null, debug, title: session.title, startedAt: session.startedAt, isPrivate: session.isPrivate }
     }
     const meeting: Meeting = {
       id: crypto.randomUUID(),
@@ -76,7 +77,7 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
     // Untrack only after the session key is gone — a failed finalization must
     // keep the tab tracked so the update-deferral guard still sees it.
     await untrackTab(tabId)
-    return { meeting, debug, title: session.title, startedAt: session.startedAt }
+    return { meeting, debug, title: session.title, startedAt: session.startedAt, isPrivate: session.isPrivate }
   } finally {
     finalizing.delete(tabId)
   }

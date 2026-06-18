@@ -64,8 +64,8 @@ const DEBUG_EVENTS_MAX = 5000
 // Adapter's own lifecycle events: always to console, plus the debug buffer when
 // enabled. Structured detail rides in `extra`.
 function dlog(msg: string, extra?: Record<string, unknown>): void {
-  console.log("[platica-notes]", msg, extra ?? "")
   if (!debugEnabled) return
+  console.log("[platica-notes]", msg, extra ?? "")
   // Spread caller data first so framing fields (t, ctx, msg) always win on collision.
   debugEvents.push({ ...(extra ?? {}), t: new Date().toISOString(), ctx: "adapter", msg })
   onDebugEvent?.()

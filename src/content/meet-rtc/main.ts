@@ -73,20 +73,27 @@ function dispatchDebug(detail: string): void {
 }
 
 function record(event: Record<string, unknown>): void {
+  // Read debugEnabled at emit time — config can flip it mid-meeting. Common
+  // case (debug off, config already seen) drops everything before any work,
+  // including the JSON.stringify below: nothing reaches the debug stream or the
+  // page DOM unless the user opted into the diagnostic log.
+  if (!debugEnabled && configSeen) return
   // Full event (untruncated text) feeds the optional debug stream; the dataset
-  // ring keeps a small truncated copy. Read debugEnabled at emit time — config
-  // can flip it mid-meeting.
-  // Spread event first so framing fields (t, ctx) always win on collision.
+  // ring keeps a small truncated copy. Spread event first so framing fields
+  // (t, ctx) always win on collision.
   const detail = JSON.stringify({ ...event, t: new Date().toISOString(), ctx: "rtc" })
   if (debugEnabled) {
     dispatchDebug(detail)
-  } else if (!configSeen) {
-    // Don't yet know if debug is on — retain so a late "debug on" config can
-    // still recover the early sequence.
+  } else {
+    // Config not yet seen — retain so a late "debug on" config can still
+    // recover the early sequence. Do NOT touch the dataset ring before we know
+    // debug is on (the ring writes caption/chat text to a page-readable DOM
+    // attribute; gating it on debugEnabled keeps a default install from leaking
+    // any transcript fragment back into the Meet page).
     debugBacklog.push(detail)
     if (debugBacklog.length > DEBUG_BACKLOG_MAX) debugBacklog.shift()
+    return
   }
-  // else: config seen, debug off — drop.
   const ringEvent: Record<string, unknown> = { ...event, ts: Date.now() }
   // Truncate text in the ring copy only — keeps the dataset small.
   if (typeof ringEvent.text === "string") ringEvent.text = ringEvent.text.slice(0, 80)
@@ -98,7 +105,10 @@ function record(event: Record<string, unknown>): void {
   if (ringFlushTimer === undefined) ringFlushTimer = setTimeout(flushRing, RING_FLUSH_MS)
 }
 
+// Page-console diagnostics, gated on the debug flag so a default install stays
+// quiet in the Meet page console. Genuine failures use console.error directly.
 function log(...args: unknown[]): void {
+  if (!debugEnabled) return
   console.log("[platica-rtc]", ...args)
 }
 
@@ -608,10 +618,10 @@ function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void
         const bytes = await toBytes(data)
         // Wire-bytes diagnostics for channels whose decode is not yet proven on
         // live data (collections/roster, meet_messages/chat, any other). Use the
-        // gzip-normalized bytes so the hex is the actual protobuf. Runs
-        // regardless of whether the decoder below yields anything; never throws
-        // into capture.
-        if (ch.label !== "captions" && ch.label !== "media-session") {
+        // gzip-normalized bytes so the hex is the actual protobuf. Debug-gated
+        // BEFORE building the hex: serializing every non-caption payload to hex
+        // on the page's hot path is pure waste when debug is off (the default).
+        if (debugEnabled && ch.label !== "captions" && ch.label !== "media-session") {
           try {
             record({ phase: "channel-raw", label: ch.label, bytes: bytes.length, hex: toHex(bytes, bytes.length) })
           } catch {
@@ -675,6 +685,24 @@ function handleChannel(ch: RTCDataChannel, pc: RTCPeerConnection): void {
 }
 
 // ---------- RTCPeerConnection hooks ----------
+
+// The fetch/XHR wrappers below read response bodies for two reasons: the three
+// named RPCs that resolve participant names (a real feature, always on) and the
+// generic RPC hex dump (diagnostics, debug-only). Everything else must NOT have
+// its body cloned/read — that would make a "local transcript" tool a broad
+// interceptor of Meet's traffic for no purpose. This gate keeps the body read
+// (and any decode/parse) confined to exactly what is used.
+const NAME_RPC_SUFFIXES = [
+  "MeetingUserService/GetUser",
+  "MeetingDeviceService/UpdateMeetingDevice",
+  "MeetingSpaceService/SyncMeetingSpaceCollections",
+]
+function wantsBody(url: string): boolean {
+  if (!url.includes("meet.google.com")) return false
+  if (NAME_RPC_SUFFIXES.some((s) => url.endsWith(s))) return true
+  // Any other Meet response is only of interest to the diagnostic log.
+  return debugEnabled
+}
 
 function install(): boolean {
   const w = window as unknown as { RTCPeerConnection?: typeof RTCPeerConnection; __platicaRtc?: boolean }
@@ -792,6 +820,10 @@ function install(): boolean {
           record({ phase: "roster-rpc-error", error: String(err) })
         }
       }
+      // Generic RPC body capture is a diagnostic — gate it on debug so the full
+      // response hex is never built (let alone recorded) for an off-by-default
+      // install. The three named RPCs above are real features and run regardless.
+      if (!debugEnabled) return
       const lower = url.toLowerCase()
       if (
         lower.includes(".js") ||
@@ -826,6 +858,8 @@ function install(): boolean {
           (input instanceof Request ? input.method : "GET") ||
           "GET"
         const url = input instanceof Request ? input.url : String(input)
+        // Skip the clone+read entirely unless this URL's body is actually used.
+        if (!wantsBody(url)) return p
         Promise.resolve(p)
           .then((res: Response) => {
             try {
@@ -871,6 +905,8 @@ function install(): boolean {
       try {
         this.addEventListener("load", function (this: XMLHttpRequest & { __platicaMethod?: string; __platicaUrl?: string }) {
           try {
+            // Skip the response read entirely unless this URL's body is used.
+            if (!wantsBody(this.__platicaUrl ?? "")) return
             let bytes: Uint8Array | undefined
             if (this.responseType === "arraybuffer" && this.response instanceof ArrayBuffer) {
               bytes = new Uint8Array(this.response)
