@@ -47,6 +47,8 @@ export interface ActiveSession {
    */
   roster?: Record<string, string>
   selfName?: string
+  /** BCP 47 caption language active for this session; tracks mid-meeting changes. */
+  captionLanguage?: string
   debug?: DebugEvent[]
 }
 
@@ -63,7 +65,7 @@ export interface Meeting {
   participants: string[]
   /** Per-caption revision history (all distinct versions Google streamed). */
   rawVersions?: CaptionHistory[]
-  /** Local user's own display name at capture time; their captions are the cleanest channel. */
+  /** Display name of the local user who recorded this meeting. */
   recorder?: string
   /** BCP 47 caption language the stream was captured with, snapshot at finalize. */
   language?: string

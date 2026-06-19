@@ -72,7 +72,7 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
       participants: session.participants ?? [],
       rawVersions: session.rawVersions ?? [],
       recorder: session.selfName,
-      language: settings.captionLanguage,
+      language: session.captionLanguage ?? settings.captionLanguage,
     }
     await addMeeting(meeting, settings.retentionLimit)
     // Mark it for export BEFORE removing the session key / returning, so a crash

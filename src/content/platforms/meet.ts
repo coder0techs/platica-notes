@@ -209,6 +209,7 @@ async function runMeeting(tabId: number): Promise<void> {
     title: resumed ? resumed.title : readMeetingTitle(),
     startedAt: resumed ? resumed.startedAt : new Date().toISOString(),
     isPrivate: resumed ? resumed.isPrivate : settings.privateByDefault,
+    captionLanguage: resumed?.captionLanguage ?? settings.captionLanguage,
     transcript: prefixTranscript,
     chat: prefixChat,
     participants: [...prefixParticipants],
@@ -262,7 +263,11 @@ async function runMeeting(tabId: number): Promise<void> {
     },
     // Writes the global captionLanguage; the watchSettings listener picks up the
     // chrome.storage change and resubscribes the live caption stream.
-    onLanguageChange: (language) => { void saveSettings({ captionLanguage: language }) },
+    onLanguageChange: (language) => {
+      session.captionLanguage = language
+      writer.requestWrite()
+      void saveSettings({ captionLanguage: language })
+    },
     onToggleTranscript: () => panel.toggle(),
   })
 

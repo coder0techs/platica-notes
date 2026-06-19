@@ -110,6 +110,12 @@ describe("finalizeSession", () => {
     const r = await finalizeSession(7)
     expect(r!.meeting!.language).toBe("ru-RU")
   })
+
+  it("prefers the session's captured language over current settings", async () => {
+    chrome._store["session_7"] = makeSession({ transcript: oneUtterance, captionLanguage: "es-ES" })
+    const r = await finalizeSession(7)
+    expect(r!.meeting!.language).toBe("es-ES")
+  })
 })
 
 describe("recoverOrphanSessions", () => {
