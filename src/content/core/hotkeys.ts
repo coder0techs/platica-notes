@@ -18,3 +18,9 @@ export interface KeyChord {
 export function isHideUiChord(e: KeyChord): boolean {
   return e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === "KeyH"
 }
+
+/** Alt+Shift+B drops a bare bookmark (a marked moment) into the active meeting.
+ * Same modifier discipline as {@link isHideUiChord}. */
+export function isBookmarkChord(e: KeyChord): boolean {
+  return e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === "KeyB"
+}

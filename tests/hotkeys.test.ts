@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { isHideUiChord } from "../src/content/core/hotkeys"
+import { isBookmarkChord, isHideUiChord } from "../src/content/core/hotkeys"
 
 const chord = (over: Partial<Parameters<typeof isHideUiChord>[0]> = {}) => ({
   altKey: true,
@@ -29,5 +29,21 @@ describe("isHideUiChord", () => {
     // Alt+Shift can yield a different glyph in some layouts; key the chord off
     // the layout-independent code.
     expect(isHideUiChord(chord({ code: "KeyG" }))).toBe(false)
+  })
+})
+
+describe("isBookmarkChord", () => {
+  it("matches Alt+Shift+B", () => {
+    expect(isBookmarkChord(chord({ code: "KeyB" }))).toBe(true)
+  })
+
+  it("does not collide with the hide chord", () => {
+    expect(isBookmarkChord(chord({ code: "KeyH" }))).toBe(false)
+    expect(isHideUiChord(chord({ code: "KeyB" }))).toBe(false)
+  })
+
+  it("ignores it without both Alt and Shift, or with Ctrl/Meta", () => {
+    expect(isBookmarkChord(chord({ code: "KeyB", altKey: false }))).toBe(false)
+    expect(isBookmarkChord(chord({ code: "KeyB", ctrlKey: true }))).toBe(false)
   })
 })

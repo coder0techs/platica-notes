@@ -1,4 +1,4 @@
-import type { ChatMessage, Utterance } from "../../shared/types"
+import type { ChatMessage, Note, Utterance } from "../../shared/types"
 import { isNearBottom, mergeTimeline } from "../../shared/transcript"
 import { registerUiEl } from "./ui"
 
@@ -31,6 +31,14 @@ const CLOSE_CSS =
 
 const BODY_CSS = "flex:1 1 auto;overflow-y:auto;padding:10px 14px;"
 
+const INPUT_CSS =
+  "box-sizing:border-box;background:rgba(255,255,255,.06);color:#e8eaed;" +
+  "border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px 10px;" +
+  `font:400 12px ${FONT};outline:none;`
+
+const FOOTER_CSS =
+  "flex:0 0 auto;display:flex;gap:6px;padding:8px 14px;border-top:1px solid rgba(255,255,255,.1);"
+
 const JUMP_CSS =
   "position:absolute;left:50%;bottom:10px;transform:translateX(-50%);background:#3c4043;" +
   "color:#e8eaed;border:none;border-radius:14px;padding:5px 14px;" +
@@ -53,14 +61,19 @@ function clamp(value: number, min: number, max: number): number {
  * the chat log; the card merges before rendering. The card has a fixed height and
  * can be dragged by its header out of the way of screen-share.
  */
-export function mountTranscriptPanel(opts: { onVisibilityChange?: (visible: boolean) => void } = {}): {
-  update(transcript: Utterance[], chat: ChatMessage[]): void
+export function mountTranscriptPanel(opts: {
+  onVisibilityChange?: (visible: boolean) => void
+  onAddNote?: (text: string) => void
+} = {}): {
+  update(transcript: Utterance[], chat: ChatMessage[], notes: Note[]): void
   toggle(): void
   unmount(): void
 } {
   let visible = false
   let latestTranscript: Utterance[] = []
   let latestChat: ChatMessage[] = []
+  let latestNotes: Note[] = []
+  let query = ""
   let stickToBottom = true
   let throttleTimer: number | null = null
   let pending = false
@@ -86,13 +99,24 @@ export function mountTranscriptPanel(opts: { onVisibilityChange?: (visible: bool
   header.style.cssText = HEADER_CSS
   const title = document.createElement("span")
   title.textContent = "Transcript"
-  title.style.cssText = `color:#e8eaed;font:500 14px ${FONT};pointer-events:none;`
+  title.style.cssText = `color:#e8eaed;font:500 14px ${FONT};pointer-events:none;flex:0 0 auto;`
+  // Live filter over the timeline (speech, chat, and notes). Pure client-side; an
+  // empty query shows everything. Typed text is matched as a case-insensitive
+  // substring of the speaker label or the entry text.
+  const search = document.createElement("input")
+  search.type = "search"
+  search.placeholder = "Search…"
+  search.style.cssText = INPUT_CSS + "flex:1 1 auto;min-width:60px;margin:0 8px;cursor:text;"
+  search.addEventListener("input", () => {
+    query = search.value.trim().toLowerCase()
+    render()
+  })
   const close = document.createElement("button")
   close.type = "button"
   close.textContent = "✕"
-  close.style.cssText = CLOSE_CSS
+  close.style.cssText = CLOSE_CSS + "flex:0 0 auto;"
   close.addEventListener("click", () => setVisible(false))
-  header.append(title, close)
+  header.append(title, search, close)
 
   const body = document.createElement("div")
   body.style.cssText = BODY_CSS
@@ -112,7 +136,36 @@ export function mountTranscriptPanel(opts: { onVisibilityChange?: (visible: bool
     updateJumpVisibility()
   })
 
-  card.append(header, body, jump)
+  // --- note footer: type a note and press Enter (or click +) to drop it onto the
+  // timeline at the current moment. The recorder's own annotation, saved with the
+  // transcript. ---
+  const footer = document.createElement("div")
+  footer.style.cssText = FOOTER_CSS
+  const noteInput = document.createElement("input")
+  noteInput.type = "text"
+  noteInput.placeholder = "Add a note…"
+  noteInput.style.cssText = INPUT_CSS + "flex:1 1 auto;min-width:0;cursor:text;"
+  const addNoteBtn = document.createElement("button")
+  addNoteBtn.type = "button"
+  addNoteBtn.textContent = "＋"
+  addNoteBtn.title = "Add a timestamped note (the moment is captured now)"
+  addNoteBtn.style.cssText =
+    INPUT_CSS + `flex:0 0 auto;cursor:pointer;font:500 14px ${FONT};padding:6px 12px;`
+  const submitNote = () => {
+    const text = noteInput.value.trim()
+    if (!text) return
+    opts.onAddNote?.(text)
+    noteInput.value = ""
+  }
+  noteInput.addEventListener("keydown", (event) => {
+    // Keep keystrokes out of Meet's global shortcut handler while typing a note.
+    event.stopPropagation()
+    if (event.key === "Enter") submitNote()
+  })
+  addNoteBtn.addEventListener("click", submitNote)
+  footer.append(noteInput, addNoteBtn)
+
+  card.append(header, body, jump, footer)
   document.documentElement.append(card)
 
   // --- dragging: grab the header to move the card. The first drag freezes the
@@ -134,7 +187,8 @@ export function mountTranscriptPanel(opts: { onVisibilityChange?: (visible: bool
   }
 
   function startDrag(event: MouseEvent): void {
-    if (event.target === close) return
+    // The search input lives in the draggable header; let it take focus/clicks.
+    if (event.target === close || event.target === search) return
     event.preventDefault()
     const rect = card.getBoundingClientRect()
     // Freeze the auto (top+bottom) height and right anchor into explicit values.
@@ -173,22 +227,38 @@ export function mountTranscriptPanel(opts: { onVisibilityChange?: (visible: bool
     opts.onVisibilityChange?.(visible)
   }
 
+  // Notes/bookmarks read as the recorder's own marks: a fixed amber accent (not a
+  // per-speaker color) so they stand apart from speech and chat.
+  const NOTE_COLOR = "#fdd663"
+
+  function matches(entry: { speaker: string; text: string }): boolean {
+    if (!query) return true
+    return entry.speaker.toLowerCase().includes(query) || entry.text.toLowerCase().includes(query)
+  }
+
   function render(): void {
-    const timeline = mergeTimeline(latestTranscript, latestChat)
+    const timeline = mergeTimeline(latestTranscript, latestChat, latestNotes).filter(matches)
     body.replaceChildren()
     for (const entry of timeline) {
       const block = document.createElement("div")
       block.style.cssText = "margin-bottom:12px;"
       const head = document.createElement("div")
-      head.style.cssText = `color:${colorFor(entry.speaker)};font:500 12px ${FONT};margin-bottom:2px;`
-      // Chat is tagged so a pasted line is never mistaken for something said aloud.
-      const label = entry.kind === "chat" ? `${entry.speaker} (chat)` : entry.speaker
+      const isNote = entry.kind === "note"
+      const isBookmark = isNote && entry.text.trim() === ""
+      const headColor = isNote ? NOTE_COLOR : colorFor(entry.speaker)
+      head.style.cssText = `color:${headColor};font:500 12px ${FONT};margin-bottom:2px;`
+      // Chat is tagged so a pasted line is never mistaken for something said aloud;
+      // notes/bookmarks are tagged as the recorder's own marks.
+      const label = isBookmark ? "🔖 Bookmark" : isNote ? "📌 Note" : entry.kind === "chat" ? `${entry.speaker} (chat)` : entry.speaker
       head.textContent = `${label} ${formatClock(entry.at)}`
-      const text = document.createElement("div")
-      text.style.cssText =
-        "color:#e8eaed;font:400 13px/1.5 Roboto,system-ui,sans-serif;white-space:pre-wrap;overflow-wrap:anywhere;"
-      text.textContent = entry.text
-      block.append(head, text)
+      block.append(head)
+      if (!isBookmark) {
+        const text = document.createElement("div")
+        text.style.cssText =
+          "color:#e8eaed;font:400 13px/1.5 Roboto,system-ui,sans-serif;white-space:pre-wrap;overflow-wrap:anywhere;"
+        text.textContent = entry.text
+        block.append(text)
+      }
       body.append(block)
     }
     if (stickToBottom) scrollToBottom()
@@ -213,9 +283,10 @@ export function mountTranscriptPanel(opts: { onVisibilityChange?: (visible: bool
   }
 
   return {
-    update(transcript: Utterance[], chat: ChatMessage[]): void {
+    update(transcript: Utterance[], chat: ChatMessage[], notes: Note[]): void {
       latestTranscript = transcript
       latestChat = chat
+      latestNotes = notes
       scheduleRender()
     },
     toggle(): void {

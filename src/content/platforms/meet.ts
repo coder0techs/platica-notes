@@ -1,9 +1,9 @@
 import { sendToBackground } from "../../shared/messages"
 import { getLocal, getSettings, saveSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
 import { DEFAULT_SETTINGS } from "../../shared/types"
-import type { ActiveSession, DebugEvent, Settings } from "../../shared/types"
+import type { ActiveSession, DebugEvent, Note, Settings } from "../../shared/types"
 import { SessionWriter } from "../core/persistence"
-import { isHideUiChord } from "../core/hotkeys"
+import { isBookmarkChord, isHideUiChord } from "../core/hotkeys"
 import { isUiHidden, mountMeetingControls, pulseActivity, setUiHidden, showToast } from "../core/ui"
 import { mountTranscriptPanel } from "../core/transcript-panel"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
@@ -50,6 +50,9 @@ let selfName: string | null = null
 // avoid clobbering an active pill choice when an unrelated setting changes.
 let activeLanguage = DEFAULT_SETTINGS.captionLanguage
 let activeMeetingHandler: ((event: RtcCaptionEvent | RtcChatEvent) => void) | null = null
+// Set by runMeeting; appends a note/bookmark to the active meeting. Page-level so
+// the global bookmark hotkey can reach the running meeting. Null between meetings.
+let addNoteToActive: ((text: string) => void) | null = null
 // Set by runMeeting; records a name into the active meeting's attendee set. Fed by
 // roster device events and the self name. Meeting-scoped (not the page-level roster
 // map) so names never bleed from a previous meeting in the same tab.
@@ -142,7 +145,7 @@ async function main(): Promise<void> {
   activeLanguage = settings.captionLanguage
   pushRtcConfig(activeLanguage, settings.debugLog)
   setUiHidden(settings.hideUi)
-  watchHideUiHotkey()
+  watchHotkeys()
   watchSettings()
 
   // Meet soft-navigates without page loads (landing -> meeting, /new -> meeting,
@@ -213,6 +216,7 @@ async function runMeeting(tabId: number): Promise<void> {
   // Attendees from a resumed snapshot seed the set (?? [] tolerates pre-feature snapshots).
   const prefixParticipants = resumed?.participants ?? []
   const prefixRawVersions = resumed?.rawVersions ?? []
+  const prefixNotes = resumed?.notes ?? []
 
   const session: ActiveSession = {
     platform: "meet",
@@ -225,6 +229,7 @@ async function runMeeting(tabId: number): Promise<void> {
     chat: prefixChat,
     participants: [...prefixParticipants],
     rawVersions: [...prefixRawVersions],
+    notes: [...prefixNotes],
   }
   // A new meeting always starts in the default language; a resumed one keeps the
   // language it was captured with. Reset the live subscription so a previous
@@ -256,6 +261,9 @@ async function runMeeting(tabId: number): Promise<void> {
     writer.requestWrite()
   }
   if (selfName) recordAttendee(selfName)
+
+  // Recorder's notes/bookmarks for this meeting, seeded from a resumed snapshot.
+  const notes: Note[] = [...prefixNotes]
 
   // Always wire up onDebugEvent so an OFF→ON mid-meeting toggle starts flushing
   // immediately. The closure self-gates on debugEnabled — no cost when debug is
@@ -292,17 +300,29 @@ async function runMeeting(tabId: number): Promise<void> {
 
   const panel = mountTranscriptPanel({
     onVisibilityChange: (open) => controls.setTranscriptActive(open),
+    onAddNote: addNote,
   })
-  panel.update(session.transcript, session.chat)
+  panel.update(session.transcript, session.chat, session.notes ?? [])
 
   // Re-resolve speaker names (they resolve from the roster at snapshot time) and
   // push the fresh transcript to the panel. Invoked by the page-level roster
   // handler so a name learned mid-meeting appears without waiting for a caption.
   refreshTranscript = () => {
     session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
-    panel.update(session.transcript, session.chat)
+    panel.update(session.transcript, session.chat, session.notes ?? [])
     writer.requestWrite()
   }
+
+  // Append a timestamped note (empty text = a bare bookmark) to this meeting.
+  // Reached from the panel's note input and the global Alt+Shift+B bookmark chord.
+  function addNote(text: string): void {
+    notes.push({ at: new Date().toISOString(), text: text.trim() })
+    session.notes = [...notes]
+    panel.update(session.transcript, session.chat, session.notes)
+    writer.requestWrite()
+    pulseActivity()
+  }
+  addNoteToActive = addNote
 
   // Meet fills the real meeting name in with a delay. Cleared in endMeeting so a
   // short meeting (<7s) leaves no stray timer firing after teardown.
@@ -322,7 +342,7 @@ async function runMeeting(tabId: number): Promise<void> {
       }
       session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
       session.rawVersions = [...prefixRawVersions, ...feed.versionsSnapshot()]
-      panel.update(session.transcript, session.chat)
+      panel.update(session.transcript, session.chat, session.notes ?? [])
       writer.requestWrite()
       pulseActivity()
     } else if (event.type === "chat") {
@@ -330,7 +350,7 @@ async function runMeeting(tabId: number): Promise<void> {
       session.chat = [...prefixChat, ...feed.chatSnapshot()]
       // Chat now shares the live timeline, so reflect it in the panel (and pulse)
       // exactly like a caption.
-      panel.update(session.transcript, session.chat)
+      panel.update(session.transcript, session.chat, session.notes ?? [])
       writer.requestWrite()
       pulseActivity()
     }
@@ -395,6 +415,7 @@ async function runMeeting(tabId: number): Promise<void> {
     activeMeetingHandler = null
     recordAttendee = null
     refreshTranscript = null
+    addNoteToActive = null
     onDebugEvent = null
     controls.unmount()
     panel.unmount()
@@ -404,6 +425,7 @@ async function runMeeting(tabId: number): Promise<void> {
     session.rawVersions = [...prefixRawVersions, ...feed.versionsSnapshot()]
     session.chat = [...prefixChat, ...feed.chatSnapshot()]
     session.participants = [...attendees]
+    session.notes = [...notes]
     // Capture the complete debug trail (including this "meeting ended") into the
     // final snapshot. Stays undefined when disabled — no behavioural change.
     if (debugEnabled) session.debug = [...prefixDebug, ...debugEvents.slice(debugStart)]
@@ -444,17 +466,26 @@ function watchSettings(): void {
   })
 }
 
-// Alt+Shift+H hides/shows every on-screen extension element. Writes the persisted
-// setting (not just local state) so the popup checkbox and the chord stay in sync;
-// the storage change is applied by watchSettings. Works while the UI is hidden,
-// which is the whole point. Ignored while typing so it never eats a real keystroke.
-function watchHideUiHotkey(): void {
+// Page-level keyboard chords. Both are ignored while the user is typing (an
+// input/textarea/select or any contenteditable, e.g. Meet's chat or our note
+// box) so a chord never eats a real keystroke.
+// - Alt+Shift+H toggles all on-screen extension UI. Writes the persisted setting
+//   (not just local state) so the popup checkbox and the chord stay in sync; the
+//   change is applied by watchSettings. Works while the UI is hidden — the point.
+// - Alt+Shift+B drops a bare bookmark into the running meeting (no-op if none).
+function watchHotkeys(): void {
   document.addEventListener("keydown", (event) => {
-    if (!isHideUiChord(event)) return
+    const isHide = isHideUiChord(event)
+    const isBookmark = isBookmarkChord(event)
+    if (!isHide && !isBookmark) return
     const target = event.target as HTMLElement | null
     if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return
     event.preventDefault()
-    void saveSettings({ hideUi: !isUiHidden() })
+    if (isHide) {
+      void saveSettings({ hideUi: !isUiHidden() })
+    } else {
+      addNoteToActive?.("")
+    }
   })
 }
 
