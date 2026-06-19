@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { isNearBottom, mergeTimeline, mergeUtterances } from "../src/shared/transcript"
+import { flattenTimeline, isNearBottom, mergeTimeline, mergeUtterances } from "../src/shared/transcript"
 import type { ChatMessage, Utterance } from "../src/shared/types"
 
 const u = (speaker: string, startedAt: string, text: string): Utterance => ({ speaker, startedAt, text })
@@ -120,6 +120,43 @@ describe("mergeTimeline", () => {
 
   it("returns an empty array when both inputs are empty", () => {
     expect(mergeTimeline([], [])).toEqual([])
+  })
+})
+
+describe("flattenTimeline", () => {
+  it("does NOT merge consecutive same-speaker speech (one entry per utterance)", () => {
+    const out = flattenTimeline(
+      [
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "one" },
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:05.000Z", text: "two" },
+      ],
+      [],
+    )
+    expect(out).toHaveLength(2)
+    expect(out.map((e) => e.text)).toEqual(["one", "two"])
+  })
+
+  it("interleaves chat into speech in time order", () => {
+    const out = flattenTimeline(
+      [{ speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "speak" }],
+      [{ sender: "Bob", sentAt: "2026-06-10T10:00:30.000Z", text: "early chat" }],
+    )
+    expect(out.map((e) => e.text)).toEqual(["early chat", "speak"])
+    expect(out[0].kind).toBe("chat")
+  })
+
+  it("at an identical instant, speech sorts before chat", () => {
+    const at = "2026-06-10T10:01:00.000Z"
+    const out = flattenTimeline(
+      [{ speaker: "Alice", startedAt: at, text: "spoke" }],
+      [{ sender: "Bob", sentAt: at, text: "typed" }],
+    )
+    expect(out.map((e) => e.kind)).toEqual(["speech", "chat"])
+  })
+
+  it("trims utterance text", () => {
+    const out = flattenTimeline([{ speaker: "A", startedAt: "2026-06-10T10:01:00.000Z", text: "  hi  " }], [])
+    expect(out[0].text).toBe("hi")
   })
 })
 

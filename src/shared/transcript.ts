@@ -29,18 +29,11 @@ export function mergeUtterances(utterances: Utterance[]): Utterance[] {
   return out
 }
 
-// Merge speech and chat into one chronological timeline (used by the live panel
-// and the saved file). Unlike mergeUtterances (which collapses by array
-// adjacency), this interleaves by time FIRST so a chat dropped mid-monologue lands
-// in its true position, THEN collapses consecutive same-speaker SPEECH — a chat or
-// a different speaker breaks the run, so a link pasted during a long turn splits it
-// where it happened. Chat is never folded into a speaker's speech.
-//
-// ISO 8601 UTC strings sort chronologically as plain strings. The
-// decorate/sort/undecorate keeps the sort stable regardless of engine and makes
-// the tie-break explicit: at an identical instant, speech sorts before chat
-// (natural when someone speaks and pastes a link at the same moment).
-export function mergeTimeline(transcript: Utterance[], chat: ChatMessage[]): TimelineEntry[] {
+// Combined chronological timeline WITHOUT same-speaker merge: one entry per
+// utterance / chat message. Same sort and tie-break as mergeTimeline (at an
+// identical instant, speech sorts before chat), but no run-collapsing. This is
+// what the saved file consumes; the live panel still uses mergeTimeline.
+export function flattenTimeline(transcript: Utterance[], chat: ChatMessage[]): TimelineEntry[] {
   const raw: TimelineEntry[] = [
     ...transcript.map(
       (utterance): TimelineEntry => ({
@@ -54,7 +47,7 @@ export function mergeTimeline(transcript: Utterance[], chat: ChatMessage[]): Tim
       (message): TimelineEntry => ({ kind: "chat", speaker: message.sender, text: message.text, at: message.sentAt }),
     ),
   ]
-  const sorted = raw
+  return raw
     .map((entry, index) => ({ entry, index }))
     .sort((a, b) => {
       if (a.entry.at !== b.entry.at) return a.entry.at < b.entry.at ? -1 : 1
@@ -62,6 +55,16 @@ export function mergeTimeline(transcript: Utterance[], chat: ChatMessage[]): Tim
       return a.index - b.index
     })
     .map((x) => x.entry)
+}
+
+// Merge speech and chat into one chronological timeline (used by the live panel).
+// Unlike mergeUtterances (which collapses by array adjacency), this interleaves by
+// time FIRST so a chat dropped mid-monologue lands in its true position, THEN
+// collapses consecutive same-speaker SPEECH - a chat or a different speaker breaks
+// the run, so a link pasted during a long turn splits it where it happened. Chat is
+// never folded into a speaker's speech.
+export function mergeTimeline(transcript: Utterance[], chat: ChatMessage[]): TimelineEntry[] {
+  const sorted = flattenTimeline(transcript, chat)
   const out: TimelineEntry[] = []
   for (const entry of sorted) {
     const last = out[out.length - 1]
