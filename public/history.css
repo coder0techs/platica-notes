@@ -1,19 +1,5 @@
-:root {
-  color-scheme: light dark;
-  --bg: #ffffff;
-  --fg: #1a1a1a;
-  --muted: #6b7280;
-  --accent: #6750a4;
-  --border: #e5e7eb;
-}
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #1c1b1f; --fg: #e6e1e5; --muted: #9ca3af; --border: #3a3a3a; }
-}
-body {
-  font: 14px/1.5 -apple-system, system-ui, sans-serif;
-  background: var(--bg); color: var(--fg);
-  max-width: 1000px; margin: 40px auto; padding: 0 24px;
-}
+/* History-page layout. Shared theme + base controls live in ui.css. */
+body { max-width: 1000px; margin: 40px auto; padding: 0 24px; }
 h1 { font-size: 20px; font-weight: 600; margin-bottom: 24px; }
 table { border-collapse: collapse; width: 100%; }
 th {

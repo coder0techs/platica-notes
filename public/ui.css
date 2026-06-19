@@ -1,0 +1,87 @@
+/* Shared theme + base controls for the popup and the settings page.
+   Direction A — Meet-native: Google blue accent, high-contrast text, system
+   font. Both surfaces link this first, then their own page stylesheet, so the
+   theme lives in exactly one place. */
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --section: #f8f9fa;
+  --fg: #202124;
+  --muted: #5f6368;
+  --accent: #1a73e8;
+  --accent-hover: #1765cc;
+  --on-accent: #ffffff;
+  --border: #dadce0;
+  --knob: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #202124;
+    --surface: #28292c;
+    --section: #2a2b2e;
+    --fg: #e8eaed;
+    --muted: #9aa0a6;
+    --accent: #8ab4f8;
+    --accent-hover: #aecbfa;
+    --on-accent: #202124;
+    --border: #3c4043;
+    --knob: #e8eaed;
+  }
+}
+
+body {
+  font: 14px/1.5 -apple-system, "Google Sans", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  margin: 0;
+}
+
+h1 { font-size: 16px; font-weight: 600; margin: 0; }
+
+.hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+.hint kbd, .hint .key {
+  font: inherit; color: var(--fg);
+  background: var(--section); border: 1px solid var(--border);
+  border-radius: 4px; padding: 0 4px;
+}
+
+/* Toggle switch (styled checkbox) */
+input[type="checkbox"] {
+  appearance: none; width: 36px; height: 20px; border-radius: 999px;
+  background: var(--border); position: relative; cursor: pointer;
+  transition: background .2s; flex-shrink: 0; margin: 0;
+}
+input[type="checkbox"]::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--knob); transition: transform .2s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+}
+input[type="checkbox"]:checked { background: var(--accent); }
+input[type="checkbox"]:checked::after { transform: translateX(16px); }
+input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+select, input[type="text"] {
+  font: inherit; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px;
+}
+select { flex-shrink: 0; cursor: pointer; }
+input[type="text"] { flex: 1 1 auto; min-width: 0; }
+select:hover, input[type="text"]:hover { border-color: var(--accent); }
+select:focus, input[type="text"]:focus { outline: none; border-color: var(--accent); }
+
+/* Filled primary button / link */
+.btn-primary {
+  display: block; width: 100%; box-sizing: border-box;
+  padding: 9px 12px; border: none; border-radius: 8px;
+  background: var(--accent); color: var(--on-accent);
+  font: 600 13px/1 -apple-system, "Google Sans", system-ui, sans-serif;
+  text-align: center; text-decoration: none; cursor: pointer;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+
+/* Text link */
+a.link {
+  color: var(--accent); text-decoration: none; cursor: pointer;
+}
+a.link:hover { text-decoration: underline; }

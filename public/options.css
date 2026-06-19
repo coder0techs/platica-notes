@@ -1,0 +1,33 @@
+/* Settings-page layout. Shared theme + controls live in ui.css. */
+main { max-width: 560px; margin: 40px auto; padding: 0 24px; }
+header { margin-bottom: 24px; }
+
+section {
+  background: var(--section);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.label {
+  font-size: 12px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--muted);
+  margin: 0 0 12px;
+}
+
+.row {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 16px; margin: 12px 0 0;
+}
+.row:first-of-type { margin-top: 0; }
+
+.field { margin-top: 12px; }
+.field:first-of-type { margin-top: 0; }
+.field label { display: block; margin-bottom: 4px; }
+.field input[type="text"] { display: block; width: 100%; box-sizing: border-box; }
+
+.links { display: flex; gap: 16px; }
+.links a { font-size: 13px; }
+
+.build { margin-top: 12px; opacity: .8; }

@@ -1,36 +1,27 @@
 <!doctype html>
-<html>
-<head><meta charset="utf-8"><link rel="stylesheet" href="popup.css"></head>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="ui.css">
+  <link rel="stylesheet" href="popup.css">
+</head>
 <body>
-  <h1>Plática Notes</h1>
-  <label>Default caption language
-    <select id="caption-language"></select>
+  <header><h1>Plática Notes</h1></header>
+
+  <label class="row">
+    <span>Hide all on-screen controls</span>
+    <input type="checkbox" id="hide-ui">
   </label>
-  <p class="hint">New meetings start in this language. You can switch it just for the current meeting from the in-meeting language pill; that choice is not saved.</p>
-  <label><input type="checkbox" id="hide-ui"> Hide all on-screen controls</label>
-  <p class="hint">Hides the in-meeting controls, transcript panel, and toasts (for screen-sharing or demos). Recording keeps running. Toggle from here or with <span id="hide-ui-shortcut">Alt+Shift+H</span> during a meeting.</p>
-  <p class="hint">During a meeting, press <span id="bookmark-shortcut">Alt+Shift+B</span> to drop a bookmark into the transcript at that moment.</p>
-  <label><input type="checkbox" id="private-default"> Mark meetings private by default</label>
-  <p class="hint">Private meetings download to the Private folder set below — keep that folder out of your cloud sync.</p>
-  <label><input type="checkbox" id="debug-log"> Debug log (writes a full .jsonl per meeting)</label>
-  <p class="hint">Off by default. Saved to the Debug-log folder below — keep it out of your cloud sync (it contains the full transcript). Private meetings are never logged.</p>
-  <label>Public folder
-    <input type="text" id="folder-public">
-  </label>
-  <label>Private folder
-    <input type="text" id="folder-private">
-  </label>
-  <label>Debug-log folder
-    <input type="text" id="folder-debug">
-  </label>
-  <p class="hint">Folders are relative to your Downloads folder; nested paths like "meetings/work" are allowed.</p>
-  <a href="history.html" target="_blank">Open meeting history</a>
-  <nav class="doc-links">
-    <a href="help.html" target="_blank">Help</a>
-    <a href="changelog.html" target="_blank">What's new</a>
-    <a href="privacy.html" target="_blank">Privacy policy</a>
+  <p class="hint">Hides the in-meeting controls, transcript panel, and toasts (for screen-sharing or demos). Recording keeps running. Toggle here or with <span class="key" id="hide-ui-shortcut">Alt+Shift+H</span> during a meeting.</p>
+
+  <a class="btn-primary" id="open-history" href="history.html" target="_blank">Meeting history</a>
+
+  <nav class="links">
+    <a class="link" id="open-settings">⚙ Settings</a>
+    <a class="link" href="help.html" target="_blank">Help</a>
   </nav>
-  <p class="hint" id="build-info"></p>
+
+  <p class="hint build" id="build-info"></p>
   <script src="popup.js"></script>
 </body>
 </html>

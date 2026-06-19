@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings — Plática Notes</title>
+  <link rel="stylesheet" href="ui.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main>
+    <header><h1>Plática Notes — Settings</h1></header>
+
+    <section>
+      <p class="label">Recording</p>
+      <label class="row">
+        <span>Default caption language</span>
+        <select id="caption-language"></select>
+      </label>
+      <p class="hint">New meetings start in this language. You can switch it just for the current meeting from the in-meeting language pill; that choice is not saved.</p>
+      <label class="row">
+        <span>Mark meetings private by default</span>
+        <input type="checkbox" id="private-default">
+      </label>
+      <p class="hint">Private meetings download to the Private folder below — keep that folder out of your cloud sync.</p>
+      <p class="hint">During a meeting, press <span class="key" id="bookmark-shortcut">Alt+Shift+B</span> to drop a bookmark into the transcript at that moment.</p>
+    </section>
+
+    <section>
+      <p class="label">Folders</p>
+      <div class="field">
+        <label for="folder-public">Public folder</label>
+        <input type="text" id="folder-public">
+      </div>
+      <div class="field">
+        <label for="folder-private">Private folder</label>
+        <input type="text" id="folder-private">
+      </div>
+      <div class="field">
+        <label for="folder-debug">Debug-log folder</label>
+        <input type="text" id="folder-debug">
+      </div>
+      <p class="hint">Folders are relative to your Downloads folder; nested paths like "meetings/work" are allowed.</p>
+    </section>
+
+    <section>
+      <p class="label">Advanced</p>
+      <label class="row">
+        <span>Debug log (writes a full .jsonl per meeting)</span>
+        <input type="checkbox" id="debug-log">
+      </label>
+      <p class="hint">Off by default. Saved to the Debug-log folder above — keep it out of your cloud sync (it contains the full transcript). Private meetings are never logged.</p>
+    </section>
+
+    <section>
+      <p class="label">About</p>
+      <nav class="links">
+        <a class="link" href="changelog.html" target="_blank">What's new</a>
+        <a class="link" href="privacy.html" target="_blank">Privacy policy</a>
+      </nav>
+      <p class="hint build" id="build-info"></p>
+    </section>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

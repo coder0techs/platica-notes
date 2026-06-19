@@ -1,13 +1,7 @@
-import { CAPTION_LANGUAGES } from "../../shared/languages"
 import { getSettings, saveSettings } from "../../shared/storage"
 
-const captionLanguage = document.querySelector<HTMLSelectElement>("#caption-language")!
 const hideUi = document.querySelector<HTMLInputElement>("#hide-ui")!
-const privateDefault = document.querySelector<HTMLInputElement>("#private-default")!
-const debugLog = document.querySelector<HTMLInputElement>("#debug-log")!
-const folderPublic = document.querySelector<HTMLInputElement>("#folder-public")!
-const folderPrivate = document.querySelector<HTMLInputElement>("#folder-private")!
-const folderDebug = document.querySelector<HTMLInputElement>("#folder-debug")!
+const openSettings = document.querySelector<HTMLAnchorElement>("#open-settings")!
 
 // Build stamp shown at the bottom of the popup. typeof-guarded so vitest and
 // any non-build eval fall back to "dev" instead of throwing ReferenceError.
@@ -21,63 +15,18 @@ if (buildInfo) buildInfo.textContent = `v${buildVersion} (${buildCommit})`
 const isMac = /Mac|iPhone|iPad/i.test(navigator.platform) || /Mac/i.test(navigator.userAgent)
 const hideShortcut = document.querySelector("#hide-ui-shortcut")
 if (hideShortcut) hideShortcut.textContent = isMac ? "⌥⇧H" : "Alt+Shift+H"
-const bookmarkShortcut = document.querySelector("#bookmark-shortcut")
-if (bookmarkShortcut) bookmarkShortcut.textContent = isMac ? "⌥⇧B" : "Alt+Shift+B"
 
-for (const lang of CAPTION_LANGUAGES) {
-  const opt = document.createElement("option")
-  opt.value = lang.value
-  opt.textContent = lang.label
-  captionLanguage.appendChild(opt)
-}
+openSettings.addEventListener("click", () => {
+  void chrome.runtime.openOptionsPage()
+})
 
 async function init(): Promise<void> {
   const settings = await getSettings()
-  captionLanguage.value = settings.captionLanguage
-  if (captionLanguage.value === "") {
-    // The stored value is not among the built-in <option>s (future language tag,
-    // manually set value, etc.). Append a synthetic option so the UI shows the
-    // truth rather than going blank; the stored setting is NOT overwritten.
-    const opt = document.createElement("option")
-    opt.value = settings.captionLanguage
-    opt.textContent = settings.captionLanguage
-    captionLanguage.appendChild(opt)
-    captionLanguage.value = settings.captionLanguage
-  }
   hideUi.checked = settings.hideUi
-  privateDefault.checked = settings.privateByDefault
-  debugLog.checked = settings.debugLog
-  folderPublic.value = settings.folderPublic
-  folderPrivate.value = settings.folderPrivate
-  folderDebug.value = settings.folderDebug
 }
-
-captionLanguage.addEventListener("change", () => {
-  void saveSettings({ captionLanguage: captionLanguage.value })
-})
 
 hideUi.addEventListener("change", () => {
   void saveSettings({ hideUi: hideUi.checked })
-})
-
-privateDefault.addEventListener("change", () => {
-  void saveSettings({ privateByDefault: privateDefault.checked })
-})
-
-debugLog.addEventListener("change", () => {
-  void saveSettings({ debugLog: debugLog.checked })
-})
-
-folderPublic.addEventListener("change", () => {
-  void saveSettings({ folderPublic: folderPublic.value.trim() })
-})
-
-folderPrivate.addEventListener("change", () => {
-  void saveSettings({ folderPrivate: folderPrivate.value.trim() })
-})
-
-folderDebug.addEventListener("change", () => {
-  void saveSettings({ folderDebug: folderDebug.value.trim() })
 })
 
 void init()

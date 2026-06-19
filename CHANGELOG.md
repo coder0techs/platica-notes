@@ -2,6 +2,17 @@
 
 All notable changes to Plática Notes, newest first.
 
+## 1.6.0 — 2026-06-19
+
+- **Decluttered popup.** Clicking the toolbar icon now shows just what you reach
+  for around a meeting: the "Hide all on-screen controls" toggle, a "Meeting
+  history" button, and links to Settings and Help.
+- **New Settings page.** Caption language, folders, the private-by-default and
+  debug-log options, and the docs links moved to a dedicated, easier-to-read
+  settings page — open it from the popup or from the extension's options entry.
+- **Refreshed look.** A higher-contrast, Google Meet-native colour scheme across
+  the popup, settings, and history, with a tuned dark theme.
+
 ## 1.5.0 — 2026-06-19
 
 - **Read the docs inside the extension.** The popup now links to Help, What's new

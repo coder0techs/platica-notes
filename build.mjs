@@ -61,6 +61,7 @@ const options = {
     "content-meet": "src/content/platforms/meet.ts",
     "meet-rtc-main": "src/content/meet-rtc/main.ts",
     popup: "src/pages/popup/popup.ts",
+    options: "src/pages/options/options.ts",
     history: "src/pages/history/history.ts",
   },
   bundle: true,
