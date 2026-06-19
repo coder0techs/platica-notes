@@ -21,6 +21,8 @@ if (buildInfo) buildInfo.textContent = `v${buildVersion} (${buildCommit})`
 const isMac = /Mac|iPhone|iPad/i.test(navigator.platform) || /Mac/i.test(navigator.userAgent)
 const hideShortcut = document.querySelector("#hide-ui-shortcut")
 if (hideShortcut) hideShortcut.textContent = isMac ? "⌥⇧H" : "Alt+Shift+H"
+const bookmarkShortcut = document.querySelector("#bookmark-shortcut")
+if (bookmarkShortcut) bookmarkShortcut.textContent = isMac ? "⌥⇧B" : "Alt+Shift+B"
 
 for (const lang of CAPTION_LANGUAGES) {
   const opt = document.createElement("option")

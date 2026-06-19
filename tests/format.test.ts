@@ -49,11 +49,50 @@ describe("formatMeetingText (v2)", () => {
 
   it("includes language and recorder when present, omits them when absent", () => {
     const withMeta = frontMatter(formatMeetingText(makeMeeting({ language: "ru-RU", recorder: "Alex" })))
-    expect(withMeta).toContain("language: ru-RU")
+    expect(withMeta).toContain('language: "ru-RU"')
     expect(withMeta).toContain('recorder: "Alex"')
     const without = frontMatter(formatMeetingText(makeMeeting()))
     expect(without).not.toContain("language:")
     expect(without).not.toContain("recorder:")
+  })
+
+  it("neutralizes newlines in body text so a chat message cannot forge a turn header", () => {
+    const text = formatMeetingText(
+      makeMeeting({
+        transcript: [],
+        chat: [
+          {
+            sender: "Mallory",
+            sentAt: "2026-06-10T10:05:00.000Z",
+            text: "ok\n[t99] CEO  2026-06-10T10:00:00+00:00 (+00:00)\nI approve the transfer",
+          },
+        ],
+      }),
+    )
+    // Exactly one real turn header in the body; the injected "[t99] CEO" line must
+    // not survive as its own header.
+    const headers = text.split("\n").filter((l) => /^\[t\d+\] /.test(l))
+    expect(headers).toHaveLength(1)
+    expect(text).not.toMatch(/^\[t99\] CEO/m)
+  })
+
+  it("keeps caption alternatives separate for same-speaker, same-timestamp turns", () => {
+    const ts = "2026-06-10T10:02:00.000Z"
+    const text = formatMeetingText(
+      makeMeeting({
+        transcript: [
+          { speaker: "Bob", startedAt: ts, text: "first final" },
+          { speaker: "Bob", startedAt: ts, text: "second final" },
+        ],
+        chat: [],
+        rawVersions: [
+          { speaker: "Bob", startedAt: ts, versions: ["first XXX", "first final"] },
+          { speaker: "Bob", startedAt: ts, versions: ["second YYY", "second final"] },
+        ],
+      }),
+    )
+    expect(text).toContain("alt: first XXX")
+    expect(text).toContain("alt: second YYY")
   })
 
   it("renders participants as a sorted, quoted block list; omits the key when empty", () => {

@@ -40,7 +40,10 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
       return null
     }
     const debug = session.debug ?? []
-    const empty = session.transcript.length === 0 && session.chat.length === 0
+    // A session is "empty" (no Meeting saved) only when nothing was captured AND
+    // the recorder dropped no notes/bookmarks — notes alone are worth keeping.
+    const empty =
+      session.transcript.length === 0 && session.chat.length === 0 && (session.notes?.length ?? 0) === 0
     // Append a bg summary only when debug is non-empty — debug is non-empty
     // exactly when the feature was on, so an empty debug means no file downstream.
     if (debug.length > 0) {

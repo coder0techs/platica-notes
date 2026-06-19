@@ -45,6 +45,14 @@ function yamlScalar(s: string): string {
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r")}"`
 }
 
+// Body text occupies one physical line per turn. Collapse any newline so a value
+// — notably a multi-line chat message (Meet allows Shift+Enter) — can never emit a
+// second line that mimics a record header ([tN] …), an "  alt:" line, or a "---"
+// fence in the v2 grid and get parsed as a forged, mis-attributed turn.
+function inlineText(s: string): string {
+  return s.replace(/\r\n?|\n/g, " ")
+}
+
 // feed.ts labels a device with no roster entry as `Speaker <tail>`. Surfacing it
 // as a fact lets the pipeline distrust attribution there.
 function isUnresolved(speaker: string): boolean {
@@ -74,7 +82,7 @@ export function formatMeetingText(meeting: Meeting): string {
     "schema: platica-notes-transcript/2",
     `source: ${PLATFORM_SOURCES[meeting.platform]}`,
   ]
-  if (meeting.language) fm.push(`language: ${meeting.language}`)
+  if (meeting.language) fm.push(`language: ${yamlScalar(meeting.language)}`)
   fm.push(`timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`)
   fm.push(`title: ${yamlScalar(meeting.title)}`)
   fm.push(`started: ${isoLocal(meeting.startedAt)}`)
@@ -93,10 +101,16 @@ export function formatMeetingText(meeting: Meeting): string {
   // collapsed version history minus its final frame (the final IS the turn text).
   // collapseVersions stays word-lossless; only phrases that diverged before the
   // final survive with length > 1.
+  // Keyed by (speaker, startedAt, final text): the final frame equals the turn
+  // text, so this matches a turn to its own alternatives even when two captions
+  // from the same speaker share a millisecond — keying on (speaker, startedAt)
+  // alone would let the second overwrite the first and misattribute both.
   const altMap = new Map<string, string[]>()
   for (const cv of meeting.rawVersions ?? []) {
     const collapsed = collapseVersions(cv.versions)
-    if (collapsed.length > 1) altMap.set(`${cv.speaker} ${cv.startedAt}`, collapsed.slice(0, -1))
+    if (collapsed.length > 1) {
+      altMap.set(`${cv.speaker} ${cv.startedAt} ${collapsed[collapsed.length - 1]}`, collapsed.slice(0, -1))
+    }
   }
 
   const lines: string[] = [...fm, ""]
@@ -108,16 +122,16 @@ export function formatMeetingText(meeting: Meeting): string {
     if (entry.kind === "note") {
       const isBookmark = entry.text.trim() === ""
       lines.push(`[t${n}] (${isBookmark ? "bookmark" : "note"})  ${isoLocal(entry.at)} (+${elapsedLabel(meeting.startedAt, entry.at)})`)
-      if (!isBookmark) lines.push(entry.text)
+      if (!isBookmark) lines.push(inlineText(entry.text))
       lines.push("")
       continue
     }
     const tags = (entry.kind === "chat" ? " (chat)" : "") + (entry.kind === "speech" && isUnresolved(entry.speaker) ? " (unresolved)" : "")
     lines.push(`[t${n}] ${entry.speaker}${tags}  ${isoLocal(entry.at)} (+${elapsedLabel(meeting.startedAt, entry.at)})`)
-    lines.push(entry.text)
+    lines.push(inlineText(entry.text))
     if (entry.kind === "speech") {
-      const alts = altMap.get(`${entry.speaker} ${entry.at}`)
-      if (alts) for (const a of alts) lines.push(`  alt: ${a}`)
+      const alts = altMap.get(`${entry.speaker} ${entry.at} ${entry.text}`)
+      if (alts) for (const a of alts) lines.push(`  alt: ${inlineText(a)}`)
     }
     lines.push("")
   }

@@ -475,6 +475,9 @@ function watchSettings(): void {
 // - Alt+Shift+B drops a bare bookmark into the running meeting (no-op if none).
 function watchHotkeys(): void {
   document.addEventListener("keydown", (event) => {
+    // Ignore key autorepeat so holding the chord is one action, not a burst of
+    // sync-storage writes (hide-UI flicker) or duplicate bookmarks in the file.
+    if (event.repeat) return
     const isHide = isHideUiChord(event)
     const isBookmark = isBookmarkChord(event)
     if (!isHide && !isBookmark) return

@@ -111,6 +111,9 @@ export function mountTranscriptPanel(opts: {
     query = search.value.trim().toLowerCase()
     render()
   })
+  // Keep keystrokes out of Meet's global shortcut handler while typing a query
+  // (mirrors the note input). No preventDefault, so search/clear still work.
+  search.addEventListener("keydown", (event) => event.stopPropagation())
   const close = document.createElement("button")
   close.type = "button"
   close.textContent = "✕"

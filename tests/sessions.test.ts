@@ -116,6 +116,35 @@ describe("finalizeSession", () => {
     const r = await finalizeSession(7)
     expect(r!.meeting!.language).toBe("es-ES")
   })
+
+  it("carries notes and bookmarks into the finalized meeting (durability seam)", async () => {
+    chrome._store["session_7"] = makeSession({
+      transcript: oneUtterance,
+      notes: [
+        { at: "2026-06-18T10:00:05.000Z", text: "key decision" },
+        { at: "2026-06-18T10:00:09.000Z", text: "" }, // bare bookmark
+      ],
+    })
+    const r = await finalizeSession(7)
+    expect(r!.meeting!.notes!.map((nt) => nt.text)).toEqual(["key decision", ""])
+  })
+
+  it("treats a notes-only session as non-empty (bookmarks alone are worth keeping)", async () => {
+    chrome._store["session_8"] = makeSession({
+      transcript: [],
+      chat: [],
+      notes: [{ at: "2026-06-18T10:00:05.000Z", text: "" }],
+    })
+    const r = await finalizeSession(8)
+    expect(r!.meeting).not.toBeNull()
+    expect(r!.meeting!.notes).toHaveLength(1)
+  })
+
+  it("a truly empty session (no transcript/chat/notes) stores no meeting", async () => {
+    chrome._store["session_9"] = makeSession()
+    const r = await finalizeSession(9)
+    expect(r!.meeting).toBeNull()
+  })
 })
 
 describe("recoverOrphanSessions", () => {
