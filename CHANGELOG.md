@@ -2,7 +2,7 @@
 
 All notable changes to Plática Notes, newest first.
 
-## Unreleased
+## 1.5.0 — 2026-06-19
 
 - **Read the docs inside the extension.** The popup now links to Help, What's new
   (these release notes), and the Privacy policy.
