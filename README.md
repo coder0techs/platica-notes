@@ -24,13 +24,22 @@ Everything is decoded in the page and kept on your machine.
   lines from one speaker are merged into a single block for readability.
 - **In-meeting transcript panel** — a floating, scrollable live transcript inside
   the Meet window, so you can scroll back and re-read without leaving the call.
+  Includes a **search box** that filters the timeline, and a footer input to add
+  your own **notes**.
+- **Bookmarks & notes** — drop a timestamped bookmark with **Alt+Shift+B**, or
+  type a note in the panel; both land on the timeline in context and are written
+  into the saved file as tagged `(bookmark)` / `(note)` turns.
+- **Hide all on-screen UI** — a popup toggle and **Alt+Shift+H** hide every
+  extension element (controls, panel, toasts) for screen-sharing or demos;
+  recording keeps running while hidden.
 - Full caption revision history appended at the bottom (`RAW CAPTION VERSIONS`):
   every distinct version Google streamed, so an agent can recover words the
   final caption dropped. Machine artifact, not for human reading.
 - Speaker-attributed lines (others and yourself), with the closing sentence
   captured in full on leave.
-- **Caption language** picker (popup) — set it to the language people speak;
-  default is Russian.
+- **Default caption language** (popup) — every new meeting starts in this
+  language; the in-meeting language pill overrides just the current meeting and is
+  not saved. Fresh installs default to English.
 - **Per-meeting privacy pill** (🔒 / ☁️): private meetings download to a separate
   folder you can keep out of cloud sync.
 - Local **history** of the last 30 meetings, with re-download / delete.
@@ -59,8 +68,11 @@ the debug log** entirely, so the privacy flag is honored on every output path.
 
 ## Settings (popup)
 
-- **Caption language** — must match the spoken language, or the transcript comes
-  out empty.
+- **Default caption language** — must match the spoken language, or the
+  transcript comes out empty. Seeds every new meeting; switch the in-meeting pill
+  to override one call without changing the default.
+- **Hide all on-screen controls** — hide every extension element for
+  screen-sharing/demos (also toggled with Alt+Shift+H). Recording keeps running.
 - **Private by default** — new meetings start private (route to the private
   folder).
 - **Debug log** — write a full `.jsonl` diagnostic per meeting to
