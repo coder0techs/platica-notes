@@ -2,6 +2,18 @@
 
 All notable changes to Plática Notes, newest first.
 
+## Unreleased
+
+- **Read the docs inside the extension.** The popup now links to Help, What's new
+  (these release notes), and the Privacy policy.
+- **Hardened the saved transcript.** A multi-line chat message can no longer be
+  shaped to look like a real speaker turn in the saved file, and two captions that
+  land in the same instant keep their own alternatives.
+- **Notes and bookmarks are saved reliably**, including a meeting where you only
+  dropped bookmarks and nothing was said.
+- Holding `Alt+Shift+H` / `Alt+Shift+B` no longer flickers the UI or drops a burst
+  of duplicate bookmarks; the bookmark shortcut is now shown in the popup.
+
 ## 1.4.0 — 2026-06-19
 
 - **Notes and bookmarks during a meeting.** Jot a note or drop a timestamped
