@@ -13,3 +13,17 @@ describe("withDefaults", () => {
     expect(settings.captionLanguage).toBe(DEFAULT_SETTINGS.captionLanguage)
   })
 })
+
+describe("default caption language", () => {
+  it("defaults a fresh install to English", () => {
+    // The store audience is international; the user's own install can override
+    // this from the popup. Russian was the pre-1.x default.
+    expect(DEFAULT_SETTINGS.captionLanguage).toBe("en-US")
+  })
+
+  it("preserves an existing user's stored language (upgrade migration)", () => {
+    // withDefaults overlays stored over defaults, so a user who had picked
+    // Russian keeps it after the default flips to English — no silent reset.
+    expect(withDefaults({ captionLanguage: "ru-RU" }).captionLanguage).toBe("ru-RU")
+  })
+})

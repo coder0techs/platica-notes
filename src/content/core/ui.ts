@@ -61,7 +61,7 @@ export function mountMeetingControls(opts: {
   // opens the OS dropdown (not just the narrow text zone). ---
   const langPill = document.createElement("div")
   langPill.style.cssText = PILL_BASE + "position:relative;"
-  langPill.title = "Plática Notes: caption language to capture"
+  langPill.title = "Plática Notes: caption language for this meeting (resets to your default next time)"
   langPill.addEventListener("mouseenter", () => { langPill.style.background = PILL_BG_HOVER })
   langPill.addEventListener("mouseleave", () => { langPill.style.background = PILL_BG })
 

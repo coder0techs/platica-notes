@@ -105,10 +105,10 @@ describe("finalizeSession", () => {
     expect(r!.meeting!.recorder).toBeUndefined()
   })
 
-  it("snapshots the caption language from settings (default ru-RU)", async () => {
+  it("snapshots the caption language from settings (default en-US)", async () => {
     chrome._store["session_7"] = makeSession({ transcript: oneUtterance })
     const r = await finalizeSession(7)
-    expect(r!.meeting!.language).toBe("ru-RU")
+    expect(r!.meeting!.language).toBe("en-US")
   })
 
   it("prefers the session's captured language over current settings", async () => {

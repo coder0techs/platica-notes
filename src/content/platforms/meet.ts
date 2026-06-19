@@ -1,5 +1,6 @@
 import { sendToBackground } from "../../shared/messages"
-import { getLocal, getSettings, saveSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
+import { getLocal, getSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
+import { DEFAULT_SETTINGS } from "../../shared/types"
 import type { ActiveSession, DebugEvent, Settings } from "../../shared/types"
 import { SessionWriter } from "../core/persistence"
 import { mountMeetingControls, pulseActivity, showToast } from "../core/ui"
@@ -41,6 +42,12 @@ const roster = new Map<string, string>()
 // as an ordinary roster device event (from UpdateMeetingDevice), so self resolves
 // through the roster like any participant.
 let selfName: string | null = null
+// Caption language the live stream is currently subscribed to. Seeded from the
+// default setting, reset to the default at every new meeting, and overridden
+// (in memory only) by the in-meeting language pill — never persisted, so a
+// manual switch does not leak into the next meeting. watchSettings reads this to
+// avoid clobbering an active pill choice when an unrelated setting changes.
+let activeLanguage = DEFAULT_SETTINGS.captionLanguage
 let activeMeetingHandler: ((event: RtcCaptionEvent | RtcChatEvent) => void) | null = null
 // Set by runMeeting; records a name into the active meeting's attendee set. Fed by
 // roster device events and the self name. Meeting-scoped (not the page-level roster
@@ -131,7 +138,8 @@ async function main(): Promise<void> {
   // subscribe, so push the config before any meeting can start.
   const settings = await getSettings()
   debugEnabled = settings.debugLog
-  pushRtcConfig(settings.captionLanguage, settings.debugLog)
+  activeLanguage = settings.captionLanguage
+  pushRtcConfig(activeLanguage, settings.debugLog)
   watchSettings()
 
   // Meet soft-navigates without page loads (landing -> meeting, /new -> meeting,
@@ -215,6 +223,12 @@ async function runMeeting(tabId: number): Promise<void> {
     participants: [...prefixParticipants],
     rawVersions: [...prefixRawVersions],
   }
+  // A new meeting always starts in the default language; a resumed one keeps the
+  // language it was captured with. Reset the live subscription so a previous
+  // meeting's pill override (which is never persisted) does not carry over.
+  activeLanguage = session.captionLanguage ?? settings.captionLanguage
+  pushRtcConfig(activeLanguage, debugEnabled)
+
   // The page roster is shared in, so names resolve retroactively even for
   // participants whose roster entries arrived before this meeting's feed existed.
   const feed = new RtcFeed(roster)
@@ -255,18 +269,20 @@ async function runMeeting(tabId: number): Promise<void> {
   onDebugEvent()
 
   const controls = mountMeetingControls({
-    initialLanguage: settings.captionLanguage,
+    initialLanguage: session.captionLanguage ?? settings.captionLanguage,
     initialPrivate: session.isPrivate,
     onPrivateChange: (isPrivate) => {
       session.isPrivate = isPrivate
       writer.requestWrite()
     },
-    // Writes the global captionLanguage; the watchSettings listener picks up the
-    // chrome.storage change and resubscribes the live caption stream.
+    // This-meeting-only override: resubscribe the live stream and snapshot the
+    // language into the session (so a reload resumes in it), but do NOT persist
+    // it to Settings — the next meeting must start from the default.
     onLanguageChange: (language) => {
       session.captionLanguage = language
+      activeLanguage = language
       writer.requestWrite()
-      void saveSettings({ captionLanguage: language })
+      pushRtcConfig(language, debugEnabled)
     },
     onToggleTranscript: () => panel.toggle(),
   })
@@ -414,8 +430,12 @@ function watchSettings(): void {
     if (area === "sync" && changes.settings) {
       const next = withDefaults(changes.settings.newValue as Partial<Settings> | undefined)
       debugEnabled = next.debugLog
-      // The MAIN-world script re-subscribes the caption stream on change.
-      pushRtcConfig(next.captionLanguage, next.debugLog)
+      // The default only seeds the live language while no meeting is running; an
+      // active meeting keeps the pill's choice, so changing the default in the
+      // popup mid-meeting does not retarget the current call. Always re-push so a
+      // debug-flag toggle reaches the MAIN-world script.
+      if (activeMeetingHandler === null) activeLanguage = next.captionLanguage
+      pushRtcConfig(activeLanguage, next.debugLog)
     }
   })
 }

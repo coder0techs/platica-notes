@@ -72,7 +72,12 @@ export interface Meeting {
 }
 
 export interface Settings {
-  /** BCP 47 tag passed to Meet's caption stream subscription (e.g. "ru-RU"). */
+  /**
+   * Default BCP 47 caption-language tag (e.g. "en-US"). Every NEW meeting starts
+   * in this language. The in-meeting language pill overrides only the current
+   * meeting (ephemeral) and never writes back here, so a manual switch does not
+   * leak into the next meeting. Popup-controlled.
+   */
   captionLanguage: string
   privateByDefault: boolean
   retentionLimit: number
@@ -87,7 +92,7 @@ export interface Settings {
 // main.ts (MAIN-world bundle) imports DEFAULT_SETTINGS directly from here;
 // esbuild inlines the const — no runtime browser API is dragged in.
 export const DEFAULT_SETTINGS: Settings = {
-  captionLanguage: "ru-RU",
+  captionLanguage: "en-US",
   privateByDefault: false,
   retentionLimit: 30,
   debugLog: false,
