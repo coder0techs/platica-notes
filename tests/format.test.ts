@@ -20,132 +20,129 @@ function makeMeeting(overrides: Partial<Meeting> = {}): Meeting {
   }
 }
 
-describe("formatMeetingText", () => {
-  it("renders title, speakers and their text", () => {
+describe("formatMeetingText (v2)", () => {
+  function frontMatter(text: string): string {
+    const end = text.indexOf("\n---", 3)
+    return text.slice(0, end)
+  }
+
+  it("opens with a YAML front matter block carrying schema, source and timezone", () => {
     const text = formatMeetingText(makeMeeting())
-    expect(text).toContain("Sprint sync")
-    expect(text).toContain("Alice")
-    expect(text).toContain("Hello everyone")
-    expect(text).toContain("Bob")
+    expect(text.startsWith("---\n")).toBe(true)
+    const fm = frontMatter(text)
+    expect(fm).toContain("schema: platica-notes-transcript/2")
+    expect(fm).toContain("source: google-meet-live-captions")
+    expect(fm).toContain(`timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`)
   })
 
-  it("shows no chat marker when there are no messages", () => {
-    expect(formatMeetingText(makeMeeting())).not.toContain("(chat)")
+  it("renders title, started and ended in the front matter", () => {
+    const fm = frontMatter(formatMeetingText(makeMeeting()))
+    expect(fm).toContain('title: "Sprint sync"')
+    expect(fm).toMatch(/started: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}/)
+    expect(fm).toMatch(/ended: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}/)
   })
 
-  it("appends a build-stamp footer (dev fallback under vitest, no globals defined)", () => {
-    const text = formatMeetingText(makeMeeting())
-    expect(text).toContain("Plática Notes")
-    // Globals are not defined under vitest, so both fields fall back to "dev".
-    expect(text.trimEnd().endsWith("— Plática Notes dev (dev)")).toBe(true)
+  it("quotes and escapes a title with special characters", () => {
+    const fm = frontMatter(formatMeetingText(makeMeeting({ title: 'a "b": c' })))
+    expect(fm).toContain('title: "a \\"b\\": c"')
   })
 
-  it("interleaves chat into the transcript, tagged (chat), in time order", () => {
+  it("includes language and recorder when present, omits them when absent", () => {
+    const withMeta = frontMatter(formatMeetingText(makeMeeting({ language: "ru-RU", recorder: "Alex" })))
+    expect(withMeta).toContain("language: ru-RU")
+    expect(withMeta).toContain('recorder: "Alex"')
+    const without = frontMatter(formatMeetingText(makeMeeting()))
+    expect(without).not.toContain("language:")
+    expect(without).not.toContain("recorder:")
+  })
+
+  it("renders participants as a sorted, quoted block list; omits the key when empty", () => {
+    const fm = frontMatter(formatMeetingText(makeMeeting({ participants: ["Charlie", "alice", "Bob"] })))
+    expect(fm).toContain('participants:\n  - "alice"\n  - "Bob"\n  - "Charlie"')
+    expect(frontMatter(formatMeetingText(makeMeeting()))).not.toContain("participants:")
+  })
+
+  it("emits one turn per utterance (no same-speaker merge), with ids and timestamps", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "one" },
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:05.000Z", text: "two" },
+      ],
+    }))
+    expect(text).toMatch(/\[t1\] Alice {2}\d{4}-\d{2}-\d{2}T[\d:]+[+-][\d:]+ \(\+01:00\)/)
+    expect(text).toContain("[t2] Alice")
+    expect(text).toContain("one")
+    expect(text).toContain("two")
+  })
+
+  it("tags chat turns (chat) and interleaves them in time order", () => {
     const text = formatMeetingText(makeMeeting({
       chat: [{ sender: "Bob", sentAt: "2026-06-10T10:05:00.000Z", text: "see link" }],
     }))
-    expect(text).toContain("Bob (chat)")
-    expect(text).toContain("see link")
-    // No separate CHAT section header anymore — it lives in the timeline.
-    expect(text).not.toContain("\nCHAT\n")
-    // Chat at 10:05 sorts after the last speech line at 10:02.
+    expect(text).toMatch(/\[t\d+\] Bob \(chat\) {2}/)
     expect(text.indexOf("see link")).toBeGreaterThan(text.indexOf("Hi Alice"))
   })
 
-  it("omits the PARTICIPANTS section when the list is empty", () => {
-    expect(formatMeetingText(makeMeeting())).not.toContain("PARTICIPANTS")
+  it("marks an unresolved Speaker N label (unresolved)", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [{ speaker: "Speaker 4", startedAt: "2026-06-10T10:01:00.000Z", text: "yes" }],
+    }))
+    expect(text).toMatch(/\[t1\] Speaker 4 \(unresolved\) {2}/)
   })
 
-  it("renders the PARTICIPANTS section sorted alphabetically", () => {
-    const text = formatMeetingText(makeMeeting({ participants: ["Charlie", "alice", "Bob"] }))
-    expect(text).toContain("PARTICIPANTS")
-    const section = text.slice(text.indexOf("PARTICIPANTS"))
-    const names = section.split("\n").slice(2, 5)
-    expect(names).toEqual(["alice", "Bob", "Charlie"])
+  it("computes the elapsed offset from the meeting start", () => {
+    const text = formatMeetingText(makeMeeting({
+      startedAt: "2026-06-10T10:00:00.000Z",
+      transcript: [{ speaker: "Alice", startedAt: "2026-06-10T10:01:09.000Z", text: "hi" }],
+    }))
+    expect(text).toContain("(+01:09)")
   })
 
-  it("places PARTICIPANTS before the transcript", () => {
-    const text = formatMeetingText(makeMeeting({ participants: ["Alice"] }))
-    expect(text.indexOf("PARTICIPANTS")).toBeLessThan(text.indexOf("TRANSCRIPT"))
+  it("attaches caption alternatives under the matching speech turn (final omitted)", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [{ speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "Hello everyone" }],
+      rawVersions: [
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", versions: ["Hello everyone here", "Hello everyone"] },
+      ],
+    }))
+    expect(text).toContain("Hello everyone")
+    expect(text).toContain("  alt: Hello everyone here")
+    // The final frame is the turn text and must NOT be repeated as an alt.
+    expect(text).not.toContain("  alt: Hello everyone\n")
   })
 
-  it("tolerates a meeting stored before the participants field existed", () => {
-    const meeting = makeMeeting()
-    // Simulate legacy stored data lacking the field entirely.
-    delete (meeting as { participants?: string[] }).participants
-    const text = formatMeetingText(meeting)
+  it("emits no alt lines for a phrase that only grew or never changed", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [{ speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", text: "Hi there" }],
+      rawVersions: [{ speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", versions: ["Hi", "Hi there"] }],
+    }))
+    expect(text).not.toContain("alt:")
+  })
+
+  it("never attaches alts to a chat turn", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [],
+      chat: [{ sender: "Bob", sentAt: "2026-06-10T10:02:00.000Z", text: "typed" }],
+      rawVersions: [{ speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", versions: ["x", "y"] }],
+    }))
+    expect(text).not.toContain("alt:")
+  })
+
+  it("has no v1 footer or section headers", () => {
+    const text = formatMeetingText(makeMeeting({ participants: ["Alice"], rawVersions: [] }))
+    expect(text).not.toContain("— Plática Notes")
+    expect(text).not.toContain("RAW CAPTION VERSIONS")
+    expect(text).not.toContain("TRANSCRIPT")
     expect(text).not.toContain("PARTICIPANTS")
-    expect(text).toContain("Sprint sync")
   })
 
-  const withVersions = {
-    rawVersions: [
-      // Grew then truncated: the truncation is a revision point the collapse keeps.
-      { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", versions: ["Hello everyone here", "Hello everyone"] },
-      { speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", versions: ["Hi Alice"] },
-    ],
-  }
-
-  it("renders a RAW CAPTION VERSIONS section listing each kept version", () => {
-    const text = formatMeetingText(makeMeeting(withVersions))
-    expect(text).toContain("RAW CAPTION VERSIONS")
-    expect(text).toContain("1. Hello everyone here")
-    expect(text).toContain("2. Hello everyone")
-  })
-
-  it("omits phrases that never changed (single-version) from the section", () => {
-    const text = formatMeetingText(makeMeeting(withVersions))
-    const section = text.slice(text.indexOf("RAW CAPTION VERSIONS"))
-    expect(section).not.toContain("Hi Alice")
-  })
-
-  it("omits the whole section when no phrase has more than one version", () => {
-    const text = formatMeetingText(makeMeeting({
-      rawVersions: [{ speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", versions: ["Hi"] }],
-    }))
-    expect(text).not.toContain("RAW CAPTION VERSIONS")
-  })
-
-  it("omits a phrase that only grew left-to-right (collapses to one frame, no revisions)", () => {
-    const text = formatMeetingText(makeMeeting({
-      rawVersions: [{ speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", versions: ["Hi", "Hi there", "Hi there everyone"] }],
-    }))
-    expect(text).not.toContain("RAW CAPTION VERSIONS")
-  })
-
-  it("omits the section for legacy meetings lacking rawVersions", () => {
-    expect(formatMeetingText(makeMeeting())).not.toContain("RAW CAPTION VERSIONS")
-  })
-
-  it("places RAW CAPTION VERSIONS after the transcript", () => {
-    const text = formatMeetingText(makeMeeting(withVersions))
-    expect(text.indexOf("TRANSCRIPT")).toBeLessThan(text.indexOf("RAW CAPTION VERSIONS"))
-  })
-
-  it("merges consecutive same-speaker utterances into a single block", () => {
-    const text = formatMeetingText(makeMeeting({
-      transcript: [
-        { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "Hello" },
-        { speaker: "Alice", startedAt: "2026-06-10T10:01:05.000Z", text: "everyone here" },
-      ],
-    }))
-    const aliceHeaders = text.split("\n").filter((l) => /^Alice \(/.test(l))
-    expect(aliceHeaders).toHaveLength(1)
-    expect(text).toContain("Hello everyone here")
-  })
-
-  it("keeps an interruption as three ordered blocks (A-B-A)", () => {
-    const text = formatMeetingText(makeMeeting({
-      transcript: [
-        { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "first" },
-        { speaker: "Bob", startedAt: "2026-06-10T10:01:02.000Z", text: "interject" },
-        { speaker: "Alice", startedAt: "2026-06-10T10:01:05.000Z", text: "second" },
-      ],
-    }))
-    const aliceHeaders = text.split("\n").filter((l) => /^Alice \(/.test(l))
-    expect(aliceHeaders).toHaveLength(2)
-    expect(text.indexOf("interject")).toBeGreaterThan(text.indexOf("first"))
-    expect(text.indexOf("second")).toBeGreaterThan(text.indexOf("interject"))
+  it("tolerates a legacy meeting lacking participants/rawVersions/recorder/language", () => {
+    const meeting = makeMeeting()
+    delete (meeting as { participants?: string[] }).participants
+    delete (meeting as { rawVersions?: unknown }).rawVersions
+    const text = formatMeetingText(meeting)
+    expect(text).toContain("schema: platica-notes-transcript/2")
+    expect(text).toContain("Hello everyone")
   })
 })
 

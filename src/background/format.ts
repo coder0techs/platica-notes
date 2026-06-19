@@ -1,5 +1,5 @@
 import type { DebugEvent, Meeting } from "../shared/types"
-import { mergeTimeline } from "../shared/transcript"
+import { flattenTimeline } from "../shared/transcript"
 
 // Injected by esbuild's define at build time; typeof-guarded so vitest (which
 // does not define them) falls back to "dev" instead of throwing ReferenceError.
@@ -33,19 +33,22 @@ export function elapsedLabel(fromIso: string, toIso: string): string {
   return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`
 }
 
-const PLATFORM_LABELS: Record<Meeting["platform"], string> = {
-  meet: "Google Meet",
-  zoom: "Zoom",
-  teams: "Microsoft Teams",
+const PLATFORM_SOURCES: Record<Meeting["platform"], string> = {
+  meet: "google-meet-live-captions",
+  zoom: "zoom-live-captions",
+  teams: "teams-live-captions",
 }
 
-const TIME_FORMAT: Intl.DateTimeFormatOptions = {
-  year: "numeric", month: "2-digit", day: "2-digit",
-  hour: "2-digit", minute: "2-digit", hour12: false,
+// Minimal YAML double-quoted scalar: safe for free-text values (title, names)
+// that may contain ":" or quotes.
+function yamlScalar(s: string): string {
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
 }
 
-function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", TIME_FORMAT)
+// feed.ts labels a device with no roster entry as `Speaker <tail>`. Surfacing it
+// as a fact lets the pipeline distrust attribution there.
+function isUnresolved(speaker: string): boolean {
+  return /^Speaker /.test(speaker)
 }
 
 // Strips noise from a caption's version history, keeping only the revision points.
@@ -66,63 +69,50 @@ export function collapseVersions(versions: string[]): string[] {
 }
 
 export function formatMeetingText(meeting: Meeting): string {
-  const lines: string[] = [
-    meeting.title,
-    `Platform: ${PLATFORM_LABELS[meeting.platform]}`,
-    `Started: ${formatTimestamp(meeting.startedAt)}`,
-    `Ended: ${formatTimestamp(meeting.endedAt)}`,
+  const fm: string[] = [
+    "---",
+    "schema: platica-notes-transcript/2",
+    `source: ${PLATFORM_SOURCES[meeting.platform]}`,
   ]
-  // Attendance list. Optional via ?. so meetings stored before this field existed
-  // still render. Sorted here so output is deterministic regardless of capture order.
+  if (meeting.language) fm.push(`language: ${meeting.language}`)
+  fm.push(`timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`)
+  fm.push(`title: ${yamlScalar(meeting.title)}`)
+  fm.push(`started: ${isoLocal(meeting.startedAt)}`)
+  fm.push(`ended: ${isoLocal(meeting.endedAt)}`)
+  if (meeting.recorder) fm.push(`recorder: ${yamlScalar(meeting.recorder)}`)
   if (meeting.participants?.length) {
-    lines.push("", "PARTICIPANTS", "------------")
+    fm.push("participants:")
     for (const name of [...meeting.participants].sort((a, b) => a.localeCompare(b))) {
-      lines.push(name)
+      fm.push(`  - ${yamlScalar(name)}`)
     }
   }
-  // Speech and chat share one chronological TRANSCRIPT, chat tagged "(chat)" — the
-  // same interleaving the live panel shows. RAW CAPTION VERSIONS below stays
-  // transcript-only.
-  lines.push("", "TRANSCRIPT", "----------", "")
-  for (const entry of mergeTimeline(meeting.transcript, meeting.chat)) {
-    const label = entry.kind === "chat" ? `${entry.speaker} (chat)` : entry.speaker
-    lines.push(`${label} (${formatTimestamp(entry.at)}):`)
+  fm.push(`generator: Plática Notes ${VERSION} (${COMMIT})`)
+  fm.push("---")
+
+  // Per-utterance caption alternatives, keyed by (speaker, startedAt): the
+  // collapsed version history minus its final frame (the final IS the turn text).
+  // collapseVersions stays word-lossless; only phrases that diverged before the
+  // final survive with length > 1.
+  const altMap = new Map<string, string[]>()
+  for (const cv of meeting.rawVersions ?? []) {
+    const collapsed = collapseVersions(cv.versions)
+    if (collapsed.length > 1) altMap.set(`${cv.speaker} ${cv.startedAt}`, collapsed.slice(0, -1))
+  }
+
+  const lines: string[] = [...fm, ""]
+  let n = 0
+  for (const entry of flattenTimeline(meeting.transcript, meeting.chat)) {
+    n += 1
+    const tags = (entry.kind === "chat" ? " (chat)" : "") + (isUnresolved(entry.speaker) ? " (unresolved)" : "")
+    lines.push(`[t${n}] ${entry.speaker}${tags}  ${isoLocal(entry.at)} (+${elapsedLabel(meeting.startedAt, entry.at)})`)
     lines.push(entry.text)
-    lines.push("")
-  }
-  // Machine-readable revision history for transcript-reconstruction agents.
-  // Collapse pure left-to-right typing (see collapseVersions) so only revision
-  // points survive, then emit only phrases that still have more than one frame
-  // (a phrase that just grew, or never changed, adds nothing over the transcript
-  // line above). Optional via ?. so meetings stored before this field existed
-  // still render.
-  const revised = (meeting.rawVersions ?? [])
-    .map((v) => ({ ...v, versions: collapseVersions(v.versions) }))
-    .filter((v) => v.versions.length > 1)
-  if (revised.length > 0) {
-    lines.push("RAW CAPTION VERSIONS")
-    lines.push("--------------------")
-    lines.push("")
-    lines.push(
-      "Machine-generated revision points of each caption: the form before each time " +
-        "Google shortened or rewrote already-typed text, plus the final version. Pure " +
-        "left-to-right typing and pure case flicker between these points is collapsed " +
-        "(word-losslessly: a dropped frame's words are always reproduced in the next). " +
-        "For transcript-reconstruction agents, not human reading. The last line of each " +
-        "block is the text that appears within the corresponding TRANSCRIPT block above; " +
-        "earlier lines may contain words the final version dropped. " +
-        "Phrases that only grew, or never changed, are omitted.",
-    )
-    lines.push("")
-    for (const entry of revised) {
-      lines.push(`${entry.speaker} (${formatTimestamp(entry.startedAt)}):`)
-      for (const [i, text] of entry.versions.entries()) lines.push(`${i + 1}. ${text}`)
-      lines.push("")
+    if (entry.kind === "speech") {
+      const alts = altMap.get(`${entry.speaker} ${entry.at}`)
+      if (alts) for (const a of alts) lines.push(`  alt: ${a}`)
     }
+    lines.push("")
   }
-  lines.push("")
-  lines.push(`— Plática Notes ${VERSION} (${COMMIT})`)
-  return lines.join("\n")
+  return `${lines.join("\n").trimEnd()}\n`
 }
 
 // Cap the per-segment length so a pathological multi-KB meeting title cannot
