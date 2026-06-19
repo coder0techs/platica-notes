@@ -1,6 +1,7 @@
 import * as esbuild from "esbuild"
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { execSync } from "node:child_process"
+import { marked } from "marked"
 
 const watch = process.argv.includes("--watch")
 
@@ -34,6 +35,25 @@ manifest.version = version.replace(/[^0-9.].*$/, "")
 // page — surface the build commit there so the loaded build is identifiable.
 manifest.version_name = `${version} (${commit})`
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n")
+
+// In-extension doc pages: render the repo's Markdown into static, self-contained
+// HTML at build time (no runtime markdown library, no innerHTML at runtime — the
+// pages are plain HTML+CSS served from chrome-extension://). The popup links to
+// them. Content is the project's own docs, so rendering is trusted.
+const DOC_PAGES = [
+  { md: "README.md", out: "help.html", title: "Help" },
+  { md: "CHANGELOG.md", out: "changelog.html", title: "Release notes" },
+  { md: "PRIVACY.md", out: "privacy.html", title: "Privacy policy" },
+]
+for (const doc of DOC_PAGES) {
+  const body = marked.parse(readFileSync(doc.md, "utf8"))
+  const page =
+    '<!doctype html>\n<html lang="en">\n<head>\n' +
+    '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
+    `<title>${doc.title} — Plática Notes</title>\n<link rel="stylesheet" href="docs.css">\n</head>\n` +
+    `<body>\n<main class="doc">\n${body}\n</main>\n</body>\n</html>\n`
+  writeFileSync(`dist/${doc.out}`, page)
+}
 
 const options = {
   entryPoints: {
