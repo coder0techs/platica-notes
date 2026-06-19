@@ -144,6 +144,20 @@ describe("formatMeetingText (v2)", () => {
     expect(text).toContain("schema: platica-notes-transcript/2")
     expect(text).toContain("Hello everyone")
   })
+
+  it("does not mark a chat sender as (unresolved) even if named like a fallback label", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [],
+      chat: [{ sender: "Speaker 4", sentAt: "2026-06-10T10:02:00.000Z", text: "hi" }],
+    }))
+    expect(text).toContain("[t1] Speaker 4 (chat)")
+    expect(text).not.toContain("(unresolved)")
+  })
+
+  it("escapes a newline in a quoted scalar so the front matter stays one field per line", () => {
+    const text = formatMeetingText(makeMeeting({ title: "line1\nline2" }))
+    expect(text).toContain('title: "line1\\nline2"')
+  })
 })
 
 describe("collapseVersions", () => {

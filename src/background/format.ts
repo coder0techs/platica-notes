@@ -42,7 +42,7 @@ const PLATFORM_SOURCES: Record<Meeting["platform"], string> = {
 // Minimal YAML double-quoted scalar: safe for free-text values (title, names)
 // that may contain ":" or quotes.
 function yamlScalar(s: string): string {
-  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r")}"`
 }
 
 // feed.ts labels a device with no roster entry as `Speaker <tail>`. Surfacing it
@@ -103,7 +103,7 @@ export function formatMeetingText(meeting: Meeting): string {
   let n = 0
   for (const entry of flattenTimeline(meeting.transcript, meeting.chat)) {
     n += 1
-    const tags = (entry.kind === "chat" ? " (chat)" : "") + (isUnresolved(entry.speaker) ? " (unresolved)" : "")
+    const tags = (entry.kind === "chat" ? " (chat)" : "") + (entry.kind === "speech" && isUnresolved(entry.speaker) ? " (unresolved)" : "")
     lines.push(`[t${n}] ${entry.speaker}${tags}  ${isoLocal(entry.at)} (+${elapsedLabel(meeting.startedAt, entry.at)})`)
     lines.push(entry.text)
     if (entry.kind === "speech") {
