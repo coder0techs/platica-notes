@@ -26,12 +26,13 @@ Everything is decoded in the page and kept on your machine.
   the Meet window, so you can scroll back and re-read without leaving the call.
   Includes a **search box** that filters the timeline, and a footer input to add
   your own **notes**.
-- **Bookmarks & notes** — drop a timestamped bookmark with **Alt+Shift+B**, or
-  type a note in the panel; both land on the timeline in context and are written
-  into the saved file as tagged `(bookmark)` / `(note)` turns.
-- **Hide all on-screen UI** — a popup toggle and **Alt+Shift+H** hide every
-  extension element (controls, panel, toasts) for screen-sharing or demos;
-  recording keeps running while hidden.
+- **Bookmarks & notes** — drop a timestamped bookmark with **Alt+Shift+B**
+  (**⌥⇧B** on macOS), or type a note in the panel; both land on the timeline in
+  context and are written into the saved file as tagged `(bookmark)` / `(note)`
+  turns.
+- **Hide all on-screen UI** — a popup toggle and **Alt+Shift+H** (**⌥⇧H** on
+  macOS) hide every extension element (controls, panel, toasts) for
+  screen-sharing or demos; recording keeps running while hidden.
 - Full caption revision history appended at the bottom (`RAW CAPTION VERSIONS`):
   every distinct version Google streamed, so an agent can recover words the
   final caption dropped. Machine artifact, not for human reading.
@@ -72,7 +73,8 @@ the debug log** entirely, so the privacy flag is honored on every output path.
   transcript comes out empty. Seeds every new meeting; switch the in-meeting pill
   to override one call without changing the default.
 - **Hide all on-screen controls** — hide every extension element for
-  screen-sharing/demos (also toggled with Alt+Shift+H). Recording keeps running.
+  screen-sharing/demos (also toggled with Alt+Shift+H, ⌥⇧H on macOS). Recording
+  keeps running.
 - **Private by default** — new meetings start private (route to the private
   folder).
 - **Debug log** — write a full `.jsonl` diagnostic per meeting to

@@ -16,6 +16,12 @@ const buildCommit = typeof __BUILD_COMMIT__ === "string" ? __BUILD_COMMIT__ : "d
 const buildInfo = document.querySelector<HTMLParagraphElement>("#build-info")
 if (buildInfo) buildInfo.textContent = `v${buildVersion} (${buildCommit})`
 
+// The hide-UI chord is the same physical key everywhere (Alt on Windows/Linux is
+// the Option key on macOS — both set event.altKey), so only the label differs.
+const isMac = /Mac|iPhone|iPad/i.test(navigator.platform) || /Mac/i.test(navigator.userAgent)
+const hideShortcut = document.querySelector("#hide-ui-shortcut")
+if (hideShortcut) hideShortcut.textContent = isMac ? "⌥⇧H" : "Alt+Shift+H"
+
 for (const lang of CAPTION_LANGUAGES) {
   const opt = document.createElement("option")
   opt.value = lang.value
