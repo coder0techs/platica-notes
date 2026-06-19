@@ -1,12 +1,17 @@
-import type { ChatMessage, Utterance } from "./types"
+import type { ChatMessage, Note, Utterance } from "./types"
 
-// One row of the unified meeting timeline: a merged speech turn or a chat message.
+// One row of the unified meeting timeline: a speech turn, a chat message, or a
+// recorder's note/bookmark.
 export interface TimelineEntry {
-  kind: "speech" | "chat"
+  kind: "speech" | "chat" | "note"
   speaker: string
   text: string
   at: string // ISO 8601
 }
+
+// Tie-break order when several entries share the same instant: speech first
+// (it is what was happening), then chat, then the recorder's note last.
+const KIND_ORDER: Record<TimelineEntry["kind"], number> = { speech: 0, chat: 1, note: 2 }
 
 // Collapses consecutive utterances from the same speaker into one block, joining
 // their text with a single space. Strictly order-preserving: a different speaker
@@ -33,7 +38,7 @@ export function mergeUtterances(utterances: Utterance[]): Utterance[] {
 // utterance / chat message. Same sort and tie-break as mergeTimeline (at an
 // identical instant, speech sorts before chat), but no run-collapsing. This is
 // what the saved file consumes; the live panel still uses mergeTimeline.
-export function flattenTimeline(transcript: Utterance[], chat: ChatMessage[]): TimelineEntry[] {
+export function flattenTimeline(transcript: Utterance[], chat: ChatMessage[], notes: Note[] = []): TimelineEntry[] {
   const raw: TimelineEntry[] = [
     ...transcript.map(
       (utterance): TimelineEntry => ({
@@ -46,12 +51,13 @@ export function flattenTimeline(transcript: Utterance[], chat: ChatMessage[]): T
     ...chat.map(
       (message): TimelineEntry => ({ kind: "chat", speaker: message.sender, text: message.text, at: message.sentAt }),
     ),
+    ...notes.map((note): TimelineEntry => ({ kind: "note", speaker: "", text: note.text, at: note.at })),
   ]
   return raw
     .map((entry, index) => ({ entry, index }))
     .sort((a, b) => {
       if (a.entry.at !== b.entry.at) return a.entry.at < b.entry.at ? -1 : 1
-      if (a.entry.kind !== b.entry.kind) return a.entry.kind === "speech" ? -1 : 1
+      if (a.entry.kind !== b.entry.kind) return KIND_ORDER[a.entry.kind] - KIND_ORDER[b.entry.kind]
       return a.index - b.index
     })
     .map((x) => x.entry)
@@ -63,8 +69,8 @@ export function flattenTimeline(transcript: Utterance[], chat: ChatMessage[]): T
 // collapses consecutive same-speaker SPEECH - a chat or a different speaker breaks
 // the run, so a link pasted during a long turn splits it where it happened. Chat is
 // never folded into a speaker's speech.
-export function mergeTimeline(transcript: Utterance[], chat: ChatMessage[]): TimelineEntry[] {
-  const sorted = flattenTimeline(transcript, chat)
+export function mergeTimeline(transcript: Utterance[], chat: ChatMessage[], notes: Note[] = []): TimelineEntry[] {
+  const sorted = flattenTimeline(transcript, chat, notes)
   const out: TimelineEntry[] = []
   for (const entry of sorted) {
     const last = out[out.length - 1]

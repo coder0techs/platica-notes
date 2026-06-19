@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest"
 import { flattenTimeline, isNearBottom, mergeTimeline, mergeUtterances } from "../src/shared/transcript"
-import type { ChatMessage, Utterance } from "../src/shared/types"
+import type { ChatMessage, Note, Utterance } from "../src/shared/types"
 
 const u = (speaker: string, startedAt: string, text: string): Utterance => ({ speaker, startedAt, text })
 const cm = (sender: string, sentAt: string, text: string): ChatMessage => ({ sender, sentAt, text })
+const nt = (at: string, text: string): Note => ({ at, text })
 
 describe("mergeUtterances", () => {
   it("merges consecutive same-speaker utterances into one block joined by spaces", () => {
@@ -157,6 +158,52 @@ describe("flattenTimeline", () => {
   it("trims utterance text", () => {
     const out = flattenTimeline([{ speaker: "A", startedAt: "2026-06-10T10:01:00.000Z", text: "  hi  " }], [])
     expect(out[0].text).toBe("hi")
+  })
+
+  it("interleaves notes by time, tagged kind 'note' with an empty speaker", () => {
+    const out = flattenTimeline(
+      [u("Alice", "2026-06-10T10:01:00.000Z", "speak")],
+      [],
+      [nt("2026-06-10T10:00:30.000Z", "remember this")],
+    )
+    expect(out.map((e) => [e.kind, e.text])).toEqual([
+      ["note", "remember this"],
+      ["speech", "speak"],
+    ])
+    expect(out[0].speaker).toBe("")
+  })
+
+  it("keeps a bare bookmark (empty text) as a note entry", () => {
+    const out = flattenTimeline([], [], [nt("2026-06-10T10:00:30.000Z", "")])
+    expect(out).toEqual([{ kind: "note", speaker: "", text: "", at: "2026-06-10T10:00:30.000Z" }])
+  })
+
+  it("at an identical instant, orders speech, then chat, then note", () => {
+    const at = "2026-06-10T10:01:00.000Z"
+    const out = flattenTimeline(
+      [u("A", at, "spoke")],
+      [cm("B", at, "typed")],
+      [nt(at, "noted")],
+    )
+    expect(out.map((e) => e.kind)).toEqual(["speech", "chat", "note"])
+  })
+})
+
+describe("mergeTimeline with notes", () => {
+  it("never folds a note into a speech run — a note splits same-speaker speech", () => {
+    const out = mergeTimeline(
+      [
+        u("Alice", "2026-06-10T10:01:00.000Z", "one"),
+        u("Alice", "2026-06-10T10:01:10.000Z", "two"),
+      ],
+      [],
+      [nt("2026-06-10T10:01:05.000Z", "mark")],
+    )
+    expect(out.map((e) => [e.kind, e.text])).toEqual([
+      ["speech", "one"],
+      ["note", "mark"],
+      ["speech", "two"],
+    ])
   })
 })
 

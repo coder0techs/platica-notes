@@ -19,6 +19,12 @@ export interface ChatMessage {
   text: string
 }
 
+export interface Note {
+  at: string // ISO 8601
+  /** The recorder's note. An empty string is a bare bookmark (a marked moment). */
+  text: string
+}
+
 export interface DebugEvent {
   t: string
   ctx: "rtc" | "adapter" | "bg"
@@ -38,6 +44,8 @@ export interface ActiveSession {
   participants: string[]
   /** Per-caption revision history. Rides alongside transcript so reload/orphan recovery keep it. */
   rawVersions?: CaptionHistory[]
+  /** Recorder's bookmarks/notes, timestamped. Rides alongside transcript so reload/recovery keep them. */
+  notes?: Note[]
   /**
    * Learned deviceId -> display name map and the local user's own name. Persisted
    * so a mid-meeting page reload keeps resolving speaker names: Meet only streams
@@ -65,6 +73,8 @@ export interface Meeting {
   participants: string[]
   /** Per-caption revision history (all distinct versions Google streamed). */
   rawVersions?: CaptionHistory[]
+  /** Recorder's bookmarks/notes, timestamped. */
+  notes?: Note[]
   /** Display name of the local user who recorded this meeting. */
   recorder?: string
   /** BCP 47 caption language the stream was captured with, snapshot at finalize. */

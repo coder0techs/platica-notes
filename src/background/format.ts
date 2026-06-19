@@ -101,8 +101,17 @@ export function formatMeetingText(meeting: Meeting): string {
 
   const lines: string[] = [...fm, ""]
   let n = 0
-  for (const entry of flattenTimeline(meeting.transcript, meeting.chat)) {
+  for (const entry of flattenTimeline(meeting.transcript, meeting.chat, meeting.notes)) {
     n += 1
+    // A recorder's note carries no speaker; a bare bookmark (empty text) is a
+    // marked moment with no body line.
+    if (entry.kind === "note") {
+      const isBookmark = entry.text.trim() === ""
+      lines.push(`[t${n}] (${isBookmark ? "bookmark" : "note"})  ${isoLocal(entry.at)} (+${elapsedLabel(meeting.startedAt, entry.at)})`)
+      if (!isBookmark) lines.push(entry.text)
+      lines.push("")
+      continue
+    }
     const tags = (entry.kind === "chat" ? " (chat)" : "") + (entry.kind === "speech" && isUnresolved(entry.speaker) ? " (unresolved)" : "")
     lines.push(`[t${n}] ${entry.speaker}${tags}  ${isoLocal(entry.at)} (+${elapsedLabel(meeting.startedAt, entry.at)})`)
     lines.push(entry.text)

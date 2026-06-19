@@ -71,6 +71,7 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
       chat: session.chat,
       participants: session.participants ?? [],
       rawVersions: session.rawVersions ?? [],
+      notes: session.notes ?? [],
       recorder: session.selfName,
       language: session.captionLanguage ?? settings.captionLanguage,
     }

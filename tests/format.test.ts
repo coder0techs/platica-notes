@@ -128,6 +128,38 @@ describe("formatMeetingText (v2)", () => {
     expect(text).not.toContain("alt:")
   })
 
+  it("renders a note as a tagged timeline turn with its text on the next line", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [],
+      notes: [{ at: "2026-06-10T10:03:00.000Z", text: "follow up with Ada" }],
+    }))
+    expect(text).toMatch(/\[t1\] \(note\) {2}\d{4}-\d{2}-\d{2}T[\d:]+[+-][\d:]+ \(\+03:00\)/)
+    expect(text).toContain("follow up with Ada")
+  })
+
+  it("renders a bare bookmark (empty note text) with a tag and no body line", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [{ speaker: "Alice", startedAt: "2026-06-10T10:05:00.000Z", text: "after" }],
+      notes: [{ at: "2026-06-10T10:04:00.000Z", text: "" }],
+    }))
+    expect(text).toMatch(/\[t1\] \(bookmark\) {2}.*\(\+04:00\)/)
+    // The bookmark header is followed straight by a blank line then the next
+    // turn — no empty body line of its own.
+    expect(text).toMatch(/\(bookmark\) {2}[^\n]*\n\n\[t2\] Alice/)
+  })
+
+  it("interleaves a note into the transcript at its timestamp", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "before" },
+        { speaker: "Bob", startedAt: "2026-06-10T10:05:00.000Z", text: "after" },
+      ],
+      notes: [{ at: "2026-06-10T10:03:00.000Z", text: "in between" }],
+    }))
+    expect(text.indexOf("in between")).toBeGreaterThan(text.indexOf("before"))
+    expect(text.indexOf("in between")).toBeLessThan(text.indexOf("after"))
+  })
+
   it("has no v1 footer or section headers", () => {
     const text = formatMeetingText(makeMeeting({ participants: ["Alice"], rawVersions: [] }))
     expect(text).not.toContain("— Plática Notes")
