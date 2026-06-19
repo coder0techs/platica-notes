@@ -82,6 +82,12 @@ export interface Settings {
   privateByDefault: boolean
   retentionLimit: number
   debugLog: boolean
+  /**
+   * Hide every on-screen extension element (top controls, transcript panel,
+   * toasts) for screen-sharing or demos. Purely presentational — capture keeps
+   * running while hidden. Toggled from the popup or the Alt+Shift+H in-page chord.
+   */
+  hideUi: boolean
   // Download subfolders, relative to the browser Downloads directory.
   folderPublic: string
   folderPrivate: string
@@ -96,6 +102,7 @@ export const DEFAULT_SETTINGS: Settings = {
   privateByDefault: false,
   retentionLimit: 30,
   debugLog: false,
+  hideUi: false,
   folderPublic: "meetings/platica-notes",
   folderPrivate: "meetings/platica-notes-private",
   folderDebug: "meetings/platica-notes-logs",

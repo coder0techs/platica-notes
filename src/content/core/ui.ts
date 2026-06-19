@@ -2,6 +2,36 @@ import { CAPTION_LANGUAGES } from "../../shared/languages"
 
 const PULSE_ID = "platica-pulse"
 
+// --- global show/hide of every on-screen extension element ---------------------
+// Each injected root element is tagged with UI_EL_CLASS and shown/hidden via
+// `visibility` (not `display`): visibility is orthogonal to the transcript
+// panel's own display-based open/closed toggle, so the two never fight. All our
+// elements are position:fixed, so a hidden one reserves no layout and is fully
+// non-interactive. Capture is unaffected — this is purely presentational.
+const UI_EL_CLASS = "platica-ui-el"
+let uiHidden = false
+
+/** Tag a root extension element and apply the current visibility immediately, so
+ * an element created while the UI is hidden is born hidden. */
+export function registerUiEl(el: HTMLElement): void {
+  el.classList.add(UI_EL_CLASS)
+  el.style.visibility = uiHidden ? "hidden" : ""
+}
+
+/** Show or hide all extension UI. Idempotent; safe to call before any element
+ * exists (later elements pick up the state via registerUiEl). */
+export function setUiHidden(hidden: boolean): void {
+  uiHidden = hidden
+  for (const el of document.querySelectorAll<HTMLElement>("." + UI_EL_CLASS)) {
+    el.style.visibility = hidden ? "hidden" : ""
+  }
+}
+
+export function isUiHidden(): boolean {
+  return uiHidden
+}
+// -------------------------------------------------------------------------------
+
 /** Brief top-bar flash confirming a storage write happened. */
 export function pulseActivity(): void {
   let bar = document.getElementById(PULSE_ID)
@@ -11,6 +41,7 @@ export function pulseActivity(): void {
     bar.style.cssText =
       "position:fixed;top:0;left:0;width:100%;height:3px;z-index:2147483647;" +
       "pointer-events:none;transition:background-color .3s ease-in;background-color:transparent;"
+    registerUiEl(bar)
     document.documentElement.appendChild(bar)
   }
   bar.style.backgroundColor = "#6750a4"
@@ -25,6 +56,7 @@ export function showToast(message: string): void {
     "position:fixed;top:64px;left:50%;transform:translateX(-50%);background:#1f1f1f;color:#fff;" +
     "padding:10px 16px;border-radius:8px;font:14px system-ui;z-index:2147483647;" +
     "box-shadow:0 4px 16px rgba(0,0,0,.3);"
+  registerUiEl(toast)
   document.documentElement.appendChild(toast)
   setTimeout(() => toast.remove(), 8000)
 }
@@ -55,6 +87,7 @@ export function mountMeetingControls(opts: {
   const container = document.createElement("div")
   container.style.cssText =
     "position:fixed;top:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:2147483647;"
+  registerUiEl(container)
 
   // --- language pill: a visual layer (glyph + label + caret) with a transparent
   // native <select> stretched over the WHOLE pill, so a click anywhere on the pill

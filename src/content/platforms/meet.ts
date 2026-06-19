@@ -1,9 +1,10 @@
 import { sendToBackground } from "../../shared/messages"
-import { getLocal, getSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
+import { getLocal, getSettings, saveSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
 import { DEFAULT_SETTINGS } from "../../shared/types"
 import type { ActiveSession, DebugEvent, Settings } from "../../shared/types"
 import { SessionWriter } from "../core/persistence"
-import { mountMeetingControls, pulseActivity, showToast } from "../core/ui"
+import { isHideUiChord } from "../core/hotkeys"
+import { isUiHidden, mountMeetingControls, pulseActivity, setUiHidden, showToast } from "../core/ui"
 import { mountTranscriptPanel } from "../core/transcript-panel"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
 import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
@@ -140,6 +141,8 @@ async function main(): Promise<void> {
   debugEnabled = settings.debugLog
   activeLanguage = settings.captionLanguage
   pushRtcConfig(activeLanguage, settings.debugLog)
+  setUiHidden(settings.hideUi)
+  watchHideUiHotkey()
   watchSettings()
 
   // Meet soft-navigates without page loads (landing -> meeting, /new -> meeting,
@@ -436,7 +439,22 @@ function watchSettings(): void {
       // debug-flag toggle reaches the MAIN-world script.
       if (activeMeetingHandler === null) activeLanguage = next.captionLanguage
       pushRtcConfig(activeLanguage, next.debugLog)
+      setUiHidden(next.hideUi)
     }
+  })
+}
+
+// Alt+Shift+H hides/shows every on-screen extension element. Writes the persisted
+// setting (not just local state) so the popup checkbox and the chord stay in sync;
+// the storage change is applied by watchSettings. Works while the UI is hidden,
+// which is the whole point. Ignored while typing so it never eats a real keystroke.
+function watchHideUiHotkey(): void {
+  document.addEventListener("keydown", (event) => {
+    if (!isHideUiChord(event)) return
+    const target = event.target as HTMLElement | null
+    if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return
+    event.preventDefault()
+    void saveSettings({ hideUi: !isUiHidden() })
   })
 }
 

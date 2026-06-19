@@ -2,6 +2,7 @@ import { CAPTION_LANGUAGES } from "../../shared/languages"
 import { getSettings, saveSettings } from "../../shared/storage"
 
 const captionLanguage = document.querySelector<HTMLSelectElement>("#caption-language")!
+const hideUi = document.querySelector<HTMLInputElement>("#hide-ui")!
 const privateDefault = document.querySelector<HTMLInputElement>("#private-default")!
 const debugLog = document.querySelector<HTMLInputElement>("#debug-log")!
 const folderPublic = document.querySelector<HTMLInputElement>("#folder-public")!
@@ -35,6 +36,7 @@ async function init(): Promise<void> {
     captionLanguage.appendChild(opt)
     captionLanguage.value = settings.captionLanguage
   }
+  hideUi.checked = settings.hideUi
   privateDefault.checked = settings.privateByDefault
   debugLog.checked = settings.debugLog
   folderPublic.value = settings.folderPublic
@@ -44,6 +46,10 @@ async function init(): Promise<void> {
 
 captionLanguage.addEventListener("change", () => {
   void saveSettings({ captionLanguage: captionLanguage.value })
+})
+
+hideUi.addEventListener("change", () => {
+  void saveSettings({ hideUi: hideUi.checked })
 })
 
 privateDefault.addEventListener("change", () => {

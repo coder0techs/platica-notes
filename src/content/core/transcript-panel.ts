@@ -1,5 +1,6 @@
 import type { ChatMessage, Utterance } from "../../shared/types"
 import { isNearBottom, mergeTimeline } from "../../shared/transcript"
+import { registerUiEl } from "./ui"
 
 const RERENDER_THROTTLE_MS = 400
 
@@ -77,6 +78,9 @@ export function mountTranscriptPanel(opts: { onVisibilityChange?: (visible: bool
   const card = document.createElement("div")
   card.style.cssText = CARD_CSS
   card.style.display = "none"
+  // Tagged so the global hide toggle can hide it via `visibility`, orthogonal to
+  // this panel's own display-based open/closed state (the two never conflict).
+  registerUiEl(card)
 
   const header = document.createElement("div")
   header.style.cssText = HEADER_CSS

@@ -27,3 +27,9 @@ describe("default caption language", () => {
     expect(withDefaults({ captionLanguage: "ru-RU" }).captionLanguage).toBe("ru-RU")
   })
 })
+
+describe("hide-UI setting", () => {
+  it("shows the UI by default", () => {
+    expect(DEFAULT_SETTINGS.hideUi).toBe(false)
+  })
+})
