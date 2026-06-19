@@ -154,6 +154,12 @@ describe("formatMeetingText (v2)", () => {
     expect(text).not.toContain("(unresolved)")
   })
 
+  it("dedupes participants in the front matter", () => {
+    const fm = frontMatter(formatMeetingText(makeMeeting({ participants: ["Bob", "Bob", "alice"] })))
+    expect(fm).toContain('participants:\n  - "alice"\n  - "Bob"')
+    expect(fm.match(/- "Bob"/g)).toHaveLength(1)
+  })
+
   it("escapes a newline in a quoted scalar so the front matter stays one field per line", () => {
     const text = formatMeetingText(makeMeeting({ title: "line1\nline2" }))
     expect(text).toContain('title: "line1\\nline2"')

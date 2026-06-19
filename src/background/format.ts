@@ -82,7 +82,7 @@ export function formatMeetingText(meeting: Meeting): string {
   if (meeting.recorder) fm.push(`recorder: ${yamlScalar(meeting.recorder)}`)
   if (meeting.participants?.length) {
     fm.push("participants:")
-    for (const name of [...meeting.participants].sort((a, b) => a.localeCompare(b))) {
+    for (const name of [...new Set(meeting.participants)].sort((a, b) => a.localeCompare(b))) {
       fm.push(`  - ${yamlScalar(name)}`)
     }
   }
