@@ -18,6 +18,17 @@ export function shouldDrainTail(
   return meetingPath === lastMeetingPath && now - lastEndedAt < graceMs
 }
 
+// After a meeting ends, the loop waits for the residual leave icon to clear
+// before re-arming, so a stale call_end icon on the post-leave screen does not
+// instantly re-trigger a phantom join. But a fast rejoin puts the user back in
+// the call before this wait begins, so the icon is present again and NEVER
+// clears — an unbounded wait would block the loop forever and the rejoined
+// session would never be recorded (the transcript-loss bug). Cap the wait at the
+// tail-grace window: once it elapses, shouldDrainTail paces the restart instead.
+export function shouldFinishRearmWait(iconGone: boolean, elapsedMs: number, capMs: number): boolean {
+  return iconGone || elapsedMs >= capMs
+}
+
 export interface LeaveState {
   end: boolean
   reason: string

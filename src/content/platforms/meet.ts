@@ -9,7 +9,7 @@ import { mountTranscriptPanel } from "../core/transcript-panel"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
 import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
 import { RtcFeed } from "../meet-rtc/feed"
-import { nextLeaveState, shouldDrainTail } from "./meet-lifecycle"
+import { nextLeaveState, shouldDrainTail, shouldFinishRearmWait } from "./meet-lifecycle"
 
 // --- Google Meet DOM contract. Verify on a live meeting before each release. ---
 const ICON_FONT = ".google-symbols"
@@ -170,10 +170,15 @@ async function main(): Promise<void> {
     // The Leave click fires endMeeting while Meet's toolbar (and the call_end
     // icon) is still on screen. Wait for the icon to actually disappear before
     // re-arming, otherwise the residual icon triggers an instant phantom re-join
-    // on Meet's post-leave screen. Once gone, the top-of-loop wait re-detects the
-    // next meeting (soft-nav to a new code, or a rejoin of the same code when the
-    // icon returns).
-    await waitFor(() => !findIcon(LEAVE_ICON_TEXT))
+    // on Meet's post-leave screen. But a fast rejoin puts the user back in the
+    // call before this wait begins, so the icon is present again and never
+    // clears — an unbounded wait here would block the loop forever and the
+    // rejoined session would never be recorded. Cap it at the tail grace: once it
+    // elapses, the top-of-loop shouldDrainTail paces the restart of the same code.
+    const rearmStart = Date.now()
+    await waitFor(() =>
+      shouldFinishRearmWait(!findIcon(LEAVE_ICON_TEXT), Date.now() - rearmStart, CAPTION_TAIL_GRACE_MS),
+    )
   }
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { nextLeaveState, shouldDrainTail } from "../src/content/platforms/meet-lifecycle"
+import { nextLeaveState, shouldDrainTail, shouldFinishRearmWait } from "../src/content/platforms/meet-lifecycle"
 
 const GRACE = 8000
 const THRESHOLD = 3
@@ -16,6 +16,30 @@ describe("shouldDrainTail (phantom-duplicate grace)", () => {
   })
   it("starts normally: first meeting of the tab (no prior path)", () => {
     expect(shouldDrainTail("/abc-defg-hij", "", 0, 5000, GRACE)).toBe(false)
+  })
+})
+
+describe("shouldFinishRearmWait (re-arm after a meeting ends, never deadlock)", () => {
+  // Normal leave: the residual leave icon clears on the post-leave screen, so the
+  // re-arm wait finishes as soon as it is gone.
+  it("finishes immediately once the leave icon has cleared", () => {
+    expect(shouldFinishRearmWait(true, 0, GRACE)).toBe(true)
+  })
+
+  // Fast rejoin: the user is back in the call before the wait begins, so the
+  // call_end icon is present again and never clears. The wait MUST still finish at
+  // the grace cap — otherwise the loop blocks forever and the rejoined session is
+  // never recorded (the transcript-loss bug).
+  it("finishes at the grace cap even if the icon never clears (fast rejoin)", () => {
+    expect(shouldFinishRearmWait(false, GRACE, GRACE)).toBe(true)
+    expect(shouldFinishRearmWait(false, GRACE + 500, GRACE)).toBe(true)
+  })
+
+  // While the icon is still present and the cap has not elapsed, keep waiting so a
+  // residual post-leave icon does not instantly re-trigger a phantom join.
+  it("keeps waiting while the icon is present and the cap has not elapsed", () => {
+    expect(shouldFinishRearmWait(false, 0, GRACE)).toBe(false)
+    expect(shouldFinishRearmWait(false, GRACE - 1, GRACE)).toBe(false)
   })
 })
 
