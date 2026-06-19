@@ -2,6 +2,15 @@
 
 All notable changes to Plática Notes, newest first.
 
+## 1.6.1 — 2026-06-19
+
+- **Re-joined meetings are recorded again.** Leaving a call and quickly re-joining
+  it in the same tab no longer drops the second visit; its transcript is saved to
+  both the file and the meeting history.
+- **More complete participant lists.** People who were already in the call when
+  recording began are no longer intermittently missing from the saved
+  participants; the list is seeded from everyone known at join time.
+
 ## 1.6.0 — 2026-06-19
 
 - **Decluttered popup.** Clicking the toolbar icon now shows just what you reach
