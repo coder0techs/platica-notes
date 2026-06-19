@@ -29,6 +29,25 @@ export function shouldFinishRearmWait(iconGone: boolean, elapsedMs: number, capM
   return iconGone || elapsedMs >= capMs
 }
 
+// Build the attendee set known at a meeting's join time. Roster device events
+// stream from join time — often BEFORE the meeting's recordAttendee is wired up —
+// so early participants would otherwise land only in the page roster (where they
+// still resolve as speakers) but never in the attendee list. Seeding the set from
+// the roster captures them. Live arrivals after join are added incrementally.
+// Order: resumed-snapshot prefix, then roster, then self; deduped by exact trimmed
+// name (first occurrence wins), blanks dropped — matching recordAttendee.
+export function seedAttendees(prefix: string[], rosterNames: string[], selfName: string | null): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const name of [...prefix, ...rosterNames, ...(selfName ? [selfName] : [])]) {
+    const trimmed = name.trim()
+    if (!trimmed || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    out.push(trimmed)
+  }
+  return out
+}
+
 export interface LeaveState {
   end: boolean
   reason: string

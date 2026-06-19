@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { nextLeaveState, shouldDrainTail, shouldFinishRearmWait } from "../src/content/platforms/meet-lifecycle"
+import { nextLeaveState, seedAttendees, shouldDrainTail, shouldFinishRearmWait } from "../src/content/platforms/meet-lifecycle"
 
 const GRACE = 8000
 const THRESHOLD = 3
@@ -40,6 +40,37 @@ describe("shouldFinishRearmWait (re-arm after a meeting ends, never deadlock)", 
   it("keeps waiting while the icon is present and the cap has not elapsed", () => {
     expect(shouldFinishRearmWait(false, 0, GRACE)).toBe(false)
     expect(shouldFinishRearmWait(false, GRACE - 1, GRACE)).toBe(false)
+  })
+})
+
+describe("seedAttendees (participants known at join time)", () => {
+  // The bug: roster device events stream from join time — often BEFORE the
+  // meeting's recordAttendee is wired — so early participants landed in the page
+  // roster but never in the attendee set. Seeding the set from the roster known at
+  // join time captures them.
+  it("unions resumed-prefix, roster, and self, in that order", () => {
+    expect(seedAttendees(["Ann"], ["Bob", "Cleo"], "Me")).toEqual(["Ann", "Bob", "Cleo", "Me"])
+  })
+
+  it("captures roster names that arrived before wiring (the missing-participants bug)", () => {
+    expect(seedAttendees([], ["Early Arrival", "Other"], null)).toEqual(["Early Arrival", "Other"])
+  })
+
+  it("dedupes by exact trimmed name, keeping first occurrence", () => {
+    expect(seedAttendees(["Ann"], ["Ann", " Ann ", "Bob"], "Ann")).toEqual(["Ann", "Bob"])
+  })
+
+  it("trims and drops empty / whitespace-only names", () => {
+    expect(seedAttendees(["  "], [" Bob ", ""], "  ")).toEqual(["Bob"])
+  })
+
+  it("omits self when it is null or blank", () => {
+    expect(seedAttendees([], ["Bob"], null)).toEqual(["Bob"])
+    expect(seedAttendees([], ["Bob"], "   ")).toEqual(["Bob"])
+  })
+
+  it("returns an empty list when nothing is known yet", () => {
+    expect(seedAttendees([], [], null)).toEqual([])
   })
 })
 

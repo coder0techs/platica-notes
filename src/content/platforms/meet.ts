@@ -9,7 +9,7 @@ import { mountTranscriptPanel } from "../core/transcript-panel"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
 import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
 import { RtcFeed } from "../meet-rtc/feed"
-import { nextLeaveState, shouldDrainTail, shouldFinishRearmWait } from "./meet-lifecycle"
+import { nextLeaveState, seedAttendees, shouldDrainTail, shouldFinishRearmWait } from "./meet-lifecycle"
 
 // --- Google Meet DOM contract. Verify on a live meeting before each release. ---
 const ICON_FONT = ".google-symbols"
@@ -257,7 +257,7 @@ async function runMeeting(tabId: number): Promise<void> {
   // (both routed through the page-level RTC listener via recordAttendee). Deduped
   // by exact name, so a participant who reconnects with a new device id — or any
   // repeated roster broadcast — counts once.
-  const attendees = new Set<string>(prefixParticipants)
+  const attendees = new Set<string>()
   recordAttendee = (name) => {
     const trimmed = name.trim()
     if (!trimmed || attendees.has(trimmed)) return
@@ -265,7 +265,11 @@ async function runMeeting(tabId: number): Promise<void> {
     session.participants = [...attendees]
     writer.requestWrite()
   }
-  if (selfName) recordAttendee(selfName)
+  // Seed from the roster known at join time. Roster device events stream from join
+  // time — often before this wiring — so without seeding, participants who arrived
+  // before the meeting's feed existed are missed from the list (they still resolve
+  // as speakers via the page roster). Live arrivals after this are added above.
+  for (const name of seedAttendees(prefixParticipants, [...roster.values()], selfName)) recordAttendee(name)
 
   // Recorder's notes/bookmarks for this meeting, seeded from a resumed snapshot.
   const notes: Note[] = [...prefixNotes]
