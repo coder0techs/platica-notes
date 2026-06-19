@@ -6,6 +6,33 @@ import { mergeTimeline } from "../shared/transcript"
 const VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev"
 const COMMIT = typeof __BUILD_COMMIT__ === "string" ? __BUILD_COMMIT__ : "dev"
 
+const pad2 = (n: number) => String(n).padStart(2, "0")
+
+// ISO 8601 in the runtime's local time with an explicit numeric offset and
+// second precision (Date.toISOString only emits UTC "Z"). Lets the pipeline
+// order turns and place them in absolute time without guessing the zone.
+export function isoLocal(iso: string): string {
+  const d = new Date(iso)
+  const offMin = -d.getTimezoneOffset() // minutes east of UTC
+  const sign = offMin >= 0 ? "+" : "-"
+  const abs = Math.abs(offMin)
+  return (
+    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}` +
+    `T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}` +
+    `${sign}${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}`
+  )
+}
+
+// Elapsed time from `fromIso` to `toIso` as mm:ss, rolling to h:mm:ss past an
+// hour. Negative/zero clamps to 00:00. Timezone-independent (a difference).
+export function elapsedLabel(fromIso: string, toIso: string): string {
+  const secs = Math.max(0, Math.round((Date.parse(toIso) - Date.parse(fromIso)) / 1000))
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  const s = secs % 60
+  return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`
+}
+
 const PLATFORM_LABELS: Record<Meeting["platform"], string> = {
   meet: "Google Meet",
   zoom: "Zoom",
@@ -130,8 +157,7 @@ export function sanitizeFolder(path: string, fallback: string): string {
 
 function fileStamp(iso: string): string {
   const d = new Date(iso)
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}`
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}-${pad2(d.getMinutes())}`
 }
 
 // Accepts the lighter { title, startedAt } meta so a full Meeting (which

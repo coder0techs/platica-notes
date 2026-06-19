@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { collapseVersions, debugLogFileName, formatDebugLog, formatMeetingText, meetingFileName, sanitizeFileName, sanitizeFolder } from "../src/background/format"
+import { collapseVersions, debugLogFileName, elapsedLabel, formatDebugLog, formatMeetingText, isoLocal, meetingFileName, sanitizeFileName, sanitizeFolder } from "../src/background/format"
 import type { DebugEvent, Meeting } from "../src/shared/types"
 
 function makeMeeting(overrides: Partial<Meeting> = {}): Meeting {
@@ -275,6 +275,32 @@ describe("debugLogFileName", () => {
     const jsonl = debugLogFileName(m)
     const base = txt.slice(0, txt.length - ".md".length)
     expect(jsonl).toBe(`${base}.debug.jsonl`)
+  })
+})
+
+describe("isoLocal", () => {
+  it("renders ISO 8601 with second precision and a numeric offset", () => {
+    expect(isoLocal("2026-06-10T10:00:11.000Z")).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/)
+  })
+
+  it("round-trips to the same instant regardless of the runner timezone", () => {
+    const iso = "2026-06-10T10:00:11.000Z"
+    expect(new Date(isoLocal(iso)).toISOString()).toBe(new Date(iso).toISOString())
+  })
+})
+
+describe("elapsedLabel", () => {
+  it("formats sub-hour gaps as mm:ss", () => {
+    expect(elapsedLabel("2026-06-10T10:00:00.000Z", "2026-06-10T10:00:07.000Z")).toBe("00:07")
+    expect(elapsedLabel("2026-06-10T10:00:00.000Z", "2026-06-10T10:01:09.000Z")).toBe("01:09")
+  })
+
+  it("rolls to h:mm:ss past an hour", () => {
+    expect(elapsedLabel("2026-06-10T10:00:00.000Z", "2026-06-10T11:05:03.000Z")).toBe("1:05:03")
+  })
+
+  it("clamps a negative or zero gap to 00:00", () => {
+    expect(elapsedLabel("2026-06-10T10:00:05.000Z", "2026-06-10T10:00:00.000Z")).toBe("00:00")
   })
 })
 
