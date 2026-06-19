@@ -63,6 +63,10 @@ export interface Meeting {
   participants: string[]
   /** Per-caption revision history (all distinct versions Google streamed). */
   rawVersions?: CaptionHistory[]
+  /** Local user's own display name at capture time; their captions are the cleanest channel. */
+  recorder?: string
+  /** BCP 47 caption language the stream was captured with, snapshot at finalize. */
+  language?: string
 }
 
 export interface Settings {

@@ -59,6 +59,7 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
       await untrackTab(tabId)
       return { meeting: null, debug, title: session.title, startedAt: session.startedAt, isPrivate: session.isPrivate }
     }
+    const settings = await getSettings()
     const meeting: Meeting = {
       id: crypto.randomUUID(),
       platform: session.platform,
@@ -70,8 +71,9 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
       chat: session.chat,
       participants: session.participants ?? [],
       rawVersions: session.rawVersions ?? [],
+      recorder: session.selfName,
+      language: settings.captionLanguage,
     }
-    const settings = await getSettings()
     await addMeeting(meeting, settings.retentionLimit)
     // Mark it for export BEFORE removing the session key / returning, so a crash
     // before the caller's download still leaves a trail for SW-start recovery.

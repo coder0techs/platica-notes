@@ -92,6 +92,24 @@ describe("finalizeSession", () => {
     await finalizeSession(7)
     expect(await listPendingExports()).toEqual([])
   })
+
+  it("snapshots the recorder (self) name from the session", async () => {
+    chrome._store["session_7"] = makeSession({ transcript: oneUtterance, selfName: "Grace Hopper" })
+    const r = await finalizeSession(7)
+    expect(r!.meeting!.recorder).toBe("Grace Hopper")
+  })
+
+  it("leaves recorder undefined when the session has no selfName", async () => {
+    chrome._store["session_7"] = makeSession({ transcript: oneUtterance })
+    const r = await finalizeSession(7)
+    expect(r!.meeting!.recorder).toBeUndefined()
+  })
+
+  it("snapshots the caption language from settings (default ru-RU)", async () => {
+    chrome._store["session_7"] = makeSession({ transcript: oneUtterance })
+    const r = await finalizeSession(7)
+    expect(r!.meeting!.language).toBe("ru-RU")
+  })
 })
 
 describe("recoverOrphanSessions", () => {
