@@ -4,3 +4,5 @@ coverage/
 *.zip
 
 .superpowers/
+.claude/
+.DS_Store

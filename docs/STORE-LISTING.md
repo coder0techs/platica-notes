@@ -10,7 +10,7 @@ The extension's design (100% local, zero network) makes every answer truthful.
 - **Name:** Plática Notes
 - **Short description (≤132 chars):**
   `Local meeting transcripts and chat, saved to your computer. Works with Google Meet™, nothing uploaded.`
-- **Category:** Productivity
+- **Category:** Productivity › Communication
 - **Language:** English (add more later if you localize the listing)
 
 ## Detailed description (suggested)
