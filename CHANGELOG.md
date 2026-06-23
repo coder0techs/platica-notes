@@ -2,7 +2,7 @@
 
 All notable changes to Plática Notes, newest first.
 
-## Unreleased
+## 1.6.2 - 2026-06-24
 
 - **Leaner transcript files.** Caption revisions that differ only in
   capitalization or punctuation are no longer saved as `alt:` lines; only genuine
