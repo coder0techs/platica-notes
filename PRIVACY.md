@@ -71,4 +71,4 @@ Any change to this policy will be reflected by an updated effective date above.
 
 ## Contact
 
-Questions about this policy: <add your contact email here before publishing>.
+Questions about this policy: coder0techs@icloud.com.
