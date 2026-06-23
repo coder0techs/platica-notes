@@ -94,14 +94,15 @@ notes), **`format.ts` (render)** — *blocked on the parallel format change*.
 - **Per-meeting (active) language** — the in-meeting pill. Changing it
   resubscribes **only the current meeting** and is **ephemeral**: it does **not**
   overwrite the persisted default.
-- **Fresh-install default = English** (`en-US`), not the current `ru-RU`. (His own
-  install can be set to Russian; English is the right out-of-box default for a
-  store audience.)
+- **Fresh-install default = English** (`en-US`), not the current `ru-RU`. English
+  is the right out-of-box default for a store audience; a user can still pick
+  Russian or any other supported language.
 
 **Why.** Current behaviour conflates the two: the pill/popup value is the single
 `Settings.captionLanguage`, so a manual mid-meeting switch sticks to the next
-meeting. For a multilingual day (ru / en / es) the desired model is "always start from my default, override
-just-for-now when a specific call is in another language".
+meeting. For a multilingual day (e.g. ru / en / es) the desired model is "always
+start from my default, override just-for-now when a specific call is in another
+language".
 
 **Behaviour sketch.**
 - Popup control writes the **default** (sticky).
@@ -176,7 +177,7 @@ visibility (verify the panel/pill being absent never gates capture).
 - **Structured Markdown output** — timecodes every N minutes, a TL;DR header
   placeholder, collapsible per-speaker blocks. *(Touches `format.ts` — coordinate
   with the parallel format work.)*
-- **RTC-based join/leave fallback (review item M5)** — reliability, not a feature:
+- **RTC-based join/leave fallback** — reliability, not a feature:
   today join/leave detection is entirely DOM-selector-dependent and fails silently
   if Meet churns its markup. Route an "all media-sessions closed" RTC signal as an
   authoritative end trigger.

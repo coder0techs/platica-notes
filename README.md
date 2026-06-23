@@ -67,17 +67,23 @@ synced folder — the private folder holds meetings you chose not to sync, and t
 debug logs embed the full transcript. Meetings marked **private are excluded from
 the debug log** entirely, so the privacy flag is honored on every output path.
 
-## Settings (popup)
+## Settings
 
-- **Default caption language** — must match the spoken language, or the
-  transcript comes out empty. Seeds every new meeting; switch the in-meeting pill
-  to override one call without changing the default.
-- **Hide all on-screen controls** — hide every extension element for
-  screen-sharing/demos (also toggled with Alt+Shift+H, ⌥⇧H on macOS). Recording
-  keeps running.
-- **Private by default** — new meetings start private (route to the private
-  folder).
-- **Debug log** — write a full `.jsonl` diagnostic per meeting to
+The toolbar popup keeps just the in-the-moment control, **Hide all on-screen
+controls** (also Alt+Shift+H, or ⌥⇧H on macOS), which hides every extension
+element for screen-sharing or demos while recording keeps running. The popup also
+links to the meeting history and to the Settings page.
+
+The **Settings page** (open it from the popup) holds everything else:
+
+- **Default caption language.** Must match the spoken language, or the transcript
+  comes out empty. It seeds every new meeting; the in-meeting pill overrides one
+  call without changing the default.
+- **Private by default.** New meetings start private and route to the private
+  folder.
+- **Folders.** The public, private, and debug-log download folders, relative to
+  Downloads.
+- **Debug log.** Writes a full `.jsonl` diagnostic per meeting to
   `Downloads/Platica Logs/`. Off by default. Private meetings are never logged.
 
 ## Development
