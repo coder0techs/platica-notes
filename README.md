@@ -49,6 +49,22 @@ Everything is decoded in the page and kept on your machine.
 - Optional **debug log** (off by default) for diagnostics.
 - **Zero network**: nothing is uploaded anywhere.
 
+## Install
+
+To install a packaged build (for a colleague, or before it is on the Chrome Web
+Store):
+
+1. Get the build: unzip a `platica-notes-<version>.zip`, or build it yourself
+   (see Development) and use the `dist/` folder.
+2. Open `chrome://extensions` (or `arc://extensions` in Arc).
+3. Turn on **Developer mode** (top-right).
+4. Click **Load unpacked** and select the unzipped folder (the one that contains
+   `manifest.json`).
+5. Join a Google Meet call; recording starts automatically.
+
+A manually loaded build does not auto-update. To update, replace the folder with
+the new version and click the reload icon on the extension's card.
+
 ## Output
 
 Files land in your Downloads folder:

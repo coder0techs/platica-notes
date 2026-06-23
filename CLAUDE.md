@@ -20,6 +20,22 @@ npm run package    # typecheck + test + build, then zip dist/ for the Web Store
 Load `dist/` as an unpacked extension at `chrome://extensions` (Developer mode,
 then "Load unpacked"). Reload it after each build.
 
+## Releasing a new version
+
+1. Update `CHANGELOG.md` (a new `## X.Y.Z - YYYY-MM-DD` section, newest first)
+   and, if behaviour changed, `README.md`.
+2. `npm run release` reads the Conventional Commit history since the last tag,
+   bumps the version in `package.json` and `public/manifest.json` in lockstep,
+   commits `chore(release): vX.Y.Z`, and tags it. No manual version editing.
+3. `npm run package` runs typecheck + tests + build, then writes
+   `platica-notes-<version>.zip`, the Chrome Web Store upload artifact.
+4. `git push --follow-tags` to publish the release commit and its tag.
+5. Upload the zip in the Web Store Developer Dashboard. Listing copy is in
+   `docs/STORE-LISTING.md`; the privacy policy is `PRIVACY.md`.
+
+Do not commit the zip; it is git-ignored and fully regenerable. To share a
+downloadable build, attach it to a GitLab release for the tag instead.
+
 ## Architecture
 
 Capture reads Meet's own WebRTC data channels, not the on-screen caption DOM.
