@@ -59,20 +59,28 @@ function isUnresolved(speaker: string): boolean {
   return /^Speaker /.test(speaker)
 }
 
+// Normalize a frame for COMPARISON ONLY: lowercase, then collapse every run of
+// non-letter / non-number characters to a single space and trim. Google Meet flips
+// the first letter's case ("за" vs "За") and churns punctuation between frames
+// ("зашла." then "зашла в"), which would otherwise defeat the prefix check below and
+// leak redundant frames as alt: noise. The \p{L}\p{N} unicode escapes need the `u`
+// flag so Cyrillic (and other scripts) match.
+const normFrame = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
+
 // Strips noise from a caption's version history, keeping only the revision points.
-// A frame is dropped ONLY when, relative to the next frame, it is either (a) a
-// verbatim prefix (the next frame just appended to it) or (b) the same text
-// ignoring case (Meet flickers the first letter's case back and forth on the same
-// words). In both cases every WORD of the dropped frame survives in the kept next
-// frame, so this stays word-lossless for reconstruction — only the casing of
-// intermediate frames is discarded. A frame where text was shortened, rewritten
-// mid-string, or repunctuated is neither, and is kept. The final frame is always
-// kept (so the canonical casing that appears in TRANSCRIPT survives).
+// A frame is dropped ONLY when its NORMALIZED text (case- and punctuation-folded;
+// see normFrame) is a prefix of the next frame's normalized text: the next frame
+// just appended to it, or differs from it only in casing or punctuation. Every WORD
+// of a dropped frame therefore survives in the kept next frame, so this stays
+// word-lossless for reconstruction; only the casing/punctuation of intermediate
+// frames is discarded. A frame whose text was shortened or rewritten mid-string is
+// not a normalized prefix and is kept, so a genuine ASR self-correction survives as
+// an alternative. The final frame is always kept, so the canonical text that appears
+// in TRANSCRIPT is emitted verbatim (normalization never touches emitted frames).
 export function collapseVersions(versions: string[]): string[] {
   return versions.filter((v, i) => {
     if (i === versions.length - 1) return true
-    const next = versions[i + 1]
-    return !next.startsWith(v) && next.toLowerCase() !== v.toLowerCase()
+    return !normFrame(versions[i + 1]).startsWith(normFrame(v))
   })
 }
 

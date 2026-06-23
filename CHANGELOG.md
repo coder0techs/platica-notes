@@ -2,6 +2,12 @@
 
 All notable changes to Plática Notes, newest first.
 
+## Unreleased
+
+- **Leaner transcript files.** Caption revisions that differ only in
+  capitalization or punctuation are no longer saved as `alt:` lines; only genuine
+  wording changes are kept, so the raw-versions section is much smaller.
+
 ## 1.6.1 — 2026-06-19
 
 - **Re-joined meetings are recorded again.** Leaving a call and quickly re-joining

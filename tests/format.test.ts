@@ -250,16 +250,31 @@ describe("collapseVersions", () => {
     expect(collapseVersions(["hello wrld", "hello world"])).toEqual(["hello wrld", "hello world"])
   })
 
-  it("keeps a case+punctuation change (repunctuation is a real revision, not pure case)", () => {
-    expect(collapseVersions(["так", "Так."])).toEqual(["так", "Так."])
-  })
-
   it("collapses pure case flicker, keeping the later casing", () => {
     expect(collapseVersions(["так", "Так"])).toEqual(["Так"])
   })
 
   it("collapses a back-and-forth case flicker run to the final frame", () => {
     expect(collapseVersions(["да", "Да", "да", "Да"])).toEqual(["Да"])
+  })
+
+  it("collapses punctuation-only churn (punctuation is ignored in the comparison)", () => {
+    // Meet repunctuates the same words between frames; the trailing "." is not a
+    // real revision, so "зашла." folds into the next frame that extends those words.
+    expect(collapseVersions(["зашла.", "зашла в"])).toEqual(["зашла в"])
+  })
+
+  it("collapses a combined case+punctuation flip, keeping the final frame verbatim", () => {
+    expect(collapseVersions(["так", "Так."])).toEqual(["Так."])
+  })
+
+  it("preserves a genuine divergence (a replaced word) as a kept frame", () => {
+    // A real ASR self-correction ("вина" vs "бинах") is not a normalized prefix of
+    // the next frame, so both survive (this is what an alt: line should capture).
+    expect(collapseVersions(["по картам на вина", "по картам на бинах"])).toEqual([
+      "по картам на вина",
+      "по картам на бинах",
+    ])
   })
 
   it("collapses a pure-growth chain down to just the final frame", () => {
@@ -270,18 +285,30 @@ describe("collapseVersions", () => {
     expect(collapseVersions(["only"])).toEqual(["only"])
   })
 
-  it("is word-lossless: every dropped frame is a prefix of, or case-equal to, the next frame", () => {
-    const chain = ["a", "ab", "abc", "ABC", "abc d"]
+  it("returns an empty list unchanged", () => {
+    expect(collapseVersions([])).toEqual([])
+  })
+
+  it("is word-lossless: every dropped frame's normalized text is a prefix of the next frame's", () => {
+    const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
+    const chain = ["a", "ab", "abc", "ABC.", "abc d"]
     const kept = new Set(collapseVersions(chain))
     chain.forEach((v, i) => {
       if (!kept.has(v) && i < chain.length - 1) {
-        // A dropped frame's words are always reproduced in the next frame: either it
-        // is a verbatim prefix (next appended to it) or it is the same text ignoring
-        // case (only the casing differs). No word is ever lost.
-        const next = chain[i + 1]
-        expect(next.startsWith(v) || next.toLowerCase() === v.toLowerCase()).toBe(true)
+        // A dropped frame's words always reappear in the next frame: its normalized
+        // text (case- and punctuation-folded) is a prefix of the next frame's, so no
+        // word is lost, only the casing/punctuation of intermediate frames.
+        expect(norm(chain[i + 1]).startsWith(norm(v))).toBe(true)
       }
     })
+  })
+
+  it("collapses a case+punctuation+growth chain to only the final element (acceptance)", () => {
+    expect(collapseVersions(["зашла.", "зашла в", "зашла в аккаунт уже"])).toEqual(["зашла в аккаунт уже"])
+  })
+
+  it("keeps both frames when the only change is a replaced word (acceptance)", () => {
+    expect(collapseVersions(["вина", "бинах"])).toEqual(["вина", "бинах"])
   })
 })
 
