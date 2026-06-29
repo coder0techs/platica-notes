@@ -96,8 +96,9 @@ export interface Settings {
   debugLog: boolean
   /**
    * Emit per-caption ASR alternatives in the saved .md (the `> ↳ _alt:_ …`
-   * lines). Off by default — they are a power-user recovery aid, not part of the
-   * clean human transcript.
+   * lines). On by default — Meet drops 20-26% of words from final captions, so
+   * keeping the alternatives is the safety net against lost words; turn off for a
+   * cleaner file.
    */
   captionAlternatives: boolean
   /**
@@ -120,7 +121,7 @@ export const DEFAULT_SETTINGS: Settings = {
   privateByDefault: false,
   retentionLimit: 30,
   debugLog: false,
-  captionAlternatives: false,
+  captionAlternatives: true,
   hideUi: false,
   folderPublic: "meetings/platica-notes",
   folderPrivate: "meetings/platica-notes-private",

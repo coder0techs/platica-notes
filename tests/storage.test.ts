@@ -15,8 +15,8 @@ describe("withDefaults", () => {
 })
 
 describe("captionAlternatives default", () => {
-  it("defaults caption alternatives off", () => {
-    expect(DEFAULT_SETTINGS.captionAlternatives).toBe(false)
+  it("defaults caption alternatives on", () => {
+    expect(DEFAULT_SETTINGS.captionAlternatives).toBe(true)
   })
 })
 

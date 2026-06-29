@@ -9,9 +9,9 @@ All notable changes to Plática Notes, newest first.
   `**Speaker** · time` with the text as a quote. Machine metadata (schema,
   source, build) moved into a single trailing comment, out of the way.
 - **Meeting link in the file.** The header now carries the Google Meet join link.
-- **Caption alternatives are now opt-in.** The raw caption versions (for
-  recovering words the final caption dropped) are off by default and enabled from
-  Settings; the everyday file stays clean.
+- **Caption alternatives are now a setting.** The raw caption versions (for
+  recovering words the final caption dropped) render as quoted `↳ _alt:_` lines
+  under each turn. On by default; turn off in Settings for a cleaner file.
 
 ## 1.7.2 - 2026-06-29
 

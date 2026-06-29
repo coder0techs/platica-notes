@@ -68,10 +68,11 @@ comment immediately after the closing `---`:
 - `generator` (version + commit) was the only machine-noise field in the visible
   block; it now lives in this comment too.
 
-### 3. Caption alternatives (`alt:`) → opt-in, default off
+### 3. Caption alternatives (`alt:`) → setting, default on
 
-New `Settings.captionAlternatives: boolean`, default `false`. No migration
-concern (a brand-new opt-in feature; off is the expected default).
+New `Settings.captionAlternatives: boolean`, default `true`. Meet drops 20-26% of
+words from final captions, so the alternatives are the safety net against lost
+words and are kept on by default; a user can turn them off for a cleaner file.
 
 When **on**, alternatives render as a subordinate line inside the same blockquote:
 

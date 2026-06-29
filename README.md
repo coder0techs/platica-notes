@@ -34,9 +34,9 @@ Everything is decoded in the page and kept on your machine.
 - **Hide all on-screen UI** — a popup toggle and **Alt+Shift+H** (**⌥⇧H** on
   macOS) hide every extension element (controls, panel, toasts) for
   screen-sharing or demos; recording keeps running while hidden.
-- **Caption alternatives** (Settings, off by default): when on, each turn also
-  records the raw versions Google streamed before the final caption, so words the
-  final caption dropped can still be recovered later. Left off, the file stays clean.
+- **Caption alternatives** (Settings, on by default): each turn also records the
+  raw versions Google streamed before the final caption, so words the final
+  caption dropped can still be recovered later. Turn it off for a cleaner file.
 - Speaker-attributed lines (others and yourself), with the closing sentence
   captured in full on leave.
 - **Default caption language** (Settings) — every new meeting starts in this
@@ -86,7 +86,7 @@ The **Settings page** (open it from the popup) holds everything else:
 - **Folders.** The public, private, and debug-log download folders, relative to
   Downloads.
 - **Caption alternatives.** Adds the raw caption versions under each turn for
-  recovering dropped words. Off by default (makes the file noisier).
+  recovering dropped words. On by default; turn off for a cleaner file.
 - **Debug log.** Writes a full `.jsonl` diagnostic per meeting to
   `Downloads/Platica Logs/`. Off by default. Private meetings are never logged.
 
