@@ -123,24 +123,24 @@ describe("formatMeetingText (v3)", () => {
     expect(text).not.toContain("_unresolved_")
   })
 
-  it("renders a note as a callout (not a speaker turn) with its text in the callout", () => {
+  it("renders a note as a heading block (not a speaker turn) with its text quoted", () => {
     const text = formatMeetingText(makeMeeting({
       transcript: [],
       chat: [],
       notes: [{ at: "2026-06-10T10:03:00.000Z", text: "follow up with Ada" }],
     }))
-    expect(text).toMatch(/> \[!NOTE\] \d{2}:\d{2} · \+03:00\n> follow up with Ada/)
+    expect(text).toMatch(/### Note · \d{2}:\d{2} · \+03:00\n> follow up with Ada/)
     // A note must not look like a speaker turn (no bold-name header line).
     expect(text).not.toMatch(/^\*\*Note\*\*/m)
   })
 
-  it("renders a bare bookmark (empty note text) as a labelled callout with no body line", () => {
+  it("renders a bare bookmark (empty note text) as a heading with no body line", () => {
     const text = formatMeetingText(makeMeeting({
       transcript: [{ speaker: "Alice", startedAt: "2026-06-10T10:05:00.000Z", text: "after" }],
       chat: [],
       notes: [{ at: "2026-06-10T10:04:00.000Z", text: "" }],
     }))
-    expect(text).toMatch(/> \[!NOTE\] Bookmark · \d{2}:\d{2} · \+04:00\n\n\*\*Alice\*\*/)
+    expect(text).toMatch(/### Bookmark · \d{2}:\d{2} · \+04:00\n\n\*\*Alice\*\*/)
   })
 
   it("interleaves a note into the transcript at its timestamp", () => {

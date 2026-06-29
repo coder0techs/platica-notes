@@ -38,10 +38,12 @@ Replace the `[tN] Speaker  <full-ISO> (+elapsed)` / body-line grid with:
   - unresolved speaker: `**Speaker 4** · _unresolved_ · …`
 - Notes/bookmarks are the recorder's annotations, NOT utterances, so they must
   not reuse the `**Speaker** · …` shape (it reads as a participant named "Note"
-  for a human and an LLM). Render them as GitHub/Obsidian callouts:
-  - Note: `> [!NOTE] {HH:MM} · +{elapsed}` then `> {text}`.
-  - Bookmark (empty note): `> [!NOTE] Bookmark · {HH:MM} · +{elapsed}` — callout
-    title only, no body line.
+  for a human and an LLM) and must not be nested in a `>` block (that reads as the
+  prior speaker's quote). Render them as their own heading block; the body stays
+  quoted so a note's text can never forge a turn:
+  - Note: `### Note · {HH:MM} · +{elapsed}` then `> {text}`.
+  - Bookmark (empty note): `### Bookmark · {HH:MM} · +{elapsed}` — heading only,
+    no body line.
 - The visible `[tN]` counter is removed (no machine consumer reads it today; the
   timeline order is the addressing).
 - Blank line between turns.
