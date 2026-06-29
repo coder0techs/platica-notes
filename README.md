@@ -33,15 +33,15 @@ Everything is decoded in the page and kept on your machine.
 - **Hide all on-screen UI** — a popup toggle and **Alt+Shift+H** (**⌥⇧H** on
   macOS) hide every extension element (controls, panel, toasts) for
   screen-sharing or demos; recording keeps running while hidden.
-- Full caption revision history appended at the bottom (`RAW CAPTION VERSIONS`):
-  every distinct version Google streamed, so an agent can recover words the
-  final caption dropped. Machine artifact, not for human reading.
+- A full caption revision history is appended at the bottom of the file
+  (`RAW CAPTION VERSIONS`): every distinct version Google streamed, so words the
+  final caption dropped can still be recovered later.
 - Speaker-attributed lines (others and yourself), with the closing sentence
   captured in full on leave.
 - **Default caption language** (Settings) — every new meeting starts in this
   language; the in-meeting language pill overrides just the current meeting and is
-  not saved. A first-run welcome page lets you pick it on install; fresh installs
-  default to English.
+  not saved. A first-run welcome page lets you pick it; fresh installs default to
+  English.
 - **Per-meeting privacy pill** (🔒 / ☁️): private meetings download to a separate
   folder you can keep out of cloud sync.
 - Local **history** of the last 30 meetings, with re-download / delete.
@@ -49,22 +49,6 @@ Everything is decoded in the page and kept on your machine.
   to a new meeting are all handled.
 - Optional **debug log** (off by default) for diagnostics.
 - **Zero network**: nothing is uploaded anywhere.
-
-## Install
-
-To install a packaged build (for a colleague, or before it is on the Chrome Web
-Store):
-
-1. Get the build: unzip a `platica-notes-<version>.zip`, or build it yourself
-   (see Development) and use the `dist/` folder.
-2. Open `chrome://extensions` (or `arc://extensions` in Arc).
-3. Turn on **Developer mode** (top-right).
-4. Click **Load unpacked** and select the unzipped folder (the one that contains
-   `manifest.json`).
-5. Join a Google Meet call; recording starts automatically.
-
-A manually loaded build does not auto-update. To update, replace the folder with
-the new version and click the reload icon on the extension's card.
 
 ## Output
 
@@ -103,58 +87,14 @@ The **Settings page** (open it from the popup) holds everything else:
 - **Debug log.** Writes a full `.jsonl` diagnostic per meeting to
   `Downloads/Platica Logs/`. Off by default. Private meetings are never logged.
 
-## Development
-
-```bash
-npm install
-npm run build      # bundle to dist/
-npm run watch      # rebuild on change
-npm test           # unit tests (vitest)
-npm run typecheck  # tsc --noEmit
-```
-
-Load `dist/` as an unpacked extension (`chrome://extensions` →
-"Load unpacked", or `arc://extensions` in Arc). Reload it after each build.
-
-### Building for the Chrome Web Store
-
-```bash
-npm ci             # install the exact locked dependency tree
-npm run package    # typecheck + test + build, then zip dist/ for upload
-```
-
-`npm run package` gates on a clean typecheck and a green test run, rebuilds
-`dist/` from source, and writes `platica-notes-<version>.zip` whose root is the
-contents of `dist/` (with `manifest.json` at the top level, as the store
-requires). Upload that zip in the Developer Dashboard. Package from a clean,
-tagged commit so the build stamp (`version_name`) is not marked `-dirty`.
-Node 20+ is recommended; the build is deterministic and needs no network.
-
-## Architecture
-
-Three contexts, split by responsibility:
-
-- **MAIN-world capture** (`src/content/meet-rtc/`) — a `document_start` script
-  wraps `RTCPeerConnection`, attaches to Meet's data channels, decodes the
-  transcript/chat/roster protobuf (`proto.ts`), and forwards typed events to the
-  isolated world via `CustomEvent` (`bridge.ts`). `feed.ts` is the pure
-  accumulator (dedup by message version, name resolution).
-- **Isolated adapter** (`src/content/platforms/meet.ts`) — owns the meeting
-  lifecycle (join/leave detection, soft-nav loop, reload-resume, privacy pill,
-  caption-tail flush on leave) and pushes capture into the session.
-- **Background service worker** (`src/background/`) — session store with
-  retention, finalize on meeting end / tab close (with crash recovery), and
-  `.md` export via `chrome.downloads`.
-
-A small, pure shared layer (`src/shared/`) holds the domain types, storage
-helpers, and the content↔background message contract.
-
 ## Scope & limitations
 
-- Google Meet only. The adapter layer is pluggable; Zoom/Teams could follow.
-- The caption language is fixed per meeting from the popup setting (changeable
-  mid-meeting). It must match what's spoken.
-- A very short meeting may finalize before the self-name lookup completes,
-  falling back to a generic "Speaker N" label.
-- Meeting end is detected from a small set of Meet DOM signals (the leave
-  button); these are re-verified per release.
+- Google Meet only.
+- The caption language must match what's spoken, or the transcript comes out
+  empty. Set a default in Settings; override one call from the in-meeting pill.
+- A very short meeting may finalize before your name is resolved, falling back to
+  a generic "Speaker N" label.
+
+## Building from source
+
+See `CLAUDE.md` for build, test, and architecture notes.

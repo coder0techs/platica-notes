@@ -18,4 +18,4 @@ section {
 }
 
 .btn-primary { margin-bottom: 12px; }
-.links { display: flex; justify-content: center; }
+.links { display: flex; justify-content: center; gap: 16px; }

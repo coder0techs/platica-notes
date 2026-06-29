@@ -2,6 +2,15 @@
 
 All notable changes to Plática Notes, newest first.
 
+## 1.7.2 - 2026-06-29
+
+- **Simpler in-meeting notices.** The toasts and the Settings "meeting in progress"
+  note now use a plain soft fill instead of an accent edge, and the
+  language-change confirmation shows for 4 seconds.
+- **Cleaner Help.** The in-extension Help page now covers just how to use the
+  extension; build and development notes moved out of it. The first-run welcome
+  page also links to Help.
+
 ## 1.7.1 - 2026-06-29
 
 - **More visible in-meeting notices.** The "recording" and language-change toasts
