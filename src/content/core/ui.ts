@@ -48,11 +48,10 @@ export function pulseActivity(): void {
   setTimeout(() => { bar.style.backgroundColor = "transparent" }, 1500)
 }
 
-// Soft purple fill + a brighter accent edge so a notice reads as the extension's
-// own UI (and matches the purple pulse bar / transcript pill) rather than a plain
-// black tooltip — noticeable without shouting.
-const TOAST_BG = "#322c46"
-const TOAST_ACCENT = "#b3a4f0"
+// Soft purple fill so a notice reads as the extension's own UI (matching the
+// purple pulse bar / transcript pill) rather than a plain black tooltip —
+// noticeable without shouting.
+const TOAST_BG = "#433b66"
 
 export function showToast(message: string, durationMs = 8000): void {
   const toast = document.createElement("div")
@@ -60,7 +59,7 @@ export function showToast(message: string, durationMs = 8000): void {
   // Sits below the persistent top-center controls (top:12px) so it never overlaps.
   toast.style.cssText =
     "position:fixed;top:64px;left:50%;transform:translateX(-50%);color:#fff;" +
-    `background:${TOAST_BG};border-left:4px solid ${TOAST_ACCENT};` +
+    `background:${TOAST_BG};` +
     "padding:10px 16px;border-radius:8px;font:14px system-ui;z-index:2147483647;" +
     "box-shadow:0 4px 16px rgba(0,0,0,.35);"
   registerUiEl(toast)
@@ -150,7 +149,7 @@ export function mountMeetingControls(opts: {
     opts.onLanguageChange(select.value)
     // Confirm the change and reinforce that it is scoped to this meeting only.
     // Shorter than the default — it's a quick confirmation, not an onboarding cue.
-    showToast(`🌐 ${langText.textContent} · only this meeting`, 5000)
+    showToast(`🌐 ${langText.textContent} · only this meeting`, 4000)
   })
   syncLangText()
 

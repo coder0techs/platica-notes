@@ -32,13 +32,12 @@ section {
 
 .build { margin-top: 12px; opacity: .8; }
 
-/* Active-meeting callout under the language setting: a soft accent fill + edge so
-   it reads as a live note, not just another grey hint. Adapts to light/dark. */
+/* Active-meeting callout under the language setting: a soft purple fill (no edge)
+   so it reads as a live note, not just another grey hint. The translucent tint
+   sits fine over both the light and dark section background. */
 .note-active {
   color: var(--fg);
-  background: var(--section);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
+  background: rgba(103, 80, 164, .16);
   border-radius: 6px;
   padding: 8px 12px;
 }
