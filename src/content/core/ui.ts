@@ -48,17 +48,24 @@ export function pulseActivity(): void {
   setTimeout(() => { bar.style.backgroundColor = "transparent" }, 1500)
 }
 
-export function showToast(message: string): void {
+// Soft purple fill + a brighter accent edge so a notice reads as the extension's
+// own UI (and matches the purple pulse bar / transcript pill) rather than a plain
+// black tooltip — noticeable without shouting.
+const TOAST_BG = "#322c46"
+const TOAST_ACCENT = "#b3a4f0"
+
+export function showToast(message: string, durationMs = 8000): void {
   const toast = document.createElement("div")
   toast.textContent = message
   // Sits below the persistent top-center controls (top:12px) so it never overlaps.
   toast.style.cssText =
-    "position:fixed;top:64px;left:50%;transform:translateX(-50%);background:#1f1f1f;color:#fff;" +
+    "position:fixed;top:64px;left:50%;transform:translateX(-50%);color:#fff;" +
+    `background:${TOAST_BG};border-left:4px solid ${TOAST_ACCENT};` +
     "padding:10px 16px;border-radius:8px;font:14px system-ui;z-index:2147483647;" +
-    "box-shadow:0 4px 16px rgba(0,0,0,.3);"
+    "box-shadow:0 4px 16px rgba(0,0,0,.35);"
   registerUiEl(toast)
   document.documentElement.appendChild(toast)
-  setTimeout(() => toast.remove(), 8000)
+  setTimeout(() => toast.remove(), durationMs)
 }
 
 // Shared Google-Meet-native dark pill style so the language select and privacy
@@ -142,7 +149,8 @@ export function mountMeetingControls(opts: {
     syncLangText()
     opts.onLanguageChange(select.value)
     // Confirm the change and reinforce that it is scoped to this meeting only.
-    showToast(`🌐 ${langText.textContent} · only this meeting`)
+    // Shorter than the default — it's a quick confirmation, not an onboarding cue.
+    showToast(`🌐 ${langText.textContent} · only this meeting`, 5000)
   })
   syncLangText()
 

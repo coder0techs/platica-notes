@@ -2,6 +2,13 @@
 
 All notable changes to Plática Notes, newest first.
 
+## 1.7.1 - 2026-06-29
+
+- **More visible in-meeting notices.** The "recording" and language-change toasts
+  now use a soft accent style instead of plain black, and the Settings note shown
+  while a meeting is recording is highlighted, so both are easier to spot. The
+  language-change confirmation is also briefer (5 seconds).
+
 ## 1.7.0 - 2026-06-29
 
 - **First-run setup.** Installing the extension now opens a short welcome page to

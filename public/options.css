@@ -31,3 +31,14 @@ section {
 .links a { font-size: 13px; }
 
 .build { margin-top: 12px; opacity: .8; }
+
+/* Active-meeting callout under the language setting: a soft accent fill + edge so
+   it reads as a live note, not just another grey hint. Adapts to light/dark. */
+.note-active {
+  color: var(--fg);
+  background: var(--section);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
