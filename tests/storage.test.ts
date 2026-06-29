@@ -14,6 +14,12 @@ describe("withDefaults", () => {
   })
 })
 
+describe("captionAlternatives default", () => {
+  it("defaults caption alternatives off", () => {
+    expect(DEFAULT_SETTINGS.captionAlternatives).toBe(false)
+  })
+})
+
 describe("default caption language", () => {
   it("defaults a fresh install to English", () => {
     // The store audience is international; the user's own install can override
