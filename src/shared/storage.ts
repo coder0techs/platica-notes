@@ -27,6 +27,17 @@ export async function saveSettings(patch: Partial<Settings>): Promise<void> {
   await chrome.storage.sync.set({ settings: { ...current, ...patch } })
 }
 
+// Local-storage key holding the tab ids that are currently recording a meeting.
+// One const so its two readers (the background tracker and the settings page's
+// active-meeting note) can never drift on the literal.
+export const ACTIVE_TABS_KEY = "activeSessionTabs"
+
+// True when at least one tab is recording right now. The settings page uses it to
+// warn that changing the default language won't retarget a meeting already running.
+export function hasActiveMeeting(activeSessionTabs: number[] | undefined): boolean {
+  return (activeSessionTabs?.length ?? 0) > 0
+}
+
 // One place owns the session-key format, so the builder and the orphan-recovery
 // parser can never drift (a silent drift would break crash recovery unnoticed).
 export const SESSION_KEY_PREFIX = "session_"

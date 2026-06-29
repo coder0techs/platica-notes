@@ -63,6 +63,7 @@ const options = {
     popup: "src/pages/popup/popup.ts",
     options: "src/pages/options/options.ts",
     history: "src/pages/history/history.ts",
+    welcome: "src/pages/welcome/welcome.ts",
   },
   bundle: true,
   format: "iife",

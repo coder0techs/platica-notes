@@ -112,6 +112,14 @@ export function mountMeetingControls(opts: {
   // Transparent, covers the whole pill so the entire pill is the click target.
   select.style.cssText =
     "position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:none;margin:0;"
+  // A disabled header row, shown at the top of the open dropdown, states the scope
+  // exactly when the user is about to pick — the per-meeting nature is otherwise
+  // only in the hover tooltip. It carries no value and is never selectable, so it
+  // doesn't interfere with select.value below.
+  const scopeHeader = document.createElement("option")
+  scopeHeader.disabled = true
+  scopeHeader.textContent = "Caption language · only this meeting"
+  select.appendChild(scopeHeader)
   for (const lang of CAPTION_LANGUAGES) {
     const opt = document.createElement("option")
     opt.value = lang.value
@@ -133,6 +141,8 @@ export function mountMeetingControls(opts: {
   select.addEventListener("change", () => {
     syncLangText()
     opts.onLanguageChange(select.value)
+    // Confirm the change and reinforce that it is scoped to this meeting only.
+    showToast(`🌐 ${langText.textContent} · only this meeting`)
   })
   syncLangText()
 

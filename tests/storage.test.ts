@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { withDefaults } from "../src/shared/storage"
+import { hasActiveMeeting, withDefaults } from "../src/shared/storage"
 import { DEFAULT_SETTINGS } from "../src/shared/types"
 
 describe("withDefaults", () => {
@@ -31,5 +31,17 @@ describe("default caption language", () => {
 describe("hide-UI setting", () => {
   it("shows the UI by default", () => {
     expect(DEFAULT_SETTINGS.hideUi).toBe(false)
+  })
+})
+
+describe("hasActiveMeeting (settings active-meeting note)", () => {
+  it("is false when nothing is recording", () => {
+    expect(hasActiveMeeting(undefined)).toBe(false)
+    expect(hasActiveMeeting([])).toBe(false)
+  })
+
+  it("is true when one or more tabs are recording", () => {
+    expect(hasActiveMeeting([7])).toBe(true)
+    expect(hasActiveMeeting([7, 12])).toBe(true)
   })
 })

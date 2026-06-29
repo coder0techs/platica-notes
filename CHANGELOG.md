@@ -2,6 +2,15 @@
 
 All notable changes to Plática Notes, newest first.
 
+## 1.7.0 - 2026-06-29
+
+- **First-run setup.** Installing the extension now opens a short welcome page to
+  pick your default caption language before your first meeting.
+- **Clearer caption-language scope.** The in-meeting language picker spells out that
+  a change applies to the current meeting only and confirms it with a brief notice,
+  and the Settings page now points out, while a meeting is recording, that changing
+  the default applies to new meetings rather than the one in progress.
+
 ## 1.6.3 - 2026-06-29
 
 - **Back-to-back meetings are both saved.** Leaving a call and then joining a

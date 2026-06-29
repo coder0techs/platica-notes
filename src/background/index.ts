@@ -1,5 +1,7 @@
 import type { BackgroundRequest, BackgroundResponse } from "../shared/messages"
+import { ACTIVE_TABS_KEY } from "../shared/storage"
 import { downloadDebugLog, downloadMeeting } from "./export"
+import { shouldOpenWelcome } from "./install"
 import { finalizeSession, recoverOrphanSessions, trackTab, type FinalizeResult } from "./sessions"
 import { clearPendingExport, deleteMeeting, getMeeting, listPendingExports } from "./store"
 
@@ -83,12 +85,21 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   void finalizeAndProcess(tabId)
 })
 
+// First run only: open the welcome page so the user picks a default caption
+// language before their first meeting. Skipped on update/restart so it never
+// nags existing users or overwrites a language they already chose.
+chrome.runtime.onInstalled.addListener((details) => {
+  if (shouldOpenWelcome(details.reason)) {
+    void chrome.tabs.create({ url: chrome.runtime.getURL("welcome.html") })
+  }
+})
+
 // Postpone extension updates while a meeting is being recorded. Best-effort:
 // if meetings are active we simply skip the reload — the pending update
 // applies on the next natural service worker restart.
 chrome.runtime.onUpdateAvailable.addListener(() => {
-  void chrome.storage.local.get("activeSessionTabs").then((result) => {
-    const tabs = (result.activeSessionTabs as number[] | undefined) ?? []
+  void chrome.storage.local.get(ACTIVE_TABS_KEY).then((result) => {
+    const tabs = (result[ACTIVE_TABS_KEY] as number[] | undefined) ?? []
     if (tabs.length === 0) chrome.runtime.reload()
   })
 })

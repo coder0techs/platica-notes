@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Welcome — Plática Notes</title>
+  <link rel="stylesheet" href="ui.css">
+  <link rel="stylesheet" href="welcome.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Welcome to Plática Notes</h1>
+      <p class="lead">Everything is saved locally on your computer — no servers, no accounts.</p>
+    </header>
+
+    <section>
+      <label class="row">
+        <span>Default caption language</span>
+        <select id="caption-language"></select>
+      </label>
+      <p class="hint">New meetings start in this language. You can switch it just for one meeting from the in-meeting language pill; that choice is not saved.</p>
+    </section>
+
+    <button class="btn-primary" id="start">Start using Plática Notes</button>
+    <nav class="links">
+      <a class="link" href="options.html">More settings</a>
+    </nav>
+  </main>
+  <script src="welcome.js"></script>
+</body>
+</html>

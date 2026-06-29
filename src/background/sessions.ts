@@ -1,5 +1,5 @@
 import type { ActiveSession, DebugEvent, Meeting } from "../shared/types"
-import { getLocal, getSettings, removeLocal, sessionKey, setLocal, tabIdFromSessionKey } from "../shared/storage"
+import { ACTIVE_TABS_KEY, getLocal, getSettings, removeLocal, sessionKey, setLocal, tabIdFromSessionKey } from "../shared/storage"
 import { addMeeting, addPendingExport, enqueue } from "./store"
 
 const finalizing = new Set<number>()
@@ -14,17 +14,17 @@ export interface FinalizeResult {
 
 export function trackTab(tabId: number): Promise<void> {
   return enqueue(async () => {
-    const tabs = (await getLocal<number[]>("activeSessionTabs")) ?? []
+    const tabs = (await getLocal<number[]>(ACTIVE_TABS_KEY)) ?? []
     if (!tabs.includes(tabId)) {
-      await setLocal({ activeSessionTabs: [...tabs, tabId] })
+      await setLocal({ [ACTIVE_TABS_KEY]: [...tabs, tabId] })
     }
   })
 }
 
 function untrackTab(tabId: number): Promise<void> {
   return enqueue(async () => {
-    const tabs = (await getLocal<number[]>("activeSessionTabs")) ?? []
-    await setLocal({ activeSessionTabs: tabs.filter(id => id !== tabId) })
+    const tabs = (await getLocal<number[]>(ACTIVE_TABS_KEY)) ?? []
+    await setLocal({ [ACTIVE_TABS_KEY]: tabs.filter(id => id !== tabId) })
   })
 }
 

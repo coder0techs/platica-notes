@@ -38,9 +38,10 @@ Everything is decoded in the page and kept on your machine.
   final caption dropped. Machine artifact, not for human reading.
 - Speaker-attributed lines (others and yourself), with the closing sentence
   captured in full on leave.
-- **Default caption language** (popup) — every new meeting starts in this
+- **Default caption language** (Settings) — every new meeting starts in this
   language; the in-meeting language pill overrides just the current meeting and is
-  not saved. Fresh installs default to English.
+  not saved. A first-run welcome page lets you pick it on install; fresh installs
+  default to English.
 - **Per-meeting privacy pill** (🔒 / ☁️): private meetings download to a separate
   folder you can keep out of cloud sync.
 - Local **history** of the last 30 meetings, with re-download / delete.

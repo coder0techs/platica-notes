@@ -1,7 +1,8 @@
 import { CAPTION_LANGUAGES } from "../../shared/languages"
-import { getSettings, saveSettings } from "../../shared/storage"
+import { ACTIVE_TABS_KEY, getLocal, getSettings, hasActiveMeeting, saveSettings } from "../../shared/storage"
 
 const captionLanguage = document.querySelector<HTMLSelectElement>("#caption-language")!
+const activeMeetingNote = document.querySelector<HTMLParagraphElement>("#active-meeting-note")!
 const privateDefault = document.querySelector<HTMLInputElement>("#private-default")!
 const debugLog = document.querySelector<HTMLInputElement>("#debug-log")!
 const folderPublic = document.querySelector<HTMLInputElement>("#folder-public")!
@@ -46,7 +47,19 @@ async function init(): Promise<void> {
   folderPublic.value = settings.folderPublic
   folderPrivate.value = settings.folderPrivate
   folderDebug.value = settings.folderDebug
+  await refreshActiveMeetingNote()
 }
+
+// Show the note only while a meeting is recording, so it's clear a default-language
+// change won't retarget the live meeting. Kept live via the storage listener below
+// in case a meeting starts or ends while this page is open.
+async function refreshActiveMeetingNote(): Promise<void> {
+  activeMeetingNote.hidden = !hasActiveMeeting(await getLocal<number[]>(ACTIVE_TABS_KEY))
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes[ACTIVE_TABS_KEY]) void refreshActiveMeetingNote()
+})
 
 captionLanguage.addEventListener("change", () => {
   void saveSettings({ captionLanguage: captionLanguage.value })
