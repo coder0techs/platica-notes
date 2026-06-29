@@ -33,6 +33,13 @@ export function elapsedLabel(fromIso: string, toIso: string): string {
   return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`
 }
 
+// Local wall-clock HH:MM for a turn header. The absolute instant lives in the
+// front matter (started/ended), so a turn line only needs the clock + elapsed.
+export function clockLabel(iso: string): string {
+  const d = new Date(iso)
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
 const PLATFORM_SOURCES: Record<Meeting["platform"], string> = {
   meet: "google-meet-live-captions",
   zoom: "zoom-live-captions",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { collapseVersions, debugLogFileName, elapsedLabel, formatDebugLog, formatMeetingText, isoLocal, meetingFileName, sanitizeFileName, sanitizeFolder } from "../src/background/format"
+import { clockLabel, collapseVersions, debugLogFileName, elapsedLabel, formatDebugLog, formatMeetingText, isoLocal, meetingFileName, sanitizeFileName, sanitizeFolder } from "../src/background/format"
 import type { DebugEvent, Meeting } from "../src/shared/types"
 
 function makeMeeting(overrides: Partial<Meeting> = {}): Meeting {
@@ -416,6 +416,18 @@ describe("elapsedLabel", () => {
 
   it("clamps a negative or zero gap to 00:00", () => {
     expect(elapsedLabel("2026-06-10T10:00:05.000Z", "2026-06-10T10:00:00.000Z")).toBe("00:00")
+  })
+})
+
+describe("clockLabel", () => {
+  it("renders local wall-clock HH:MM with no date or offset", () => {
+    expect(clockLabel("2026-06-10T10:05:00.000Z")).toMatch(/^\d{2}:\d{2}$/)
+  })
+
+  it("agrees with the local hours/minutes of the instant", () => {
+    const d = new Date("2026-06-10T10:05:00.000Z")
+    const pad = (n: number) => String(n).padStart(2, "0")
+    expect(clockLabel("2026-06-10T10:05:00.000Z")).toBe(`${pad(d.getHours())}:${pad(d.getMinutes())}`)
   })
 })
 
