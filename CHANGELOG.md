@@ -2,6 +2,13 @@
 
 All notable changes to Plática Notes, newest first.
 
+## 1.6.3 - 2026-06-29
+
+- **Back-to-back meetings are both saved.** Leaving a call and then joining a
+  *different* meeting in the same tab no longer loses the first one. Its
+  transcript is now finalized to both the file and the meeting history before the
+  next meeting can overwrite it.
+
 ## 1.6.2 - 2026-06-24
 
 - **Leaner transcript files.** Caption revisions that differ only in

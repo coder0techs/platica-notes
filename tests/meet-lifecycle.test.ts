@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { nextLeaveState, seedAttendees, shouldDrainTail, shouldFinishRearmWait } from "../src/content/platforms/meet-lifecycle"
+import { nextLeaveState, seedAttendees, shouldDrainTail, shouldFinalizeStaleSession, shouldFinishRearmWait } from "../src/content/platforms/meet-lifecycle"
 
 const GRACE = 8000
 const THRESHOLD = 3
@@ -40,6 +40,27 @@ describe("shouldFinishRearmWait (re-arm after a meeting ends, never deadlock)", 
   it("keeps waiting while the icon is present and the cap has not elapsed", () => {
     expect(shouldFinishRearmWait(false, 0, GRACE)).toBe(false)
     expect(shouldFinishRearmWait(false, GRACE - 1, GRACE)).toBe(false)
+  })
+})
+
+describe("shouldFinalizeStaleSession (don't overwrite a prior meeting in the same tab)", () => {
+  // The bug: leaving meeting A via Meet's UI then joining a DIFFERENT meeting B in
+  // the same tab reloads the content script, tearing A down before it finalized. A
+  // is still under the tab key; B's first write would overwrite it. Finalize A
+  // first so it reaches history and disk.
+  it("finalizes when the stored session is a different meeting", () => {
+    expect(shouldFinalizeStaleSession("/abc-defg-hij", "/xyz-wxyz-uvw")).toBe(true)
+  })
+
+  // A same-path stored session is a genuine reload-resume of the same meeting; it
+  // is continued, not finalized — finalizing it would split one meeting in two.
+  it("does NOT finalize a same-path session (genuine reload-resume)", () => {
+    expect(shouldFinalizeStaleSession("/abc-defg-hij", "/abc-defg-hij")).toBe(false)
+  })
+
+  // First meeting of the tab: nothing stored yet, nothing to finalize.
+  it("does NOT finalize when there is no stored session", () => {
+    expect(shouldFinalizeStaleSession(null, "/abc-defg-hij")).toBe(false)
   })
 })
 

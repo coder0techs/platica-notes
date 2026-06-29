@@ -9,7 +9,7 @@ import { mountTranscriptPanel } from "../core/transcript-panel"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
 import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
 import { RtcFeed } from "../meet-rtc/feed"
-import { nextLeaveState, seedAttendees, shouldDrainTail, shouldFinishRearmWait } from "./meet-lifecycle"
+import { nextLeaveState, seedAttendees, shouldDrainTail, shouldFinalizeStaleSession, shouldFinishRearmWait } from "./meet-lifecycle"
 
 // --- Google Meet DOM contract. Verify on a live meeting before each release. ---
 const ICON_FONT = ".google-symbols"
@@ -186,6 +186,28 @@ async function runMeeting(tabId: number): Promise<void> {
   const meetingPath = location.pathname
   dlog("waiting to join", { path: meetingPath })
 
+  // The tab key holds at most one session. If it belongs to a DIFFERENT meeting,
+  // that meeting's content script was torn down before it could finalize (left via
+  // Meet's UI, then opened another call in this tab) — its transcript is still
+  // intact under the key, but our first write below would overwrite and lose it.
+  // Finalize it FIRST: the background commits the stored session to history + disk
+  // and clears the key. Done before the join wait, so it is saved even if the user
+  // backs out of this lobby — and before meetingStarted, so finalize's untrackTab
+  // can't drop the tab we are about to re-track. A same-path session is a genuine
+  // reload-resume of this meeting (handled below), not stale.
+  const previous = await getLocal<ActiveSession>(sessionKey(tabId))
+  if (shouldFinalizeStaleSession(previous?.path ?? null, meetingPath)) {
+    dlog("finalizing a previous meeting's session before it is overwritten", {
+      stalePath: previous!.path,
+      path: meetingPath,
+    })
+    const response = await sendToBackground({ kind: "meetingEnded" })
+    if (!response.ok) {
+      console.error("[platica-notes] stale-session finalize failed:", response.error)
+      dlog("stale-session finalize failed", { error: response.error })
+    }
+  }
+
   // Abort the lobby wait if the user backs out without joining.
   const joined = await waitForIcon(
     LEAVE_ICON_TEXT,
@@ -202,8 +224,9 @@ async function runMeeting(tabId: number): Promise<void> {
   // "installed") fall into the first meeting — acceptable.
   const debugStart = debugEvents.length
 
-  // A mid-meeting reload must continue the same session, not erase it.
-  const previous = await getLocal<ActiveSession>(sessionKey(tabId))
+  // A mid-meeting reload of the SAME meeting continues its session (read above),
+  // rather than erasing it. A different-meeting session was already finalized and
+  // its key cleared just above, so it never resumes here.
   const resumed = previous && previous.path === meetingPath ? previous : null
   if (resumed) dlog("resuming session after reload")
   // A full page reload resets the page-level roster/selfName, but Meet only

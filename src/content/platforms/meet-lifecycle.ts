@@ -18,6 +18,19 @@ export function shouldDrainTail(
   return meetingPath === lastMeetingPath && now - lastEndedAt < graceMs
 }
 
+// A tab's storage key (session-<tabId>) holds at most one active session. When a
+// content script reloads straight into a DIFFERENT meeting — e.g. leaving via
+// Meet's UI (Rejoin / home / a new call) then joining another code in the same
+// tab, which tears the prior meeting's content script down before it can finalize
+// — that prior session is still sitting under the tab key with its transcript
+// intact. The new meeting's first write would overwrite it, silently losing it
+// (it is never finalized, never reaches history or disk). So when the stored
+// session is for a DIFFERENT path, finalize it FIRST. A same-path stored session
+// is a genuine reload-resume of the very same meeting and must NOT be finalized.
+export function shouldFinalizeStaleSession(previousPath: string | null, meetingPath: string): boolean {
+  return previousPath !== null && previousPath !== meetingPath
+}
+
 // After a meeting ends, the loop waits for the residual leave icon to clear
 // before re-arming, so a stale call_end icon on the post-leave screen does not
 // instantly re-trigger a phantom join. But a fast rejoin puts the user back in
