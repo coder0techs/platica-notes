@@ -5,12 +5,13 @@
 > brainstorming capture, not a spec. Each "Near-term" item still needs a proper
 > design pass (open questions are listed) before it becomes a plan.
 >
-> **Captured:** 2026-06-19.
+> **Captured:** 2026-06-19; extended 2026-06-29.
 >
-> **Coordination note:** the **output-file format** is being changed in a
-> parallel session. Items that render into the saved file (Feature 1 below, and
-> the "Structured Markdown" backlog item) touch `src/background/format.ts` /
-> `export.ts` — do not start them until that work has landed, then rebase on it.
+> **Coordination note:** the v2 output-file format (YAML front matter + turn grid,
+> injection-safe via `yamlScalar`/`inlineText`) has **landed** in
+> `src/background/format.ts`. The new "Output format & filename polish" item below
+> is a refinement pass on top of it — preserve the injection-safety invariant and
+> `tests/format.test.ts` coverage when touching it.
 
 ---
 
@@ -154,6 +155,109 @@ hotkey wiring.
 
 **Risk.** Low, **provided** the capture lifecycle is fully decoupled from UI
 visibility (verify the panel/pill being absent never gates capture).
+
+---
+
+## Near-term (captured 2026-06-29)
+
+> Three areas the user flagged to revisit. All are **discuss-first** — none is a
+> spec yet; each needs a design pass before code.
+
+### 4. Output format & filename polish — 🔵 DISCUSS
+
+**What.** Revisit the saved `.md`: trim/clarify the YAML front-matter header (drop
+fields that carry little human value), consider how "proper Markdown" the body
+should read, and tidy the filename scheme.
+
+**Why.** The v2 format is structured and machine-parseable, but parts read as a
+machine artifact (front matter, the `RAW CAPTION VERSIONS` dump). The user wants
+it to look nicer for a human opening the file, without losing the structure.
+
+**Open questions.**
+- What in the front matter is surplus vs load-bearing? Which fields does anything
+  downstream actually read?
+- Full prose Markdown vs keep the front matter (it is the anti-forgery/parse seam)?
+  If we go prettier, do we keep a machine block for tools and a human block on top?
+- `RAW CAPTION VERSIONS`: keep / collapse / move to a separate file / make it opt-in?
+- Filename scheme: pattern (title + datetime), collision handling, private-folder
+  naming, characters to sanitise.
+
+**Touches.** `format.ts` (render), `export.ts` (filename), `tests/format.test.ts`.
+**Hard constraint.** Keep `yamlScalar`/`inlineText` injection-safety and its tests.
+**Risk.** Low–medium. Pure output change, but it is the product's main artifact.
+
+### 5. Merging repeated visits / sessions of "the same" meeting — 🔵 DISCUSS
+
+**What.** When you accidentally leave and rejoin (same tab, different tab) or sit
+in the same call across tabs, optionally fold the pieces into **one** file instead
+of N separate ones.
+
+**Why.** Today each visit/tab is its own session → its own file (per-visit by
+design). Accidental drops fragment one logical meeting across several files.
+
+**The hard part — identity.** You cannot key purely on the Meet code or title: a
+**daily** recurring meeting reuses the *same code and title every day*, so naive
+"same code → merge" would glue Monday onto Tuesday. A merge key needs **code +
+temporal proximity** (same code within a bounded window, likely same calendar
+day), not code alone.
+
+**Open questions.**
+- Merge key and window: same code within N minutes? Within the same day? Never
+  across days.
+- Cross-tab merge needs a **meeting-level** store; today state is per-`tabId`
+  session. That is a real structural change.
+- Merge mechanics: append with a visit separator? Dedupe overlapping tail? Rewrite
+  the visit-1 file in place vs keep separate + a combined view?
+- Participants policy interacts with the earlier "per-visit, not cumulative"
+  decision — revisit if we merge.
+- User-configurable (auto-merge vs always-separate), and how it shows in history.
+
+**Touches.** background session/store (meeting identity beyond `tabId`),
+`format.ts`/`export.ts` (append/rewrite), history.
+**Risk.** Medium–high. Adds stateful identity + cross-tab coordination; easy to
+regress the data-loss guarantees just fixed in 1.6.3.
+
+### 6. Exhaustive end / rejoin / nav scenario coverage — 🔵 DISCUSS
+
+**What.** We hit several meeting-lifecycle bugs (lost-on-toggle, lost-second-visit,
+lost-first-on-different-meeting). Enumerate every end/rejoin/nav scenario and make
+the handling deliberate rather than discovered bug-by-bug.
+
+**Scenario matrix (current state).**
+
+| # | Scenario (same tab unless noted) | Handling | State |
+|---|---|---|---|
+| 1 | Click Leave | delegated click listener → flush → finalize | ✅ |
+| 2 | Keyboard leave / kicked / host ends (icon gone 3×) | end poller | ✅ |
+| 3 | Navigate to a non-meeting URL | poller (path changed) | ✅ |
+| 4 | Fast rejoin **same** code, soft-nav | drain-tail grace + re-arm cap | ✅ 1.6.1 |
+| 5 | Leave → join **different** code, content script reloaded | stale session finalized before overwrite | ✅ 1.6.3 |
+| 6 | Leave → join different code, soft-nav (no reload) | sequential loop finalizes then re-runs | ✅ |
+| 7 | Tab closed mid-meeting | `tabs.onRemoved` + orphan recovery | ✅ |
+| 8 | SW/browser crash, tab gone | orphan recovery on SW start | ✅ |
+| 9 | Reload mid-meeting, same code | resume from snapshot | ✅ |
+| 10 | Reload → lands on non-meeting, never returns | session lingers; finalized only on tab close | ⚠️ open |
+| 11 | Two tabs, two different meetings | independent per-`tabId` sessions | ✅ |
+| 12 | **Same** code in two tabs at once | two sessions → two files | ⚠️ open (→ #5) |
+| 13 | Same meeting: leave tab A, rejoin tab B | two files | ⚠️ open (→ #5) |
+| 14 | Hidden/background tab (Arc) during 2-tab capture | browser freezes the hidden tab → capture pauses | ⚠️ limitation |
+| 15 | Ultra-fast multiple rejoins (< grace) | transcript kept, but roster sometimes empty → "Speaker N" | ⚠️ limitation |
+| 16 | Empty session (joined, no captions) | no file; notes-only still kept | ✅ by design |
+
+**Open items distilled.**
+- *(O1)* Lingering unfinalized session (#10): add a heartbeat/timeout finalize, or
+  accept "materialises on tab close"?
+- *(O2)* Duplicate files for one logical meeting (#12/#13) — folds into item 5.
+- *(O3)* Hidden-tab freeze (#14) — browser-imposed; needs a different capture
+  strategy or is documented as a known limit.
+- *(O4)* Roster loss on ultra-fast rejoin (#15) — candidate fix: a roster cache
+  keyed by meeting id, shared across visits/tabs.
+- *(O5)* The whole lifecycle rests on DOM selectors (`call_end`, meeting title) +
+  the path regex. An **RTC "all media-sessions closed" authoritative end signal**
+  (already in the backlog) would harden every row above.
+
+**Risk.** Design/reliability work, not a single feature; pairs naturally with the
+RTC-fallback backlog item.
 
 ---
 
