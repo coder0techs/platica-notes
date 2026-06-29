@@ -162,6 +162,7 @@ const MAX_NAME_LEN = 120
 export function sanitizeFileName(name: string): string {
   const cleaned = name
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/_+/g, "_")
     .replace(/^[.\s]+|[.\s]+$/g, "")
     .slice(0, MAX_NAME_LEN)
     .replace(/[.\s]+$/, "") // re-trim: the slice may have ended on a dot/space

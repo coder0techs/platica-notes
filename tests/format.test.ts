@@ -346,6 +346,11 @@ describe("sanitizeFileName", () => {
   it("falls back to Meeting for empty results", () => {
     expect(sanitizeFileName("...")).toBe("Meeting")
   })
+
+  it("collapses runs of underscores from adjacent illegal chars", () => {
+    expect(sanitizeFileName("a///b")).toBe("a_b")
+    expect(sanitizeFileName('a<>:"b')).toBe("a_b")
+  })
 })
 
 describe("sanitizeFolder", () => {
