@@ -5,6 +5,7 @@ const captionLanguage = document.querySelector<HTMLSelectElement>("#caption-lang
 const activeMeetingNote = document.querySelector<HTMLParagraphElement>("#active-meeting-note")!
 const privateDefault = document.querySelector<HTMLInputElement>("#private-default")!
 const debugLog = document.querySelector<HTMLInputElement>("#debug-log")!
+const captionAlternatives = document.querySelector<HTMLInputElement>("#caption-alternatives")!
 const folderPublic = document.querySelector<HTMLInputElement>("#folder-public")!
 const folderPrivate = document.querySelector<HTMLInputElement>("#folder-private")!
 const folderDebug = document.querySelector<HTMLInputElement>("#folder-debug")!
@@ -44,6 +45,7 @@ async function init(): Promise<void> {
   }
   privateDefault.checked = settings.privateByDefault
   debugLog.checked = settings.debugLog
+  captionAlternatives.checked = settings.captionAlternatives
   folderPublic.value = settings.folderPublic
   folderPrivate.value = settings.folderPrivate
   folderDebug.value = settings.folderDebug
@@ -71,6 +73,10 @@ privateDefault.addEventListener("change", () => {
 
 debugLog.addEventListener("change", () => {
   void saveSettings({ debugLog: debugLog.checked })
+})
+
+captionAlternatives.addEventListener("change", () => {
+  void saveSettings({ captionAlternatives: captionAlternatives.checked })
 })
 
 folderPublic.addEventListener("change", () => {
