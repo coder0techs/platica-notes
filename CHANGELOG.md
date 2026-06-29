@@ -2,16 +2,20 @@
 
 All notable changes to Plática Notes, newest first.
 
-## Unreleased
+## 1.8.0 - 2026-06-29
 
 - **Friendlier saved file.** The `.md` is now human-readable Markdown: a short
   header (title, meeting link, time, participants) followed by speaker turns as
   `**Speaker** · time` with the text as a quote. Machine metadata (schema,
   source, build) moved into a single trailing comment, out of the way.
 - **Meeting link in the file.** The header now carries the Google Meet join link.
+- **Notes & bookmarks stand out.** Recorder notes and bookmarks now render as
+  their own `###` heading blocks instead of speaker-style turns, so they stand
+  apart in the transcript and no longer read as a participant.
 - **Caption alternatives are now a setting.** The raw caption versions (for
-  recovering words the final caption dropped) render as quoted `↳ _alt:_` lines
-  under each turn. On by default; turn off in Settings for a cleaner file.
+  recovering words the final caption dropped, or for an AI to reconstruct the
+  exact wording) render as quoted `↳ _alt:_` lines under each turn. On by
+  default; turn off in Settings for a cleaner file.
 
 ## 1.7.2 - 2026-06-29
 
