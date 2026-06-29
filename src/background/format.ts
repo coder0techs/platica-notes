@@ -131,13 +131,15 @@ export function formatMeetingText(meeting: Meeting, opts: FormatOptions = {}): s
   const lines: string[] = [...fm, "", `# ${inlineText(meeting.title)}`, ""]
   for (const entry of flattenTimeline(meeting.transcript, meeting.chat, meeting.notes)) {
     const when = `${clockLabel(entry.at)} · +${elapsedLabel(meeting.startedAt, entry.at)}`
-    // A recorder's note carries no speaker; a bare bookmark (empty text) is a
-    // marked moment with only a header.
+    // A recorder's note/bookmark is an annotation, not an utterance: render it as
+    // a callout (GitHub/Obsidian `[!NOTE]`) so it never reads as a speaker turn —
+    // for a human or an LLM. A bare bookmark (empty text) is a marked moment with
+    // only the callout title.
     if (entry.kind === "note") {
       if (entry.text.trim() === "") {
-        lines.push(`**Bookmark** · ${when}`, "")
+        lines.push(`> [!NOTE] Bookmark · ${when}`, "")
       } else {
-        lines.push(`**Note** · ${when}`, `> ${inlineText(entry.text)}`, "")
+        lines.push(`> [!NOTE] ${when}`, `> ${inlineText(entry.text)}`, "")
       }
       continue
     }

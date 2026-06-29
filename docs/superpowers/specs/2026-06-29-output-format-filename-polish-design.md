@@ -36,9 +36,12 @@ Replace the `[tN] Speaker  <full-ISO> (+elapsed)` / body-line grid with:
 - Tags as italic segments after the speaker:
   - chat: `**Bob** · _chat_ · …`
   - unresolved speaker: `**Speaker 4** · _unresolved_ · …`
-- Notes: `**Note** · {HH:MM} · +{elapsed}` then `> {text}`.
-- Bookmark (empty note): `**Bookmark** · {HH:MM} · +{elapsed}` — header only, no
-  body line.
+- Notes/bookmarks are the recorder's annotations, NOT utterances, so they must
+  not reuse the `**Speaker** · …` shape (it reads as a participant named "Note"
+  for a human and an LLM). Render them as GitHub/Obsidian callouts:
+  - Note: `> [!NOTE] {HH:MM} · +{elapsed}` then `> {text}`.
+  - Bookmark (empty note): `> [!NOTE] Bookmark · {HH:MM} · +{elapsed}` — callout
+    title only, no body line.
 - The visible `[tN]` counter is removed (no machine consumer reads it today; the
   timeline order is the addressing).
 - Blank line between turns.

@@ -29,8 +29,8 @@ Everything is decoded in the page and kept on your machine.
   your own **notes**.
 - **Bookmarks & notes** — drop a timestamped bookmark with **Alt+Shift+B**
   (**⌥⇧B** on macOS), or type a note in the panel; both land on the timeline in
-  context and are written into the saved file as tagged **Bookmark** / **Note**
-  turns.
+  context and are written into the saved file as `[!NOTE]` callouts, distinct
+  from speaker turns.
 - **Hide all on-screen UI** — a popup toggle and **Alt+Shift+H** (**⌥⇧H** on
   macOS) hide every extension element (controls, panel, toasts) for
   screen-sharing or demos; recording keeps running while hidden.
