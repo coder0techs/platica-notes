@@ -79,6 +79,8 @@ export interface Meeting {
   recorder?: string
   /** BCP 47 caption language the stream was captured with, snapshot at finalize. */
   language?: string
+  /** Join link of the recorded meeting, e.g. https://meet.google.com/abc-defg-hij. */
+  meetingUrl?: string
 }
 
 export interface Settings {
@@ -92,6 +94,12 @@ export interface Settings {
   privateByDefault: boolean
   retentionLimit: number
   debugLog: boolean
+  /**
+   * Emit per-caption ASR alternatives in the saved .md (the `> ↳ _alt:_ …`
+   * lines). Off by default — they are a power-user recovery aid, not part of the
+   * clean human transcript.
+   */
+  captionAlternatives: boolean
   /**
    * Hide every on-screen extension element (top controls, transcript panel,
    * toasts) for screen-sharing or demos. Purely presentational — capture keeps
@@ -112,6 +120,7 @@ export const DEFAULT_SETTINGS: Settings = {
   privateByDefault: false,
   retentionLimit: 30,
   debugLog: false,
+  captionAlternatives: false,
   hideUi: false,
   folderPublic: "meetings/platica-notes",
   folderPrivate: "meetings/platica-notes-private",

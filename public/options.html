@@ -47,6 +47,11 @@
     <section>
       <p class="label">Advanced</p>
       <label class="row">
+        <span>Caption alternatives in the saved file</span>
+        <input type="checkbox" id="caption-alternatives">
+      </label>
+      <p class="hint">Off by default. Adds the raw ASR alternatives (the lines Google revised) under each turn, for recovering words dropped from the final caption. Makes the file noisier.</p>
+      <label class="row">
         <span>Debug log (writes a full .jsonl per meeting)</span>
         <input type="checkbox" id="debug-log">
       </label>

@@ -20,22 +20,23 @@ Everything is decoded in the page and kept on your machine.
 
 ## Features
 
-- Live transcript + in-meeting chat, saved as a `.md` per meeting; consecutive
-  lines from one speaker are merged into a single block for readability.
+- Live transcript + in-meeting chat, saved as a readable Markdown `.md` per
+  meeting: a short header (title, meeting link, time, participants) followed by
+  speaker-attributed turns. Each turn shows the speaker, the time, and the text.
 - **In-meeting transcript panel** — a floating, scrollable live transcript inside
   the Meet window, so you can scroll back and re-read without leaving the call.
   Includes a **search box** that filters the timeline, and a footer input to add
   your own **notes**.
 - **Bookmarks & notes** — drop a timestamped bookmark with **Alt+Shift+B**
   (**⌥⇧B** on macOS), or type a note in the panel; both land on the timeline in
-  context and are written into the saved file as tagged `(bookmark)` / `(note)`
+  context and are written into the saved file as tagged **Bookmark** / **Note**
   turns.
 - **Hide all on-screen UI** — a popup toggle and **Alt+Shift+H** (**⌥⇧H** on
   macOS) hide every extension element (controls, panel, toasts) for
   screen-sharing or demos; recording keeps running while hidden.
-- A full caption revision history is appended at the bottom of the file
-  (`RAW CAPTION VERSIONS`): every distinct version Google streamed, so words the
-  final caption dropped can still be recovered later.
+- **Caption alternatives** (Settings, off by default): when on, each turn also
+  records the raw versions Google streamed before the final caption, so words the
+  final caption dropped can still be recovered later. Left off, the file stays clean.
 - Speaker-attributed lines (others and yourself), with the closing sentence
   captured in full on leave.
 - **Default caption language** (Settings) — every new meeting starts in this
@@ -84,6 +85,8 @@ The **Settings page** (open it from the popup) holds everything else:
   folder.
 - **Folders.** The public, private, and debug-log download folders, relative to
   Downloads.
+- **Caption alternatives.** Adds the raw caption versions under each turn for
+  recovering dropped words. Off by default (makes the file noisier).
 - **Debug log.** Writes a full `.jsonl` diagnostic per meeting to
   `Downloads/Platica Logs/`. Off by default. Private meetings are never logged.
 

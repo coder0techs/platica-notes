@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { collapseVersions, debugLogFileName, elapsedLabel, formatDebugLog, formatMeetingText, isoLocal, meetingFileName, sanitizeFileName, sanitizeFolder } from "../src/background/format"
+import { clockLabel, collapseVersions, debugLogFileName, elapsedLabel, formatDebugLog, formatMeetingText, isoLocal, meetingFileName, sanitizeFileName, sanitizeFolder } from "../src/background/format"
 import type { DebugEvent, Meeting } from "../src/shared/types"
 
 function makeMeeting(overrides: Partial<Meeting> = {}): Meeting {
@@ -20,31 +20,52 @@ function makeMeeting(overrides: Partial<Meeting> = {}): Meeting {
   }
 }
 
-describe("formatMeetingText (v2)", () => {
+describe("formatMeetingText (v3)", () => {
   function frontMatter(text: string): string {
     const end = text.indexOf("\n---", 3)
     return text.slice(0, end)
   }
 
-  it("opens with a YAML front matter block carrying schema, source and timezone", () => {
+  it("opens with a human YAML front matter: title, timezone, started, ended", () => {
     const text = formatMeetingText(makeMeeting())
     expect(text.startsWith("---\n")).toBe(true)
     const fm = frontMatter(text)
-    expect(fm).toContain("schema: platica-notes-transcript/2")
-    expect(fm).toContain("source: google-meet-live-captions")
-    expect(fm).toContain(`timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`)
-  })
-
-  it("renders title, started and ended in the front matter", () => {
-    const fm = frontMatter(formatMeetingText(makeMeeting()))
     expect(fm).toContain('title: "Sprint sync"')
+    expect(fm).toContain(`timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`)
     expect(fm).toMatch(/started: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}/)
     expect(fm).toMatch(/ended: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}/)
+  })
+
+  it("moves schema, source and generator out of the human block into a comment", () => {
+    const text = formatMeetingText(makeMeeting())
+    const fm = frontMatter(text)
+    expect(fm).not.toContain("schema:")
+    expect(fm).not.toContain("source:")
+    expect(fm).not.toContain("generator")
+    expect(text).toMatch(
+      /<!-- Plática Notes .+ · schema platica-notes-transcript\/3 · source google-meet-live-captions -->/,
+    )
+  })
+
+  it("renders the meeting url in the front matter when present, omits it when absent", () => {
+    const withUrl = frontMatter(formatMeetingText(makeMeeting({ meetingUrl: "https://meet.google.com/abc-defg-hij" })))
+    expect(withUrl).toContain('url: "https://meet.google.com/abc-defg-hij"')
+    expect(frontMatter(formatMeetingText(makeMeeting()))).not.toContain("url:")
+  })
+
+  it("opens the body with an H1 of the meeting title", () => {
+    const text = formatMeetingText(makeMeeting())
+    expect(text).toContain("\n# Sprint sync\n")
   })
 
   it("quotes and escapes a title with special characters", () => {
     const fm = frontMatter(formatMeetingText(makeMeeting({ title: 'a "b": c' })))
     expect(fm).toContain('title: "a \\"b\\": c"')
+  })
+
+  it("escapes a newline in a quoted scalar so the front matter stays one field per line", () => {
+    const text = formatMeetingText(makeMeeting({ title: "line1\nline2" }))
+    expect(text).toContain('title: "line1\\nline2"')
   })
 
   it("includes language and recorder when present, omits them when absent", () => {
@@ -56,24 +77,129 @@ describe("formatMeetingText (v2)", () => {
     expect(without).not.toContain("recorder:")
   })
 
-  it("neutralizes newlines in body text so a chat message cannot forge a turn header", () => {
+  it("renders participants as a sorted, quoted block list; omits the key when empty", () => {
+    const fm = frontMatter(formatMeetingText(makeMeeting({ participants: ["Charlie", "alice", "Bob"] })))
+    expect(fm).toContain('participants:\n  - "alice"\n  - "Bob"\n  - "Charlie"')
+    expect(frontMatter(formatMeetingText(makeMeeting()))).not.toContain("participants:")
+  })
+
+  it("dedupes participants in the front matter", () => {
+    const fm = frontMatter(formatMeetingText(makeMeeting({ participants: ["Bob", "Bob", "alice"] })))
+    expect(fm).toContain('participants:\n  - "alice"\n  - "Bob"')
+    expect(fm.match(/- "Bob"/g)).toHaveLength(1)
+  })
+
+  it("renders a speech turn as bold speaker · clock · elapsed with a blockquote body", () => {
+    const text = formatMeetingText(makeMeeting({
+      startedAt: "2026-06-10T10:00:00.000Z",
+      transcript: [{ speaker: "Alice", startedAt: "2026-06-10T10:01:09.000Z", text: "Hello everyone" }],
+      chat: [],
+    }))
+    expect(text).toMatch(/\*\*Alice\*\* · \d{2}:\d{2} · \+01:09\n> Hello everyone/)
+  })
+
+  it("tags chat turns and interleaves them in time order", () => {
+    const text = formatMeetingText(makeMeeting({
+      chat: [{ sender: "Bob", sentAt: "2026-06-10T10:05:00.000Z", text: "see link" }],
+    }))
+    expect(text).toMatch(/\*\*Bob\*\* · _chat_ · \d{2}:\d{2} · \+05:00\n> see link/)
+    expect(text.indexOf("see link")).toBeGreaterThan(text.indexOf("Hi Alice"))
+  })
+
+  it("marks an unresolved Speaker N label", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [{ speaker: "Speaker 4", startedAt: "2026-06-10T10:01:00.000Z", text: "yes" }],
+      chat: [],
+    }))
+    expect(text).toMatch(/\*\*Speaker 4\*\* · _unresolved_ · /)
+  })
+
+  it("does not mark a chat sender as unresolved even if named like a fallback label", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [],
+      chat: [{ sender: "Speaker 4", sentAt: "2026-06-10T10:02:00.000Z", text: "hi" }],
+    }))
+    expect(text).toContain("**Speaker 4** · _chat_ ·")
+    expect(text).not.toContain("_unresolved_")
+  })
+
+  it("renders a note as a Note turn with its text in a blockquote", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [],
+      chat: [],
+      notes: [{ at: "2026-06-10T10:03:00.000Z", text: "follow up with Ada" }],
+    }))
+    expect(text).toMatch(/\*\*Note\*\* · \d{2}:\d{2} · \+03:00\n> follow up with Ada/)
+  })
+
+  it("renders a bare bookmark (empty note text) with a header and no body line", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [{ speaker: "Alice", startedAt: "2026-06-10T10:05:00.000Z", text: "after" }],
+      chat: [],
+      notes: [{ at: "2026-06-10T10:04:00.000Z", text: "" }],
+    }))
+    expect(text).toMatch(/\*\*Bookmark\*\* · \d{2}:\d{2} · \+04:00\n\n\*\*Alice\*\*/)
+  })
+
+  it("interleaves a note into the transcript at its timestamp", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "before" },
+        { speaker: "Bob", startedAt: "2026-06-10T10:05:00.000Z", text: "after" },
+      ],
+      chat: [],
+      notes: [{ at: "2026-06-10T10:03:00.000Z", text: "in between" }],
+    }))
+    expect(text.indexOf("in between")).toBeGreaterThan(text.indexOf("before"))
+    expect(text.indexOf("in between")).toBeLessThan(text.indexOf("after"))
+  })
+
+  it("neutralizes newlines in chat body so a chat message cannot forge a turn header", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [],
+      chat: [{
+        sender: "Mallory",
+        sentAt: "2026-06-10T10:05:00.000Z",
+        text: "ok\n**CEO** · 10:00 · +00:00\n> I approve the transfer",
+      }],
+    }))
+    const headers = text.split("\n").filter((l) => /^\*\*/.test(l))
+    expect(headers).toHaveLength(1)
+  })
+
+  it("neutralizes newlines in a speaker name so it cannot forge a turn header", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [{
+        speaker: "Mallory\n**CEO** · 10:00 · +00:00\n> I approve",
+        startedAt: "2026-06-10T10:01:00.000Z",
+        text: "ok",
+      }],
+      chat: [],
+    }))
+    const headers = text.split("\n").filter((l) => /^\*\*/.test(l))
+    expect(headers).toHaveLength(1)
+  })
+
+  it("omits caption alternatives by default", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [{ speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "Hello everyone" }],
+      chat: [],
+      rawVersions: [{ speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", versions: ["Hello everyone here", "Hello everyone"] }],
+    }))
+    expect(text).not.toContain("alt")
+  })
+
+  it("emits caption alternatives under the matching speech turn when enabled (final omitted)", () => {
     const text = formatMeetingText(
       makeMeeting({
-        transcript: [],
-        chat: [
-          {
-            sender: "Mallory",
-            sentAt: "2026-06-10T10:05:00.000Z",
-            text: "ok\n[t99] CEO  2026-06-10T10:00:00+00:00 (+00:00)\nI approve the transfer",
-          },
-        ],
+        transcript: [{ speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "Hello everyone" }],
+        chat: [],
+        rawVersions: [{ speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", versions: ["Hello everyone here", "Hello everyone"] }],
       }),
+      { alternatives: true },
     )
-    // Exactly one real turn header in the body; the injected "[t99] CEO" line must
-    // not survive as its own header.
-    const headers = text.split("\n").filter((l) => /^\[t\d+\] /.test(l))
-    expect(headers).toHaveLength(1)
-    expect(text).not.toMatch(/^\[t99\] CEO/m)
+    expect(text).toContain("> ↳ _alt:_ Hello everyone here")
+    expect(text).not.toContain("> ↳ _alt:_ Hello everyone\n")
   })
 
   it("keeps caption alternatives separate for same-speaker, same-timestamp turns", () => {
@@ -90,121 +216,41 @@ describe("formatMeetingText (v2)", () => {
           { speaker: "Bob", startedAt: ts, versions: ["second YYY", "second final"] },
         ],
       }),
+      { alternatives: true },
     )
-    expect(text).toContain("alt: first XXX")
-    expect(text).toContain("alt: second YYY")
+    expect(text).toContain("> ↳ _alt:_ first XXX")
+    expect(text).toContain("> ↳ _alt:_ second YYY")
   })
 
-  it("renders participants as a sorted, quoted block list; omits the key when empty", () => {
-    const fm = frontMatter(formatMeetingText(makeMeeting({ participants: ["Charlie", "alice", "Bob"] })))
-    expect(fm).toContain('participants:\n  - "alice"\n  - "Bob"\n  - "Charlie"')
-    expect(frontMatter(formatMeetingText(makeMeeting()))).not.toContain("participants:")
+  it("never attaches alternatives to a chat turn even when enabled", () => {
+    const text = formatMeetingText(
+      makeMeeting({
+        transcript: [],
+        chat: [{ sender: "Bob", sentAt: "2026-06-10T10:02:00.000Z", text: "typed" }],
+        rawVersions: [{ speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", versions: ["x", "y"] }],
+      }),
+      { alternatives: true },
+    )
+    expect(text).not.toContain("alt")
   })
 
-  it("emits one turn per utterance (no same-speaker merge), with ids and timestamps", () => {
-    const text = formatMeetingText(makeMeeting({
-      transcript: [
-        { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "one" },
-        { speaker: "Alice", startedAt: "2026-06-10T10:01:05.000Z", text: "two" },
-      ],
-    }))
-    expect(text).toMatch(/\[t1\] Alice {2}\d{4}-\d{2}-\d{2}T[\d:]+[+-][\d:]+ \(\+01:00\)/)
-    expect(text).toContain("[t2] Alice")
-    expect(text).toContain("one")
-    expect(text).toContain("two")
+  it("emits no alternatives for a phrase that only grew or never changed", () => {
+    const text = formatMeetingText(
+      makeMeeting({
+        transcript: [{ speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", text: "Hi there" }],
+        chat: [],
+        rawVersions: [{ speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", versions: ["Hi", "Hi there"] }],
+      }),
+      { alternatives: true },
+    )
+    expect(text).not.toContain("alt")
   })
 
-  it("tags chat turns (chat) and interleaves them in time order", () => {
-    const text = formatMeetingText(makeMeeting({
-      chat: [{ sender: "Bob", sentAt: "2026-06-10T10:05:00.000Z", text: "see link" }],
-    }))
-    expect(text).toMatch(/\[t\d+\] Bob \(chat\) {2}/)
-    expect(text.indexOf("see link")).toBeGreaterThan(text.indexOf("Hi Alice"))
-  })
-
-  it("marks an unresolved Speaker N label (unresolved)", () => {
-    const text = formatMeetingText(makeMeeting({
-      transcript: [{ speaker: "Speaker 4", startedAt: "2026-06-10T10:01:00.000Z", text: "yes" }],
-    }))
-    expect(text).toMatch(/\[t1\] Speaker 4 \(unresolved\) {2}/)
-  })
-
-  it("computes the elapsed offset from the meeting start", () => {
-    const text = formatMeetingText(makeMeeting({
-      startedAt: "2026-06-10T10:00:00.000Z",
-      transcript: [{ speaker: "Alice", startedAt: "2026-06-10T10:01:09.000Z", text: "hi" }],
-    }))
-    expect(text).toContain("(+01:09)")
-  })
-
-  it("attaches caption alternatives under the matching speech turn (final omitted)", () => {
-    const text = formatMeetingText(makeMeeting({
-      transcript: [{ speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "Hello everyone" }],
-      rawVersions: [
-        { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", versions: ["Hello everyone here", "Hello everyone"] },
-      ],
-    }))
-    expect(text).toContain("Hello everyone")
-    expect(text).toContain("  alt: Hello everyone here")
-    // The final frame is the turn text and must NOT be repeated as an alt.
-    expect(text).not.toContain("  alt: Hello everyone\n")
-  })
-
-  it("emits no alt lines for a phrase that only grew or never changed", () => {
-    const text = formatMeetingText(makeMeeting({
-      transcript: [{ speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", text: "Hi there" }],
-      rawVersions: [{ speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", versions: ["Hi", "Hi there"] }],
-    }))
-    expect(text).not.toContain("alt:")
-  })
-
-  it("never attaches alts to a chat turn", () => {
-    const text = formatMeetingText(makeMeeting({
-      transcript: [],
-      chat: [{ sender: "Bob", sentAt: "2026-06-10T10:02:00.000Z", text: "typed" }],
-      rawVersions: [{ speaker: "Bob", startedAt: "2026-06-10T10:02:00.000Z", versions: ["x", "y"] }],
-    }))
-    expect(text).not.toContain("alt:")
-  })
-
-  it("renders a note as a tagged timeline turn with its text on the next line", () => {
-    const text = formatMeetingText(makeMeeting({
-      transcript: [],
-      notes: [{ at: "2026-06-10T10:03:00.000Z", text: "follow up with Ada" }],
-    }))
-    expect(text).toMatch(/\[t1\] \(note\) {2}\d{4}-\d{2}-\d{2}T[\d:]+[+-][\d:]+ \(\+03:00\)/)
-    expect(text).toContain("follow up with Ada")
-  })
-
-  it("renders a bare bookmark (empty note text) with a tag and no body line", () => {
-    const text = formatMeetingText(makeMeeting({
-      transcript: [{ speaker: "Alice", startedAt: "2026-06-10T10:05:00.000Z", text: "after" }],
-      notes: [{ at: "2026-06-10T10:04:00.000Z", text: "" }],
-    }))
-    expect(text).toMatch(/\[t1\] \(bookmark\) {2}.*\(\+04:00\)/)
-    // The bookmark header is followed straight by a blank line then the next
-    // turn — no empty body line of its own.
-    expect(text).toMatch(/\(bookmark\) {2}[^\n]*\n\n\[t2\] Alice/)
-  })
-
-  it("interleaves a note into the transcript at its timestamp", () => {
-    const text = formatMeetingText(makeMeeting({
-      transcript: [
-        { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "before" },
-        { speaker: "Bob", startedAt: "2026-06-10T10:05:00.000Z", text: "after" },
-      ],
-      notes: [{ at: "2026-06-10T10:03:00.000Z", text: "in between" }],
-    }))
-    expect(text.indexOf("in between")).toBeGreaterThan(text.indexOf("before"))
-    expect(text.indexOf("in between")).toBeLessThan(text.indexOf("after"))
-  })
-
-  it("has no v1 footer or section headers", () => {
+  it("has no v2 turn-id grid or section headers", () => {
     const text = formatMeetingText(makeMeeting({ participants: ["Alice"], rawVersions: [] }))
-    expect(text).not.toContain("— Plática Notes")
+    expect(text).not.toMatch(/^\[t\d+\]/m)
     expect(text).not.toContain("RAW CAPTION VERSIONS")
     expect(text).not.toContain("TRANSCRIPT")
-    expect(text).not.toContain("PARTICIPANTS")
   })
 
   it("tolerates a legacy meeting lacking participants/rawVersions/recorder/language", () => {
@@ -212,28 +258,8 @@ describe("formatMeetingText (v2)", () => {
     delete (meeting as { participants?: string[] }).participants
     delete (meeting as { rawVersions?: unknown }).rawVersions
     const text = formatMeetingText(meeting)
-    expect(text).toContain("schema: platica-notes-transcript/2")
+    expect(text).toContain("schema platica-notes-transcript/3")
     expect(text).toContain("Hello everyone")
-  })
-
-  it("does not mark a chat sender as (unresolved) even if named like a fallback label", () => {
-    const text = formatMeetingText(makeMeeting({
-      transcript: [],
-      chat: [{ sender: "Speaker 4", sentAt: "2026-06-10T10:02:00.000Z", text: "hi" }],
-    }))
-    expect(text).toContain("[t1] Speaker 4 (chat)")
-    expect(text).not.toContain("(unresolved)")
-  })
-
-  it("dedupes participants in the front matter", () => {
-    const fm = frontMatter(formatMeetingText(makeMeeting({ participants: ["Bob", "Bob", "alice"] })))
-    expect(fm).toContain('participants:\n  - "alice"\n  - "Bob"')
-    expect(fm.match(/- "Bob"/g)).toHaveLength(1)
-  })
-
-  it("escapes a newline in a quoted scalar so the front matter stays one field per line", () => {
-    const text = formatMeetingText(makeMeeting({ title: "line1\nline2" }))
-    expect(text).toContain('title: "line1\\nline2"')
   })
 })
 
@@ -319,6 +345,11 @@ describe("sanitizeFileName", () => {
 
   it("falls back to Meeting for empty results", () => {
     expect(sanitizeFileName("...")).toBe("Meeting")
+  })
+
+  it("collapses runs of underscores from adjacent illegal chars", () => {
+    expect(sanitizeFileName("a///b")).toBe("a_b")
+    expect(sanitizeFileName('a<>:"b')).toBe("a_b")
   })
 })
 
@@ -416,6 +447,18 @@ describe("elapsedLabel", () => {
 
   it("clamps a negative or zero gap to 00:00", () => {
     expect(elapsedLabel("2026-06-10T10:00:05.000Z", "2026-06-10T10:00:00.000Z")).toBe("00:00")
+  })
+})
+
+describe("clockLabel", () => {
+  it("renders local wall-clock HH:MM with no date or offset", () => {
+    expect(clockLabel("2026-06-10T10:05:00.000Z")).toMatch(/^\d{2}:\d{2}$/)
+  })
+
+  it("agrees with the local hours/minutes of the instant", () => {
+    const d = new Date("2026-06-10T10:05:00.000Z")
+    const pad = (n: number) => String(n).padStart(2, "0")
+    expect(clockLabel("2026-06-10T10:05:00.000Z")).toBe(`${pad(d.getHours())}:${pad(d.getMinutes())}`)
   })
 })
 

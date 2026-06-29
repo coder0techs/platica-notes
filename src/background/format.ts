@@ -33,6 +33,13 @@ export function elapsedLabel(fromIso: string, toIso: string): string {
   return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`
 }
 
+// Local wall-clock HH:MM for a turn header. The absolute instant lives in the
+// front matter (started/ended), so a turn line only needs the clock + elapsed.
+export function clockLabel(iso: string): string {
+  const d = new Date(iso)
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
 const PLATFORM_SOURCES: Record<Meeting["platform"], string> = {
   meet: "google-meet-live-captions",
   zoom: "zoom-live-captions",
@@ -84,15 +91,16 @@ export function collapseVersions(versions: string[]): string[] {
   })
 }
 
-export function formatMeetingText(meeting: Meeting): string {
-  const fm: string[] = [
-    "---",
-    "schema: platica-notes-transcript/2",
-    `source: ${PLATFORM_SOURCES[meeting.platform]}`,
-  ]
+export interface FormatOptions {
+  /** Emit caption alternatives (`> ↳ _alt:_ …`) under speech turns. Default off. */
+  alternatives?: boolean
+}
+
+export function formatMeetingText(meeting: Meeting, opts: FormatOptions = {}): string {
+  const fm: string[] = ["---", `title: ${yamlScalar(meeting.title)}`]
+  if (meeting.meetingUrl) fm.push(`url: ${yamlScalar(meeting.meetingUrl)}`)
   if (meeting.language) fm.push(`language: ${yamlScalar(meeting.language)}`)
   fm.push(`timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`)
-  fm.push(`title: ${yamlScalar(meeting.title)}`)
   fm.push(`started: ${isoLocal(meeting.startedAt)}`)
   fm.push(`ended: ${isoLocal(meeting.endedAt)}`)
   if (meeting.recorder) fm.push(`recorder: ${yamlScalar(meeting.recorder)}`)
@@ -102,44 +110,44 @@ export function formatMeetingText(meeting: Meeting): string {
       fm.push(`  - ${yamlScalar(name)}`)
     }
   }
-  fm.push(`generator: Plática Notes ${VERSION} (${COMMIT})`)
   fm.push("---")
+  // Machine/provenance triple lives in one comment, out of the human block. Still
+  // greppable for any future re-import; schema is /3 (the body grammar changed).
+  fm.push(`<!-- Plática Notes ${VERSION} (${COMMIT}) · schema platica-notes-transcript/3 · source ${PLATFORM_SOURCES[meeting.platform]} -->`)
 
-  // Per-utterance caption alternatives, keyed by (speaker, startedAt): the
-  // collapsed version history minus its final frame (the final IS the turn text).
-  // collapseVersions stays word-lossless; only phrases that diverged before the
-  // final survive with length > 1.
-  // Keyed by (speaker, startedAt, final text): the final frame equals the turn
-  // text, so this matches a turn to its own alternatives even when two captions
-  // from the same speaker share a millisecond — keying on (speaker, startedAt)
-  // alone would let the second overwrite the first and misattribute both.
+  // Per-utterance caption alternatives, keyed by (speaker, startedAt, final text)
+  // so a turn matches its own alts even when two same-speaker captions share a
+  // millisecond. Built only when requested; otherwise the file stays clean.
   const altMap = new Map<string, string[]>()
-  for (const cv of meeting.rawVersions ?? []) {
-    const collapsed = collapseVersions(cv.versions)
-    if (collapsed.length > 1) {
-      altMap.set(`${cv.speaker} ${cv.startedAt} ${collapsed[collapsed.length - 1]}`, collapsed.slice(0, -1))
+  if (opts.alternatives) {
+    for (const cv of meeting.rawVersions ?? []) {
+      const collapsed = collapseVersions(cv.versions)
+      if (collapsed.length > 1) {
+        altMap.set(`${cv.speaker} ${cv.startedAt} ${collapsed[collapsed.length - 1]}`, collapsed.slice(0, -1))
+      }
     }
   }
 
-  const lines: string[] = [...fm, ""]
-  let n = 0
+  const lines: string[] = [...fm, "", `# ${inlineText(meeting.title)}`, ""]
   for (const entry of flattenTimeline(meeting.transcript, meeting.chat, meeting.notes)) {
-    n += 1
+    const when = `${clockLabel(entry.at)} · +${elapsedLabel(meeting.startedAt, entry.at)}`
     // A recorder's note carries no speaker; a bare bookmark (empty text) is a
-    // marked moment with no body line.
+    // marked moment with only a header.
     if (entry.kind === "note") {
-      const isBookmark = entry.text.trim() === ""
-      lines.push(`[t${n}] (${isBookmark ? "bookmark" : "note"})  ${isoLocal(entry.at)} (+${elapsedLabel(meeting.startedAt, entry.at)})`)
-      if (!isBookmark) lines.push(inlineText(entry.text))
-      lines.push("")
+      if (entry.text.trim() === "") {
+        lines.push(`**Bookmark** · ${when}`, "")
+      } else {
+        lines.push(`**Note** · ${when}`, `> ${inlineText(entry.text)}`, "")
+      }
       continue
     }
-    const tags = (entry.kind === "chat" ? " (chat)" : "") + (entry.kind === "speech" && isUnresolved(entry.speaker) ? " (unresolved)" : "")
-    lines.push(`[t${n}] ${entry.speaker}${tags}  ${isoLocal(entry.at)} (+${elapsedLabel(meeting.startedAt, entry.at)})`)
-    lines.push(inlineText(entry.text))
+    // inlineText the speaker too: in the prose format the name IS the structural
+    // header (`**Name** · …`), so a newline in it could otherwise forge a turn.
+    const tag = entry.kind === "chat" ? " · _chat_" : isUnresolved(entry.speaker) ? " · _unresolved_" : ""
+    lines.push(`**${inlineText(entry.speaker)}**${tag} · ${when}`, `> ${inlineText(entry.text)}`)
     if (entry.kind === "speech") {
       const alts = altMap.get(`${entry.speaker} ${entry.at} ${entry.text}`)
-      if (alts) for (const a of alts) lines.push(`  alt: ${inlineText(a)}`)
+      if (alts) for (const a of alts) lines.push(`> ↳ _alt:_ ${inlineText(a)}`)
     }
     lines.push("")
   }
@@ -154,6 +162,7 @@ const MAX_NAME_LEN = 120
 export function sanitizeFileName(name: string): string {
   const cleaned = name
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/_+/g, "_")
     .replace(/^[.\s]+|[.\s]+$/g, "")
     .slice(0, MAX_NAME_LEN)
     .replace(/[.\s]+$/, "") // re-trim: the slice may have ended on a dot/space

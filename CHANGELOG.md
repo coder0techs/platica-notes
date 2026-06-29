@@ -2,6 +2,17 @@
 
 All notable changes to Plática Notes, newest first.
 
+## Unreleased
+
+- **Friendlier saved file.** The `.md` is now human-readable Markdown: a short
+  header (title, meeting link, time, participants) followed by speaker turns as
+  `**Speaker** · time` with the text as a quote. Machine metadata (schema,
+  source, build) moved into a single trailing comment, out of the way.
+- **Meeting link in the file.** The header now carries the Google Meet join link.
+- **Caption alternatives are now opt-in.** The raw caption versions (for
+  recovering words the final caption dropped) are off by default and enabled from
+  Settings; the everyday file stays clean.
+
 ## 1.7.2 - 2026-06-29
 
 - **Simpler in-meeting notices.** The toasts and the Settings "meeting in progress"

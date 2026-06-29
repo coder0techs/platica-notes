@@ -77,6 +77,8 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
       notes: session.notes ?? [],
       recorder: session.selfName,
       language: session.captionLanguage ?? settings.captionLanguage,
+      meetingUrl:
+        session.platform === "meet" && session.path ? `https://meet.google.com${session.path}` : undefined,
     }
     await addMeeting(meeting, settings.retentionLimit)
     // Mark it for export BEFORE removing the session key / returning, so a crash
