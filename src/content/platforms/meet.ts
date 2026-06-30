@@ -337,14 +337,21 @@ async function runMeeting(tabId: number): Promise<void> {
   }
   onDebugEvent()
 
+  // Set by the start-of-meeting language prompt below (null when not shown / once it
+  // closes). Declared here so applyLanguage can close it on any language change.
+  let languagePrompt: { unmount: () => void } | null = null
   // The ephemeral, this-meeting-only language switch shared by the pill and the
   // start-of-meeting prompt: resubscribe + snapshot into the session, never write
-  // the persisted default (so the next meeting still starts from the default).
+  // the persisted default (so the next meeting still starts from the default). Any
+  // language change also closes the start prompt — once you've chosen (pill OR
+  // prompt) the prompt has done its job, so it never lingers stale.
   const applyLanguage = (language: string): void => {
     session.captionLanguage = language
     activeLanguage = language
     writer.requestWrite()
     pushRtcConfig(language, debugEnabled)
+    languagePrompt?.unmount()
+    languagePrompt = null
   }
 
   const controls = mountMeetingControls({
@@ -370,7 +377,6 @@ async function runMeeting(tabId: number): Promise<void> {
   // start of a fresh meeting (capture is already running in the default). Skipped on
   // a reload-resume and while all UI is hidden. Routes a switch through applyLanguage
   // (same ephemeral path as the pill) and keeps the pill in sync via setLanguage.
-  let languagePrompt: { unmount: () => void } | null = null
   if (shouldAskLanguage(settings.askLanguageEachMeeting, !!resumed, isUiHidden())) {
     languagePrompt = mountLanguagePrompt({
       initialLanguage: session.captionLanguage ?? settings.captionLanguage,
@@ -475,7 +481,9 @@ async function runMeeting(tabId: number): Promise<void> {
   }, END_WATCH_INTERVAL_MS)
   // ---------------------------------------------------------------------------
 
-  showToast("Plática Notes is recording this meeting")
+  // The language prompt already says "recording in X" — skip the generic toast
+  // when it's up, so the two don't stack on the same spot.
+  if (!languagePrompt) showToast("Plática Notes is recording this meeting")
   await done
   return
 

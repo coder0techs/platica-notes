@@ -52,11 +52,17 @@ export function pulseActivity(): void {
 // purple pulse bar / transcript pill) rather than a plain black tooltip —
 // noticeable without shouting.
 const TOAST_BG = "#433b66"
+const TOAST_ID = "platica-toast"
 
 export function showToast(message: string, durationMs = 8000): void {
+  // Single toast at a time: a new one replaces any still on screen, so two toasts
+  // (e.g. the start notice and a language-change confirmation) can never stack on
+  // the same spot.
+  document.getElementById(TOAST_ID)?.remove()
   const toast = document.createElement("div")
+  toast.id = TOAST_ID
   toast.textContent = message
-  // Sits below the persistent top-center controls (top:12px) so it never overlaps.
+  // Sits just below the persistent top-center controls (top:12px).
   toast.style.cssText =
     "position:fixed;top:64px;left:50%;transform:translateX(-50%);color:#fff;" +
     `background:${TOAST_BG};` +
