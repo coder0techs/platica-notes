@@ -129,7 +129,18 @@ export function formatMeetingText(meeting: Meeting, opts: FormatOptions = {}): s
   }
 
   const lines: string[] = [...fm, "", `# ${inlineText(meeting.title)}`, ""]
+  // Visit separators: for a merged meeting, each visit after the first has a
+  // rejoin anchor. Before the first timeline entry at/after an anchor, emit a
+  // heading (a `while` drains any anchors a single entry jumps past). Built only
+  // from our own timestamps — no untrusted text, so injection-safety is intact.
+  const visitAnchors = (meeting.visits ?? []).slice(1).map(v => v.startedAt)
+  let visitPtr = 0
   for (const entry of flattenTimeline(meeting.transcript, meeting.chat, meeting.notes)) {
+    while (visitPtr < visitAnchors.length && visitAnchors[visitPtr] <= entry.at) {
+      const anchor = visitAnchors[visitPtr]
+      lines.push(`## Visit ${visitPtr + 2} · rejoined ${clockLabel(anchor)} · +${elapsedLabel(meeting.startedAt, anchor)}`, "")
+      visitPtr++
+    }
     const when = `${clockLabel(entry.at)} · +${elapsedLabel(meeting.startedAt, entry.at)}`
     // A recorder's note/bookmark is an annotation, not an utterance: render it as
     // a heading so it stands out structurally as its own block (not nested in a

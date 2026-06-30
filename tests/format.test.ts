@@ -505,3 +505,31 @@ describe("formatDebugLog", () => {
     expect(output.endsWith("\n")).toBe(false)
   })
 })
+
+describe("formatMeetingText — visit separators", () => {
+  function merged(): Meeting {
+    return makeMeeting({
+      transcript: [
+        { speaker: "A", startedAt: "2026-06-10T10:05:00.000Z", text: "before" },
+        { speaker: "B", startedAt: "2026-06-10T10:45:00.000Z", text: "after" },
+      ],
+      endedAt: "2026-06-10T11:00:00.000Z",
+      visits: [
+        { startedAt: "2026-06-10T10:00:00.000Z", endedAt: "2026-06-10T10:30:00.000Z" },
+        { startedAt: "2026-06-10T10:40:00.000Z", endedAt: "2026-06-10T11:00:00.000Z" },
+      ],
+    })
+  }
+
+  it("emits one Visit 2 separator before the first post-rejoin entry", () => {
+    const out = formatMeetingText(merged())
+    const sepCount = (out.match(/^## Visit 2 · rejoined /gm) ?? []).length
+    expect(sepCount).toBe(1)
+    expect(out.indexOf("before")).toBeLessThan(out.indexOf("## Visit 2"))
+    expect(out.indexOf("## Visit 2")).toBeLessThan(out.indexOf("after"))
+  })
+
+  it("emits no separator for a single-visit meeting (output unchanged)", () => {
+    expect(formatMeetingText(makeMeeting())).not.toContain("## Visit")
+  })
+})
