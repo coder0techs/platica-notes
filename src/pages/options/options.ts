@@ -7,6 +7,7 @@ const privateDefault = document.querySelector<HTMLInputElement>("#private-defaul
 const debugLog = document.querySelector<HTMLInputElement>("#debug-log")!
 const captionAlternatives = document.querySelector<HTMLInputElement>("#caption-alternatives")!
 const mergeRejoins = document.querySelector<HTMLInputElement>("#merge-rejoins")!
+const askLanguage = document.querySelector<HTMLInputElement>("#ask-language")!
 const folderPublic = document.querySelector<HTMLInputElement>("#folder-public")!
 const folderPrivate = document.querySelector<HTMLInputElement>("#folder-private")!
 const folderDebug = document.querySelector<HTMLInputElement>("#folder-debug")!
@@ -48,6 +49,7 @@ async function init(): Promise<void> {
   debugLog.checked = settings.debugLog
   captionAlternatives.checked = settings.captionAlternatives
   mergeRejoins.checked = settings.mergeRejoins
+  askLanguage.checked = settings.askLanguageEachMeeting
   folderPublic.value = settings.folderPublic
   folderPrivate.value = settings.folderPrivate
   folderDebug.value = settings.folderDebug
@@ -83,6 +85,10 @@ captionAlternatives.addEventListener("change", () => {
 
 mergeRejoins.addEventListener("change", () => {
   void saveSettings({ mergeRejoins: mergeRejoins.checked })
+})
+
+askLanguage.addEventListener("change", () => {
+  void saveSettings({ askLanguageEachMeeting: askLanguage.checked })
 })
 
 folderPublic.addEventListener("change", () => {
