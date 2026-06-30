@@ -87,6 +87,10 @@ The **Settings page** (open it from the popup) holds everything else:
   Downloads.
 - **Caption alternatives.** Adds the raw caption versions under each turn for
   recovering dropped words. On by default; turn off for a cleaner file.
+- **Merge rejoined visits.** If you accidentally leave and rejoin the same
+  meeting within a couple of hours, fold the visits into one `.md` instead of one
+  file per visit. Off by default. A daily recurring call is never merged across
+  days, and a private visit is never folded into a public file.
 - **Debug log.** Writes a full `.jsonl` diagnostic per meeting to
   `Downloads/Platica Logs/`. Off by default. Private meetings are never logged.
 

@@ -2,6 +2,16 @@
 
 All notable changes to Plática Notes, newest first.
 
+## 1.10.0 - 2026-06-30
+
+- **Optionally merge rejoined visits into one file.** If you accidentally leave
+  and rejoin the same meeting within a couple of hours, the visits can be folded
+  into a single `.md` instead of one file per visit. Off by default — enable
+  "Merge rejoined visits into one file" in Settings. A daily recurring call
+  (same link every day) is never merged across days, and a private visit is never
+  folded into a public file. Each rejoin is marked in the file with a
+  `## Visit N · rejoined …` heading, and the History list shows the visit count.
+
 ## 1.9.0 - 2026-06-30
 
 - **More reliable end-of-meeting saving.** The transcript is now finalized from
