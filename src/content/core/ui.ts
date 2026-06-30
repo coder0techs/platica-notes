@@ -89,7 +89,7 @@ export function mountMeetingControls(opts: {
   onLanguageChange: (language: string) => void
   onPrivateChange: (isPrivate: boolean) => void
   onToggleTranscript: () => void
-}): { unmount: () => void; setTranscriptActive: (active: boolean) => void } {
+}): { unmount: () => void; setTranscriptActive: (active: boolean) => void; setLanguage: (language: string) => void } {
   const container = document.createElement("div")
   container.style.cssText =
     "position:fixed;top:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:2147483647;"
@@ -207,5 +207,96 @@ export function mountMeetingControls(opts: {
       transcriptActive = active
       renderTranscript()
     },
+    // Set the pill's language without firing its change event — used when the
+    // start-of-meeting prompt drives the change, so the pill stays in sync without
+    // re-applying (no double resubscribe).
+    setLanguage: (language: string) => {
+      if (![...select.options].some(o => o.value === language)) {
+        const opt = document.createElement("option")
+        opt.value = language
+        opt.textContent = language
+        select.appendChild(opt)
+      }
+      select.value = language
+      syncLangText()
+    },
   }
+}
+
+// A loud, NON-blocking start-of-meeting prompt to confirm/switch the caption
+// language. Capture is already running in the default when this mounts; picking a
+// language routes through the same ephemeral path as the pill (opts.onPick). It
+// never gates capture and never auto-dismisses — it stays until the user acts.
+export function mountLanguagePrompt(opts: {
+  initialLanguage: string
+  onPick: (language: string) => void
+  onDisableAsking: () => void
+}): { unmount: () => void } {
+  const labelFor = (value: string) => CAPTION_LANGUAGES.find(l => l.value === value)?.label ?? value
+
+  const card = document.createElement("div")
+  // Sits just below the controls row (top:12px, height 34px) so both stay visible.
+  card.style.cssText =
+    "position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
+    "box-sizing:border-box;width:min(380px,calc(100vw - 24px));background:#433b66;color:#fff;" +
+    "border-radius:12px;padding:14px 16px;box-shadow:0 6px 24px rgba(0,0,0,.4);" +
+    "font:14px system-ui;display:flex;flex-direction:column;gap:10px;"
+  registerUiEl(card)
+
+  const title = document.createElement("div")
+  title.textContent = "Recording language"
+  title.style.cssText = "font-weight:600;font-size:15px;"
+
+  const body = document.createElement("div")
+  body.style.cssText = "opacity:.92;line-height:1.35;"
+  body.textContent =
+    `This meeting is being recorded in ${labelFor(opts.initialLanguage)}. ` +
+    "If it's in another language, switch now — otherwise the captions come out garbled."
+
+  const select = document.createElement("select")
+  select.style.cssText =
+    "width:100%;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.25);" +
+    "background:rgba(0,0,0,.25);color:#fff;padding:0 8px;font:14px system-ui;cursor:pointer;"
+  for (const lang of CAPTION_LANGUAGES) {
+    const opt = document.createElement("option")
+    opt.value = lang.value
+    opt.textContent = lang.label
+    select.appendChild(opt)
+  }
+  if (![...select.options].some(o => o.value === opts.initialLanguage)) {
+    const opt = document.createElement("option")
+    opt.value = opts.initialLanguage
+    opt.textContent = opts.initialLanguage
+    select.appendChild(opt)
+  }
+  select.value = opts.initialLanguage
+
+  const confirm = document.createElement("button")
+  confirm.type = "button"
+  confirm.style.cssText =
+    "height:36px;border:none;border-radius:8px;background:#6750a4;color:#fff;cursor:pointer;" +
+    'font:600 14px system-ui;'
+  const renderConfirm = () => { confirm.textContent = `Record in ${labelFor(select.value)}` }
+  renderConfirm()
+  select.addEventListener("change", renderConfirm)
+
+  const dismiss = () => card.remove()
+  confirm.addEventListener("click", () => {
+    // Apply only on an actual change — confirming the default is a pure dismiss
+    // (capture is already running in it; no needless resubscribe).
+    if (select.value !== opts.initialLanguage) opts.onPick(select.value)
+    dismiss()
+  })
+
+  const noAsk = document.createElement("button")
+  noAsk.type = "button"
+  noAsk.textContent = "Don't ask again"
+  noAsk.style.cssText =
+    "background:none;border:none;color:rgba(255,255,255,.7);cursor:pointer;" +
+    "font:13px system-ui;text-decoration:underline;align-self:flex-start;padding:0;"
+  noAsk.addEventListener("click", () => { opts.onDisableAsking(); dismiss() })
+
+  card.append(title, body, select, confirm, noAsk)
+  document.documentElement.appendChild(card)
+  return { unmount: dismiss }
 }
