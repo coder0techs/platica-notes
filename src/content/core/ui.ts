@@ -124,14 +124,11 @@ export function mountMeetingControls(opts: {
   // Transparent, covers the whole pill so the entire pill is the click target.
   select.style.cssText =
     "position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:none;margin:0;"
-  // A disabled header row, shown at the top of the open dropdown, states the scope
-  // exactly when the user is about to pick — the per-meeting nature is otherwise
-  // only in the hover tooltip. It carries no value and is never selectable, so it
-  // doesn't interfere with select.value below.
-  const scopeHeader = document.createElement("option")
-  scopeHeader.disabled = true
-  scopeHeader.textContent = "Caption language · only this meeting"
-  select.appendChild(scopeHeader)
+  // Flat list, no header row. The native dropdown renders an optgroup/disabled
+  // header in low-contrast grey (hard to read on the dark menu) and scrolls it out
+  // of view once a lower item is selected, so a header here is both unreadable and
+  // useless. The per-meeting scope is conveyed by the pill tooltip, the post-change
+  // toast ("· only this meeting"), and the start-of-meeting language prompt instead.
   for (const lang of CAPTION_LANGUAGES) {
     const opt = document.createElement("option")
     opt.value = lang.value
