@@ -127,6 +127,12 @@ export interface Settings {
    * unchanged until the user opts in.
    */
   mergeRejoins: boolean
+  /**
+   * Show a prominent prompt at the start of each meeting to confirm/switch the
+   * caption language. Off by default — for users who meet in several languages and
+   * forget to switch the in-meeting pill. The prompt never blocks capture.
+   */
+  askLanguageEachMeeting: boolean
   // Download subfolders, relative to the browser Downloads directory.
   folderPublic: string
   folderPrivate: string
@@ -144,6 +150,7 @@ export const DEFAULT_SETTINGS: Settings = {
   captionAlternatives: true,
   hideUi: false,
   mergeRejoins: false,
+  askLanguageEachMeeting: false,
   folderPublic: "meetings/platica-notes",
   folderPrivate: "meetings/platica-notes-private",
   folderDebug: "meetings/platica-notes-logs",
