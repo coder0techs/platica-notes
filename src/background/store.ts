@@ -1,5 +1,6 @@
 import type { Meeting } from "../shared/types"
 import { getLocal, setLocal } from "../shared/storage"
+import { mergeMeetings, shouldMerge } from "./merge"
 
 export function appendWithRetention(meetings: Meeting[], meeting: Meeting, limit: number): Meeting[] {
   const next = [...meetings, meeting]
@@ -26,6 +27,36 @@ export function addMeeting(meeting: Meeting, limit: number): Promise<void> {
   return enqueue(async () => {
     const meetings = await listMeetings()
     await setLocal({ meetings: appendWithRetention(meetings, meeting, limit) })
+  })
+}
+
+// Atomically commit a finalized meeting: either fold it into the most recent
+// mergeable same-code visit (when merging is on) or append it with retention.
+// The read-decide-write runs inside one enqueue critical section so two tabs
+// finalizing at once cannot race a read-then-write. Returns the stored meeting
+// (the merge target's identity when merged, else the incoming one).
+export function commitFinalizedMeeting(
+  incoming: Meeting,
+  opts: { mergeEnabled: boolean; gapMs: number },
+  limit: number,
+): Promise<{ meeting: Meeting; merged: boolean }> {
+  return enqueue(async () => {
+    const meetings = await listMeetings()
+    if (opts.mergeEnabled) {
+      // Scan newest-first; the first mergeable candidate is the most recent
+      // same-code visit within the gap (older ones only have a larger gap).
+      for (let i = meetings.length - 1; i >= 0; i--) {
+        if (shouldMerge(meetings[i], incoming, opts.gapMs)) {
+          const merged = mergeMeetings(meetings[i], incoming)
+          const next = meetings.slice()
+          next[i] = merged
+          await setLocal({ meetings: next })
+          return { meeting: merged, merged: true }
+        }
+      }
+    }
+    await setLocal({ meetings: appendWithRetention(meetings, incoming, limit) })
+    return { meeting: incoming, merged: false }
   })
 }
 
