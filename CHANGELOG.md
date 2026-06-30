@@ -2,6 +2,14 @@
 
 All notable changes to Plática Notes, newest first.
 
+## 1.11.1 - 2026-06-30
+
+- **Language prompt polish.** The start-of-meeting language prompt no longer
+  overlaps the in-meeting notices, closes as soon as you pick a language (in the
+  prompt or via the pill), and applies your choice in one click — picking a
+  language in its list is enough, no extra confirm step. Also removed a hard-to-
+  read header from the caption-language dropdown.
+
 ## 1.11.0 - 2026-06-30
 
 - **Optional language prompt at meeting start.** For people who meet in several
