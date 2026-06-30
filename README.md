@@ -88,9 +88,10 @@ The **Settings page** (open it from the popup) holds everything else:
 - **Caption alternatives.** Adds the raw caption versions under each turn for
   recovering dropped words. On by default; turn off for a cleaner file.
 - **Merge rejoined visits.** If you accidentally leave and rejoin the same
-  meeting within a couple of hours, fold the visits into one `.md` instead of one
-  file per visit. Off by default. A daily recurring call is never merged across
-  days, and a private visit is never folded into a public file.
+  meeting within ~40 minutes, the visits are folded into one `.md` instead of one
+  file per visit. On by default; turn off to keep one file per visit. A daily
+  recurring call is never merged across days, and a private visit is never folded
+  into a public file.
 - **Ask language at meeting start.** Shows a prompt when each meeting begins to
   confirm or switch the caption language. Off by default — for people who meet in
   several languages. It never blocks recording.

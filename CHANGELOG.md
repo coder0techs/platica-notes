@@ -2,6 +2,15 @@
 
 All notable changes to Plática Notes, newest first.
 
+## 1.12.0 - 2026-06-30
+
+- **Merging rejoined visits is now on by default.** An accidental leave/rejoin of
+  the same meeting is the common case, and merging is reversible (no content is
+  lost), so it now happens out of the box. The merge window is also tightened to
+  about 40 minutes (from 2 hours) so a persistent meeting "room" reused for a
+  different, later call is not merged by mistake. Turn it off in Settings to keep
+  one file per visit.
+
 ## 1.11.1 - 2026-06-30
 
 - **Language prompt polish.** The start-of-meeting language prompt no longer

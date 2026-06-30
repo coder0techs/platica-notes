@@ -1,5 +1,11 @@
 # Merge repeated visits of the same meeting — design
 
+> **Update 2026-06-30 (v1.12.0):** the two defaults below were revisited after
+> shipping — `mergeRejoins` is now **on by default** (the feature only helps if
+> it's discovered, and merging is reversible), and `MERGE_GAP_MS` is **~40 min**
+> (not 2 h), short enough that a persistent room reused for a later call is not
+> merged by mistake. The rest of the design stands.
+>
 > Status: approved 2026-06-30. Implements ROADMAP #5.
 > Scope: a post-commit merge step in the background, one new setting, a `visits`
 > field on `Meeting`, a render separator, a history annotation, and tests. Single
