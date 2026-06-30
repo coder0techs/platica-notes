@@ -4,7 +4,7 @@ import { DEFAULT_SETTINGS } from "../../shared/types"
 import type { ActiveSession, DebugEvent, Note, Settings } from "../../shared/types"
 import { SessionWriter } from "../core/persistence"
 import { isBookmarkChord, isHideUiChord } from "../core/hotkeys"
-import { isUiHidden, mountMeetingControls, pulseActivity, setUiHidden, showToast } from "../core/ui"
+import { isUiHidden, mountLanguagePrompt, mountMeetingControls, pulseActivity, setUiHidden, showToast } from "../core/ui"
 import { mountTranscriptPanel } from "../core/transcript-panel"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
 import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
@@ -13,6 +13,7 @@ import {
   nextLeaveState,
   nextMediaZeroSince,
   seedAttendees,
+  shouldAskLanguage,
   shouldDrainTail,
   shouldEndFromMedia,
   shouldFinalizeStaleSession,
@@ -336,6 +337,16 @@ async function runMeeting(tabId: number): Promise<void> {
   }
   onDebugEvent()
 
+  // The ephemeral, this-meeting-only language switch shared by the pill and the
+  // start-of-meeting prompt: resubscribe + snapshot into the session, never write
+  // the persisted default (so the next meeting still starts from the default).
+  const applyLanguage = (language: string): void => {
+    session.captionLanguage = language
+    activeLanguage = language
+    writer.requestWrite()
+    pushRtcConfig(language, debugEnabled)
+  }
+
   const controls = mountMeetingControls({
     initialLanguage: session.captionLanguage ?? settings.captionLanguage,
     initialPrivate: session.isPrivate,
@@ -343,15 +354,9 @@ async function runMeeting(tabId: number): Promise<void> {
       session.isPrivate = isPrivate
       writer.requestWrite()
     },
-    // This-meeting-only override: resubscribe the live stream and snapshot the
-    // language into the session (so a reload resumes in it), but do NOT persist
-    // it to Settings — the next meeting must start from the default.
-    onLanguageChange: (language) => {
-      session.captionLanguage = language
-      activeLanguage = language
-      writer.requestWrite()
-      pushRtcConfig(language, debugEnabled)
-    },
+    // This-meeting-only override (see applyLanguage): resubscribe + snapshot into
+    // the session, never persist to Settings — the next meeting starts from default.
+    onLanguageChange: (language) => applyLanguage(language),
     onToggleTranscript: () => panel.toggle(),
   })
 
@@ -360,6 +365,19 @@ async function runMeeting(tabId: number): Promise<void> {
     onAddNote: addNote,
   })
   panel.update(session.transcript, session.chat, session.notes ?? [])
+
+  // Opt-in, loud, NON-blocking prompt to confirm/switch the caption language at the
+  // start of a fresh meeting (capture is already running in the default). Skipped on
+  // a reload-resume and while all UI is hidden. Routes a switch through applyLanguage
+  // (same ephemeral path as the pill) and keeps the pill in sync via setLanguage.
+  let languagePrompt: { unmount: () => void } | null = null
+  if (shouldAskLanguage(settings.askLanguageEachMeeting, !!resumed, isUiHidden())) {
+    languagePrompt = mountLanguagePrompt({
+      initialLanguage: session.captionLanguage ?? settings.captionLanguage,
+      onPick: (language) => { applyLanguage(language); controls.setLanguage(language) },
+      onDisableAsking: () => void saveSettings({ askLanguageEachMeeting: false }),
+    })
+  }
 
   // Re-resolve speaker names (they resolve from the roster at snapshot time) and
   // push the fresh transcript to the panel. Invoked by the page-level roster
@@ -491,6 +509,7 @@ async function runMeeting(tabId: number): Promise<void> {
     onDebugEvent = null
     controls.unmount()
     panel.unmount()
+    languagePrompt?.unmount()
     // Final snapshot resolves speaker names from the roster as it stands now,
     // and includes anything the flush wait above let land.
     session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
