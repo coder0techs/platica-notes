@@ -18,7 +18,10 @@ export async function downloadMeeting(meeting: Meeting): Promise<void> {
   await chrome.downloads.download({
     url,
     filename: `${folder}/${meetingFileName(meeting)}`,
-    conflictAction: "uniquify",
+    // A merged meeting (visits > 1) rewrites the same file it produced on the
+    // first visit (startedAt + title are preserved, so the name is identical).
+    // A single-visit meeting still uniquifies so it never clobbers a sibling.
+    conflictAction: (meeting.visits?.length ?? 0) > 1 ? "overwrite" : "uniquify",
   })
 }
 

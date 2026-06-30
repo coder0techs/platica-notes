@@ -44,6 +44,23 @@ describe("downloadMeeting — privacy folder routing", () => {
   })
 })
 
+describe("downloadMeeting — conflictAction by visit count", () => {
+  it("a single-visit meeting uniquifies (never overwrites a sibling)", async () => {
+    await downloadMeeting(meeting({}))
+    expect(chrome._downloads[0].conflictAction).toBe("uniquify")
+  })
+
+  it("a merged meeting (visits > 1) overwrites its own growing file", async () => {
+    await downloadMeeting(meeting({
+      visits: [
+        { startedAt: "2026-06-18T10:00:00.000Z", endedAt: "2026-06-18T10:30:00.000Z" },
+        { startedAt: "2026-06-18T10:40:00.000Z", endedAt: "2026-06-18T11:00:00.000Z" },
+      ],
+    }))
+    expect(chrome._downloads[0].conflictAction).toBe("overwrite")
+  })
+})
+
 describe("downloadDebugLog", () => {
   const events: DebugEvent[] = [{ t: "2026-06-18T10:00:00.000Z", ctx: "bg", msg: "finalized" }]
 
