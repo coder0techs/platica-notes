@@ -1,6 +1,7 @@
 import type { ActiveSession, DebugEvent, Meeting } from "../shared/types"
 import { ACTIVE_TABS_KEY, getLocal, getSettings, removeLocal, sessionKey, setLocal, tabIdFromSessionKey } from "../shared/storage"
-import { addMeeting, addPendingExport, enqueue } from "./store"
+import { addPendingExport, commitFinalizedMeeting, enqueue } from "./store"
+import { MERGE_GAP_MS } from "./merge"
 
 const finalizing = new Set<number>()
 
@@ -80,15 +81,24 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
       meetingUrl:
         session.platform === "meet" && session.path ? `https://meet.google.com${session.path}` : undefined,
     }
-    await addMeeting(meeting, settings.retentionLimit)
+    // Commit to history — folding into a prior visit of the same meeting when the
+    // user opted in (mergeRejoins). `stored` carries the merge target's identity
+    // when merged, so the .md overwrites in place; otherwise it is this meeting.
+    const { meeting: stored } = await commitFinalizedMeeting(
+      meeting,
+      { mergeEnabled: settings.mergeRejoins, gapMs: MERGE_GAP_MS },
+      settings.retentionLimit,
+    )
     // Mark it for export BEFORE removing the session key / returning, so a crash
     // before the caller's download still leaves a trail for SW-start recovery.
-    await addPendingExport(meeting.id)
+    await addPendingExport(stored.id)
     await removeLocal(sessionKey(tabId))
     // Untrack only after the session key is gone — a failed finalization must
     // keep the tab tracked so the update-deferral guard still sees it.
     await untrackTab(tabId)
-    return { meeting, debug, title: session.title, startedAt: session.startedAt, isPrivate: session.isPrivate }
+    // The .md is `stored` (possibly merged); title/startedAt stay the incoming
+    // visit's so the per-visit debug log keeps its own name (logs are not merged).
+    return { meeting: stored, debug, title: session.title, startedAt: session.startedAt, isPrivate: session.isPrivate }
   } finally {
     finalizing.delete(tabId)
   }

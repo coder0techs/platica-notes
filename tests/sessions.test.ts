@@ -155,6 +155,63 @@ describe("finalizeSession", () => {
   })
 })
 
+describe("finalizeSession — merge rejoined visits", () => {
+  function withMerge() {
+    chrome.storageSync["settings"] = { mergeRejoins: true }
+  }
+  // An already-finalized visit-1 meeting sitting in history, same code as makeSession.
+  function seedVisit1(over: Partial<Meeting> = {}): Meeting {
+    const m: Meeting = {
+      id: "m1", platform: "meet", title: "Daily",
+      startedAt: "2026-06-30T10:00:00.000Z", endedAt: "2026-06-30T10:30:00.000Z",
+      isPrivate: false, transcript: [{ speaker: "A", startedAt: "2026-06-30T10:05:00.000Z", text: "one" }],
+      chat: [], participants: ["Ada"], meetingUrl: "https://meet.google.com/abc-defg-hij", ...over,
+    }
+    chrome._store["meetings"] = [m]
+    return m
+  }
+
+  it("merges a sequential same-code visit into the seeded meeting (mergeRejoins on)", async () => {
+    withMerge()
+    seedVisit1()
+    chrome._store["session_7"] = makeSession({
+      transcript: [{ speaker: "B", startedAt: "2026-06-30T10:36:00.000Z", text: "two" }],
+      startedAt: "2026-06-30T10:35:00.000Z",
+    })
+    await finalizeSession(7)
+
+    const meetings = chrome._store["meetings"] as Meeting[]
+    expect(meetings).toHaveLength(1)
+    expect(meetings[0].id).toBe("m1") // target identity preserved
+    expect(meetings[0].visits).toHaveLength(2)
+    expect(meetings[0].transcript.map(u => u.text)).toEqual(["one", "two"])
+  })
+
+  it("keeps visits separate when mergeRejoins is off (default)", async () => {
+    seedVisit1()
+    chrome._store["session_7"] = makeSession({ transcript: oneUtterance, startedAt: "2026-06-30T10:35:00.000Z" })
+    await finalizeSession(7)
+    expect((chrome._store["meetings"] as Meeting[])).toHaveLength(2)
+  })
+
+  it("does not merge a private visit into a public one", async () => {
+    withMerge()
+    seedVisit1({ isPrivate: false })
+    chrome._store["session_7"] = makeSession({ transcript: oneUtterance, startedAt: "2026-06-30T10:35:00.000Z", isPrivate: true })
+    await finalizeSession(7)
+    expect((chrome._store["meetings"] as Meeting[])).toHaveLength(2)
+  })
+
+  it("pending export tracks the merged (target) id, not the discarded incoming one", async () => {
+    withMerge()
+    seedVisit1()
+    chrome._store["session_7"] = makeSession({ transcript: oneUtterance, startedAt: "2026-06-30T10:35:00.000Z" })
+    const r = await finalizeSession(7)
+    expect(r!.meeting!.id).toBe("m1")
+    expect(await listPendingExports()).toEqual(["m1"])
+  })
+})
+
 describe("recoverOrphanSessions", () => {
   it("finalizes sessions whose tab is gone and leaves live tabs alone", async () => {
     chrome._store["session_1"] = makeSession({ transcript: [{ speaker: "A", startedAt: "x", text: "dead" }] })
