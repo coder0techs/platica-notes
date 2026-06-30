@@ -277,22 +277,21 @@ export function mountLanguagePrompt(opts: {
   }
   select.value = opts.initialLanguage
 
-  const confirm = document.createElement("button")
-  confirm.type = "button"
-  confirm.style.cssText =
+  const dismiss = () => card.remove()
+  // Picking a language in the dropdown applies it and closes the prompt in one
+  // step — `change` only fires on a real switch, so no separate confirm click is
+  // needed. Capture resubscribes via onPick.
+  select.addEventListener("change", () => { opts.onPick(select.value); dismiss() })
+
+  // The default is already what capture is using; this is the one-click path when
+  // the language is already right — confirm and close, no resubscribe.
+  const keep = document.createElement("button")
+  keep.type = "button"
+  keep.style.cssText =
     "height:36px;border:none;border-radius:8px;background:#6750a4;color:#fff;cursor:pointer;" +
     'font:600 14px system-ui;'
-  const renderConfirm = () => { confirm.textContent = `Record in ${labelFor(select.value)}` }
-  renderConfirm()
-  select.addEventListener("change", renderConfirm)
-
-  const dismiss = () => card.remove()
-  confirm.addEventListener("click", () => {
-    // Apply only on an actual change — confirming the default is a pure dismiss
-    // (capture is already running in it; no needless resubscribe).
-    if (select.value !== opts.initialLanguage) opts.onPick(select.value)
-    dismiss()
-  })
+  keep.textContent = `Keep ${labelFor(opts.initialLanguage)}`
+  keep.addEventListener("click", dismiss)
 
   const noAsk = document.createElement("button")
   noAsk.type = "button"
@@ -302,7 +301,7 @@ export function mountLanguagePrompt(opts: {
     "font:13px system-ui;text-decoration:underline;align-self:flex-start;padding:0;"
   noAsk.addEventListener("click", () => { opts.onDisableAsking(); dismiss() })
 
-  card.append(title, body, select, confirm, noAsk)
+  card.append(title, body, select, keep, noAsk)
   document.documentElement.appendChild(card)
   return { unmount: dismiss }
 }
