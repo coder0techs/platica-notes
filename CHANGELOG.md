@@ -2,6 +2,14 @@
 
 All notable changes to Plática Notes, newest first.
 
+## 1.11.0 - 2026-06-30
+
+- **Optional language prompt at meeting start.** For people who meet in several
+  languages and forget to switch: turn on "Ask which language to use at the start
+  of each meeting" in Settings and a prompt appears as each meeting begins, letting
+  you confirm or switch the caption language before it records in the wrong one.
+  Off by default; it never interrupts recording, and has a "Don't ask again" link.
+
 ## 1.10.0 - 2026-06-30
 
 - **Optionally merge rejoined visits into one file.** If you accidentally leave

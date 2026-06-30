@@ -91,6 +91,9 @@ The **Settings page** (open it from the popup) holds everything else:
   meeting within a couple of hours, fold the visits into one `.md` instead of one
   file per visit. Off by default. A daily recurring call is never merged across
   days, and a private visit is never folded into a public file.
+- **Ask language at meeting start.** Shows a prompt when each meeting begins to
+  confirm or switch the caption language. Off by default — for people who meet in
+  several languages. It never blocks recording.
 - **Debug log.** Writes a full `.jsonl` diagnostic per meeting to
   `Downloads/Platica Logs/`. Off by default. Private meetings are never logged.
 
