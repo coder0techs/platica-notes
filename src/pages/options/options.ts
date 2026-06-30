@@ -6,6 +6,7 @@ const activeMeetingNote = document.querySelector<HTMLParagraphElement>("#active-
 const privateDefault = document.querySelector<HTMLInputElement>("#private-default")!
 const debugLog = document.querySelector<HTMLInputElement>("#debug-log")!
 const captionAlternatives = document.querySelector<HTMLInputElement>("#caption-alternatives")!
+const mergeRejoins = document.querySelector<HTMLInputElement>("#merge-rejoins")!
 const folderPublic = document.querySelector<HTMLInputElement>("#folder-public")!
 const folderPrivate = document.querySelector<HTMLInputElement>("#folder-private")!
 const folderDebug = document.querySelector<HTMLInputElement>("#folder-debug")!
@@ -46,6 +47,7 @@ async function init(): Promise<void> {
   privateDefault.checked = settings.privateByDefault
   debugLog.checked = settings.debugLog
   captionAlternatives.checked = settings.captionAlternatives
+  mergeRejoins.checked = settings.mergeRejoins
   folderPublic.value = settings.folderPublic
   folderPrivate.value = settings.folderPrivate
   folderDebug.value = settings.folderDebug
@@ -77,6 +79,10 @@ debugLog.addEventListener("change", () => {
 
 captionAlternatives.addEventListener("change", () => {
   void saveSettings({ captionAlternatives: captionAlternatives.checked })
+})
+
+mergeRejoins.addEventListener("change", () => {
+  void saveSettings({ mergeRejoins: mergeRejoins.checked })
 })
 
 folderPublic.addEventListener("change", () => {
