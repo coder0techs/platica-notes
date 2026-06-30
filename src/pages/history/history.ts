@@ -13,9 +13,11 @@ function render(meetings: Meeting[]): void {
   document.querySelector<HTMLElement>("#empty")!.hidden = meetings.length > 0
   for (const meeting of meetings) {
     const row = document.createElement("tr")
+    const visitCount = meeting.visits?.length ?? 0
+    const title = visitCount > 1 ? `${meeting.title} · ${visitCount} visits` : meeting.title
     row.append(
       cell(new Date(meeting.startedAt).toLocaleString()),
-      cell(meeting.title),
+      cell(title),
       cell(String(meeting.transcript.length)),
       cell(meeting.isPrivate ? "private" : "—"),
       actionsCell(meeting),
