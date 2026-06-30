@@ -60,6 +60,12 @@ export interface ActiveSession {
   debug?: DebugEvent[]
 }
 
+/** One visit's time span within a merged meeting. Absent on single-visit meetings. */
+export interface VisitSpan {
+  startedAt: string // ISO 8601
+  endedAt: string // ISO 8601
+}
+
 export interface Meeting {
   id: string
   platform: PlatformId
@@ -81,6 +87,13 @@ export interface Meeting {
   language?: string
   /** Join link of the recorded meeting, e.g. https://meet.google.com/abc-defg-hij. */
   meetingUrl?: string
+  /**
+   * Per-visit spans when this meeting was assembled from several rejoins of the
+   * same Meet code (see background/merge.ts). Absent (undefined) for a normal
+   * single-visit meeting. `visits.length > 1` is the canonical "this is merged"
+   * signal — read by the downloader (overwrite vs uniquify) and the history page.
+   */
+  visits?: VisitSpan[]
 }
 
 export interface Settings {
@@ -107,6 +120,13 @@ export interface Settings {
    * running while hidden. Toggled from the popup or the Alt+Shift+H in-page chord.
    */
   hideUi: boolean
+  /**
+   * Fold sequential rejoins of the same meeting (same Meet code, within a 2 h
+   * gap) into one .md file instead of one per visit. Off by default so the
+   * existing per-visit behaviour (and anything consuming those files) is
+   * unchanged until the user opts in.
+   */
+  mergeRejoins: boolean
   // Download subfolders, relative to the browser Downloads directory.
   folderPublic: string
   folderPrivate: string
@@ -123,6 +143,7 @@ export const DEFAULT_SETTINGS: Settings = {
   debugLog: false,
   captionAlternatives: true,
   hideUi: false,
+  mergeRejoins: false,
   folderPublic: "meetings/platica-notes",
   folderPrivate: "meetings/platica-notes-private",
   folderDebug: "meetings/platica-notes-logs",
