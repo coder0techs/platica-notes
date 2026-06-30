@@ -121,10 +121,10 @@ export interface Settings {
    */
   hideUi: boolean
   /**
-   * Fold sequential rejoins of the same meeting (same Meet code, within a 2 h
-   * gap) into one .md file instead of one per visit. Off by default so the
-   * existing per-visit behaviour (and anything consuming those files) is
-   * unchanged until the user opts in.
+   * Fold sequential rejoins of the same meeting (same Meet code, within a short
+   * gap) into one .md file instead of one per visit. On by default — an accidental
+   * leave/rejoin is the common case and merging is reversible (no content lost).
+   * Turn off to keep one file per visit.
    */
   mergeRejoins: boolean
   /**
@@ -149,7 +149,7 @@ export const DEFAULT_SETTINGS: Settings = {
   debugLog: false,
   captionAlternatives: true,
   hideUi: false,
-  mergeRejoins: false,
+  mergeRejoins: true,
   askLanguageEachMeeting: false,
   folderPublic: "meetings/platica-notes",
   folderPrivate: "meetings/platica-notes-private",

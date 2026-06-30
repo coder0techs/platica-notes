@@ -1,10 +1,13 @@
 import type { Meeting } from "../shared/types"
 
 // Two visits of the same Meet code merge only when the second starts within this
-// window of the first's end. 2 h comfortably covers "I dropped, stepped away, and
-// rejoined the ongoing call" while a daily recurring meeting (~22 h apart) is
-// nowhere near it. Gap-only (no calendar-day rule) is correct across midnight.
-export const MERGE_GAP_MS = 2 * 60 * 60 * 1000
+// window of the first's end. ~40 min targets the actual case — an accidental
+// leave/rejoin of an ongoing call — while staying short enough that a persistent
+// meeting "room" reused for a different, later call is not wrongly merged (this
+// matters more now that merging is on by default). A daily recurring meeting
+// (~22 h apart) is nowhere near it. Gap-only (no calendar-day rule) is correct
+// across midnight.
+export const MERGE_GAP_MS = 40 * 60 * 1000
 
 // The Meet code (abc-defg-hij) carried in a meeting's join url. null when absent
 // or not that shape (e.g. a /lookup link), which disables merging for it.

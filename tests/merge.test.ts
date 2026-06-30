@@ -42,6 +42,11 @@ describe("shouldMerge", () => {
     const incoming = meeting({ id: "m2", startedAt: "2026-06-30T13:00:00.000Z" }) // +2.5 h
     expect(shouldMerge(target, incoming, MERGE_GAP_MS)).toBe(false)
   })
+  it("merges just inside the ~40-minute window but not just past it", () => {
+    // target ended 10:30. The default window is ~40 min.
+    expect(shouldMerge(target, meeting({ id: "m2", startedAt: "2026-06-30T11:05:00.000Z" }), MERGE_GAP_MS)).toBe(true) // +35 min
+    expect(shouldMerge(target, meeting({ id: "m2", startedAt: "2026-06-30T11:15:00.000Z" }), MERGE_GAP_MS)).toBe(false) // +45 min
+  })
   it("merges across midnight when inside the gap (no calendar-day rule)", () => {
     const lateTarget = meeting({ startedAt: "2026-06-30T23:40:00.000Z", endedAt: "2026-06-30T23:55:00.000Z" })
     const incoming = meeting({ id: "m2", startedAt: "2026-07-01T00:05:00.000Z", endedAt: "2026-07-01T00:20:00.000Z" })

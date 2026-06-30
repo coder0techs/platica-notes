@@ -187,7 +187,8 @@ describe("finalizeSession — merge rejoined visits", () => {
     expect(meetings[0].transcript.map(u => u.text)).toEqual(["one", "two"])
   })
 
-  it("keeps visits separate when mergeRejoins is off (default)", async () => {
+  it("keeps visits separate when mergeRejoins is turned off", async () => {
+    chrome.storageSync["settings"] = { mergeRejoins: false }
     seedVisit1()
     chrome._store["session_7"] = makeSession({ transcript: oneUtterance, startedAt: "2026-06-30T10:35:00.000Z" })
     await finalizeSession(7)
