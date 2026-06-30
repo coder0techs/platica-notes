@@ -2,6 +2,15 @@
 
 All notable changes to Plática Notes, newest first.
 
+## 1.9.0 - 2026-06-30
+
+- **More reliable end-of-meeting saving.** The transcript is now finalized from
+  Google Meet's own call connection rather than only watching the on-screen
+  "leave" button. Your meeting still saves if Meet changes its interface, and it
+  saves a couple of seconds sooner when a call ends without you clicking Leave
+  (you were removed, or the host ended the call). The previous on-screen checks
+  stay in place as a backup, so nothing regresses.
+
 ## 1.8.0 - 2026-06-29
 
 - **Friendlier saved file.** The `.md` is now human-readable Markdown: a short
