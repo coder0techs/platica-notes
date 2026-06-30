@@ -130,6 +130,14 @@ function dispatch(event: RtcEvent): void {
   }
 }
 
+// Report the current media-path liveness (open media-session count + the owning
+// connection's state) to the isolated-world adapter, which uses a sustained zero
+// as the authoritative end signal. Always-on (not debug-gated) like the roster
+// and self dispatches; carries a count and a state string, never any content.
+function dispatchMedia(pc: RTCPeerConnection): void {
+  dispatch({ type: "media", openSessions: sessions.length, pcState: pc.connectionState })
+}
+
 // ---------- self-name resolution from the GetUser RPC ----------
 
 // Last self name dispatched, so we emit at most once per distinct name.
@@ -428,12 +436,17 @@ function handleChannel(ch: RTCDataChannel, pc: RTCPeerConnection): void {
     sessions.push(s)
     sessionByChannel.set(ch, s)
     record({ phase: "media-session-open", state: ch.readyState, sessions: sessions.length })
+    // A new peer connection appeared — tell the adapter the media path is live so
+    // it cancels any pending end (reconnect / a second meeting in the same tab).
+    dispatchMedia(pc)
     if (ch.readyState === "open") setTimeout(() => trySubscribe(s), SUBSCRIBE_DELAY_MS)
     ch.addEventListener("open", () => setTimeout(() => trySubscribe(s), SUBSCRIBE_DELAY_MS))
     ch.addEventListener("close", () => {
       const i = sessions.indexOf(s)
       if (i >= 0) sessions.splice(i, 1)
       record({ phase: "media-session-closed", pc: pc.connectionState, sessions: sessions.length })
+      // Count dropped — when it reaches zero the adapter arms the end grace.
+      dispatchMedia(pc)
     })
   } else if (ch.label === "captions") {
     attachConsumer(ch, handleCaptions)

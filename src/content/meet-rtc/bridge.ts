@@ -51,7 +51,17 @@ export interface RtcSelfEvent {
   name: string
 }
 
-export type RtcEvent = RtcCaptionEvent | RtcChatEvent | RtcDeviceEvent | RtcSelfEvent
+// Liveness of the call's media path: the count of open media-session data
+// channels (one per peer connection) after the latest open/close, plus that
+// connection's state. Carries no transcript content. The adapter treats a
+// sustained zero as the authoritative meeting-end signal (see meet-lifecycle).
+export interface RtcMediaEvent {
+  type: "media"
+  openSessions: number
+  pcState: RTCPeerConnectionState
+}
+
+export type RtcEvent = RtcCaptionEvent | RtcChatEvent | RtcDeviceEvent | RtcSelfEvent | RtcMediaEvent
 
 export interface RtcConfig {
   captionLanguage: string

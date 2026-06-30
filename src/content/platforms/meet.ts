@@ -9,7 +9,15 @@ import { mountTranscriptPanel } from "../core/transcript-panel"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
 import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
 import { RtcFeed } from "../meet-rtc/feed"
-import { nextLeaveState, seedAttendees, shouldDrainTail, shouldFinalizeStaleSession, shouldFinishRearmWait } from "./meet-lifecycle"
+import {
+  nextLeaveState,
+  nextMediaZeroSince,
+  seedAttendees,
+  shouldDrainTail,
+  shouldEndFromMedia,
+  shouldFinalizeStaleSession,
+  shouldFinishRearmWait,
+} from "./meet-lifecycle"
 
 // --- Google Meet DOM contract. Verify on a live meeting before each release. ---
 const ICON_FONT = ".google-symbols"
@@ -31,6 +39,13 @@ const CAPTION_TAIL_GRACE_MS = 8000
 // keep the feed receiving this long before finalizing so the closing sentence
 // isn't saved truncated.
 const CAPTION_FLUSH_MS = 2500
+// Authoritative end via the RTC media-path signal: once the open media-session
+// count has been zero for this long, the call's media path is down. The grace
+// absorbs a reconnect that briefly zeroes the count. Evidence-based (50 logs):
+// genuine ends sit at zero and finalize in < 2 s; the one observed reconnect was
+// make-before-break and never reached zero. Evaluated on the END_WATCH_INTERVAL_MS
+// cadence, so effective latency is ~grace + one tick — well inside the tail budget.
+const MEDIA_END_GRACE_MS = 5000
 
 // Roster events stream from join time — often before our leave-icon detection
 // lands — so the deviceId → name map lives at page level and survives across
@@ -50,6 +65,10 @@ let selfName: string | null = null
 // avoid clobbering an active pill choice when an unrelated setting changes.
 let activeLanguage = DEFAULT_SETTINGS.captionLanguage
 let activeMeetingHandler: ((event: RtcCaptionEvent | RtcChatEvent) => void) | null = null
+// Set by runMeeting; receives the open media-session count from the RTC layer so
+// the running meeting can detect an authoritative end (count sustained at zero).
+// Null between meetings — a stray media event then has no meeting to end.
+let onMediaState: ((openSessions: number) => void) | null = null
 // Set by runMeeting; appends a note/bookmark to the active meeting. Page-level so
 // the global bookmark hotkey can reach the running meeting. Null between meetings.
 let addNoteToActive: ((text: string) => void) | null = null
@@ -133,6 +152,12 @@ async function main(): Promise<void> {
         selfName = parsed.name
         recordAttendee?.(parsed.name)
       }
+      return
+    }
+    if (parsed.type === "media") {
+      // Route media-path liveness to the running meeting's end detector. Ignored
+      // between meetings (onMediaState is null) — nothing to finalize.
+      if (typeof parsed.openSessions === "number") onMediaState?.(parsed.openSessions)
       return
     }
     activeMeetingHandler?.(parsed)
@@ -405,8 +430,22 @@ async function runMeeting(tabId: number): Promise<void> {
   }
   document.addEventListener("click", onDocumentClick, true)
 
+  // Authoritative RTC end: the MAIN-world script reports the open media-session
+  // count; when it stays at zero past the grace, the call's media path is down.
+  // The page-level routing feeds it here; the endWatcher below makes the decision
+  // on its existing cadence (no second timer). A reconnect that reopens a session
+  // resets this to null, cancelling the pending end.
+  let mediaZeroSince: number | null = null
+  onMediaState = (openSessions) => {
+    mediaZeroSince = nextMediaZeroSince(mediaZeroSince, openSessions, Date.now())
+  }
+
   let leaveGoneCount = 0
   const endWatcher = setInterval(() => {
+    if (shouldEndFromMedia(mediaZeroSince, Date.now(), MEDIA_END_GRACE_MS)) {
+      void endMeeting("rtc: all media sessions closed")
+      return
+    }
     const decision = nextLeaveState(
       location.pathname !== meetingPath,
       !!findIcon(LEAVE_ICON_TEXT),
@@ -448,6 +487,7 @@ async function runMeeting(tabId: number): Promise<void> {
     recordAttendee = null
     refreshTranscript = null
     addNoteToActive = null
+    onMediaState = null
     onDebugEvent = null
     controls.unmount()
     panel.unmount()

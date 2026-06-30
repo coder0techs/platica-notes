@@ -61,6 +61,33 @@ export function seedAttendees(prefix: string[], rosterNames: string[], selfName:
   return out
 }
 
+// Authoritative end signal from the RTC layer. The MAIN-world script reports the
+// number of open media-session data channels (one per peer connection); when it
+// reaches zero the call's media path is down. A reconnect, however, can briefly
+// zero the count before a new connection opens, so we don't end on the first zero
+// — we track WHEN it first hit zero and only end once it has stayed there for a
+// grace window. Two pure helpers keep the adapter glue trivial and this logic
+// unit-tested: nextMediaZeroSince folds each media event into the "first zero"
+// timestamp, shouldEndFromMedia decides on the endWatcher cadence.
+
+// Carry the timestamp of the first zero-sessions observation. Null whenever the
+// media path is live (openSessions > 0), so a session reopening cancels a pending
+// end; the first zero stamps `now`, and further zeros keep that original stamp so
+// the grace measures from when the path actually went down.
+export function nextMediaZeroSince(prev: number | null, openSessions: number, now: number): number | null {
+  if (openSessions > 0) return null
+  return prev ?? now
+}
+
+// All media sessions have been closed for at least graceMs → the call's media
+// path is authoritatively down. The grace absorbs a reconnect that momentarily
+// zeroes the count before a new peer connection opens (verified against 50 real
+// debug logs: genuine ends sit at zero and finalize in < 2 s; the only observed
+// reconnect was make-before-break and never reached zero).
+export function shouldEndFromMedia(zeroSince: number | null, now: number, graceMs: number): boolean {
+  return zeroSince !== null && now - zeroSince >= graceMs
+}
+
 export interface LeaveState {
   end: boolean
   reason: string

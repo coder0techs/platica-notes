@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest"
-import { nextLeaveState, seedAttendees, shouldDrainTail, shouldFinalizeStaleSession, shouldFinishRearmWait } from "../src/content/platforms/meet-lifecycle"
+import {
+  nextLeaveState,
+  nextMediaZeroSince,
+  seedAttendees,
+  shouldDrainTail,
+  shouldEndFromMedia,
+  shouldFinalizeStaleSession,
+  shouldFinishRearmWait,
+} from "../src/content/platforms/meet-lifecycle"
 
 const GRACE = 8000
 const THRESHOLD = 3
+const MEDIA_GRACE = 5000
 
 describe("shouldDrainTail (phantom-duplicate grace)", () => {
   it("drains: same code re-entered within the grace window", () => {
@@ -121,5 +130,49 @@ describe("nextLeaveState (leave detection)", () => {
     gone = nextLeaveState(false, true, gone, THRESHOLD).goneCount // reset to 0 (flicker recovered)
     const step = nextLeaveState(false, false, gone, THRESHOLD)
     expect(step).toEqual({ end: false, reason: "", goneCount: 1 })
+  })
+})
+
+describe("nextMediaZeroSince (track when all media sessions first dropped to zero)", () => {
+  // While at least one media session is open, the call's media path is live, so
+  // there is no pending end — keep zeroSince null no matter the prior value.
+  it("stays null while sessions are open", () => {
+    expect(nextMediaZeroSince(null, 1, 1000)).toBe(null)
+    expect(nextMediaZeroSince(null, 2, 1000)).toBe(null)
+  })
+
+  // First observation of zero sessions stamps the moment — the grace timer starts.
+  it("stamps the moment the count first reaches zero", () => {
+    expect(nextMediaZeroSince(null, 0, 1000)).toBe(1000)
+  })
+
+  // Subsequent zero observations keep the ORIGINAL stamp, so the grace measures
+  // from the first zero, not the latest poll.
+  it("carries the first zero timestamp forward while it stays zero", () => {
+    expect(nextMediaZeroSince(1000, 0, 3000)).toBe(1000)
+  })
+
+  // A session reopening (reconnect, make-before-break or a brief drop) cancels the
+  // pending end: the next zero starts a fresh window, never the stale one.
+  it("resets to null the instant a session reopens (reconnect cancels the pending end)", () => {
+    expect(nextMediaZeroSince(1000, 1, 2000)).toBe(null)
+  })
+})
+
+describe("shouldEndFromMedia (authoritative RTC end after grace)", () => {
+  // No zero observed yet — the media path is up, never end.
+  it("does NOT end while sessions are open (zeroSince null)", () => {
+    expect(shouldEndFromMedia(null, 999999, MEDIA_GRACE)).toBe(false)
+  })
+
+  // Zero, but still inside the grace window — wait, it may be a reconnect.
+  it("does NOT end before the grace elapses", () => {
+    expect(shouldEndFromMedia(1000, 1000 + MEDIA_GRACE - 1, MEDIA_GRACE)).toBe(false)
+  })
+
+  // Zero sustained past the grace — the call's media path is authoritatively down.
+  it("ends once the count has been zero for the full grace (kicked / host ended)", () => {
+    expect(shouldEndFromMedia(1000, 1000 + MEDIA_GRACE, MEDIA_GRACE)).toBe(true)
+    expect(shouldEndFromMedia(1000, 1000 + MEDIA_GRACE + 2000, MEDIA_GRACE)).toBe(true)
   })
 })

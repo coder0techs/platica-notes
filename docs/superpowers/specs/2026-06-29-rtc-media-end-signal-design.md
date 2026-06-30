@@ -109,18 +109,27 @@ extra dispatch is needed there.
 
 ### 3. Pure decision (`src/content/platforms/meet-lifecycle.ts`)
 
+Two pure helpers keep the adapter glue trivial and the logic fully unit-tested
+without timers, by feeding synthetic `(count, now)` sequences:
+
 ```ts
+// Fold each media event into the "first zero" timestamp. Null whenever the path
+// is live (> 0), so a session reopening cancels a pending end; the first zero
+// stamps `now`; further zeros keep that stamp so the grace measures from when the
+// path actually went down.
+export function nextMediaZeroSince(prev: number | null, openSessions: number, now: number): number | null {
+  if (openSessions > 0) return null
+  return prev ?? now
+}
+
 // All media sessions have been closed for at least graceMs → the call's media
-// path is authoritatively down. A grace absorbs a hard-drop reconnect that
-// momentarily zeroes the count before a new peer connection opens.
+// path is authoritatively down.
 export function shouldEndFromMedia(zeroSince: number | null, now: number, graceMs: number): boolean {
   return zeroSince !== null && now - zeroSince >= graceMs
 }
 ```
 
-`zeroSince` is the timestamp the count first reached 0 (null whenever it is
-> 0). Trivial, symmetric with the existing helpers, fully testable without
-timers by feeding synthetic `(count, now)` sequences.
+Symmetric with the existing helpers (`nextLeaveState`, `shouldFinishRearmWait`).
 
 ### 4. Wiring (`src/content/platforms/meet.ts`)
 
@@ -130,9 +139,9 @@ timers by feeding synthetic `(count, now)` sequences.
   `if (parsed.type === "media") { onMediaState?.(parsed.openSessions); return }`.
   Between meetings it is null, so a stray `media:0` is ignored — nothing to
   finalize.
-- A meeting-scoped `mediaZeroSince: number | null`. `onMediaState` sets it to
-  `Date.now()` when `openSessions === 0` and `mediaZeroSince` is still null;
-  resets it to null when `openSessions > 0` (the reconnect cancel).
+- A meeting-scoped `mediaZeroSince: number | null`, updated by `onMediaState` via
+  `nextMediaZeroSince(mediaZeroSince, openSessions, Date.now())` (the reconnect
+  cancel lives in that pure helper).
 - **Reuse the existing `endWatcher` interval** (2 s) for the decision — no second
   timer. Each tick, in addition to `nextLeaveState`:
   `if (shouldEndFromMedia(mediaZeroSince, Date.now(), MEDIA_END_GRACE_MS)) void endMeeting("rtc: all media sessions closed")`.
@@ -184,10 +193,9 @@ end-signal in v1.
 
 ## Testing
 
-- New `tests` cases for `shouldEndFromMedia` (zero→recovery-within-grace ⇒ false;
-  zero sustained past grace ⇒ true; null ⇒ false; boundary at exactly graceMs).
-- A sequence test driving the adapter's `mediaZeroSince` reducer logic:
-  `0 → (recover before grace) → no end`, `0 → sustained → end`.
+- `nextMediaZeroSince`: stays null while open; stamps first zero; carries the
+  first stamp forward; resets to null when a session reopens (reconnect cancel).
+- `shouldEndFromMedia`: null ⇒ false; inside grace ⇒ false; at/after grace ⇒ true.
 - Existing `meet-lifecycle` tests must stay green (no behavioural change to the
   DOM helpers).
 - Manual live re-verification before release (per project policy): confirm a
