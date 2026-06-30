@@ -3,6 +3,7 @@ import {
   nextLeaveState,
   nextMediaZeroSince,
   seedAttendees,
+  shouldAskLanguage,
   shouldDrainTail,
   shouldEndFromMedia,
   shouldFinalizeStaleSession,
@@ -174,5 +175,20 @@ describe("shouldEndFromMedia (authoritative RTC end after grace)", () => {
   it("ends once the count has been zero for the full grace (kicked / host ended)", () => {
     expect(shouldEndFromMedia(1000, 1000 + MEDIA_GRACE, MEDIA_GRACE)).toBe(true)
     expect(shouldEndFromMedia(1000, 1000 + MEDIA_GRACE + 2000, MEDIA_GRACE)).toBe(true)
+  })
+})
+
+describe("shouldAskLanguage", () => {
+  it("asks only when enabled, on a fresh start, with UI visible", () => {
+    expect(shouldAskLanguage(true, false, false)).toBe(true)
+  })
+  it("never asks when the setting is off", () => {
+    expect(shouldAskLanguage(false, false, false)).toBe(false)
+  })
+  it("does not ask on a reload-resume (language already chosen)", () => {
+    expect(shouldAskLanguage(true, true, false)).toBe(false)
+  })
+  it("does not ask while all UI is hidden", () => {
+    expect(shouldAskLanguage(true, false, true)).toBe(false)
   })
 })

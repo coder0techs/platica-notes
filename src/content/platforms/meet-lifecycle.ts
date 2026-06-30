@@ -109,3 +109,10 @@ export function nextLeaveState(
   if (nextGone >= threshold) return { end: true, reason: "call ended", goneCount: nextGone }
   return { end: false, reason: "", goneCount: nextGone }
 }
+
+// Whether to show the start-of-meeting language prompt: only when the user opted
+// in, on a FRESH meeting (a reload-resume already has its language), and not while
+// all extension UI is hidden (a deliberate clean view for screen-share/demo).
+export function shouldAskLanguage(ask: boolean, isResumed: boolean, uiHidden: boolean): boolean {
+  return ask && !isResumed && !uiHidden
+}
