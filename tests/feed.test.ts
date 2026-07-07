@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest"
-import { RtcFeed } from "../src/content/meet-rtc/feed"
+import { RtcFeed, suffixAfter } from "../src/content/meet-rtc/feed"
 import type { RtcCaptionEvent, RtcChatEvent } from "../src/content/meet-rtc/bridge"
 
 const at = "2026-06-11T10:00:00.000Z"
-const later = "2026-06-11T10:00:05.000Z"
+// A sub-second bump: close enough that none of the interruption-split thresholds
+// (see the "interruption split" block) fire, so these tests exercise plain
+// revision/dedup/name-resolution behaviour without an accidental split.
+const later = "2026-06-11T10:00:00.500Z"
+
+// Absolute ISO timestamp `ms` milliseconds after `at`; lets a test place caption
+// revisions at precise offsets to drive the interruption-split thresholds.
+const t = (ms: number): string => new Date(Date.parse(at) + ms).toISOString()
 
 const caption = (
   deviceId: string,
@@ -247,5 +254,123 @@ describe("RtcFeed version history", () => {
     feed.handleCaption(caption(ALICE, 1, 1, "Hi"), at)
     roster.set(ALICE, "Alice García")
     expect(feed.versionsSnapshot()[0].speaker).toBe("Alice García")
+  })
+})
+
+describe("suffixAfter", () => {
+  it("returns the whole text when there is no base prefix", () => {
+    expect(suffixAfter("hello there", "")).toBe("hello there")
+  })
+
+  it("strips a clean word prefix", () => {
+    expect(suffixAfter("a b c d", "a b")).toBe("c d")
+  })
+
+  it("ignores casing and punctuation churn when matching the prefix", () => {
+    // Meet flips the first letter's case and churns punctuation between frames.
+    expect(suffixAfter("I think we should go", "I think, we should")).toBe("go")
+  })
+
+  it("emits the remainder from the first divergence when the base was reworded (never drops the tail)", () => {
+    // Meet rewrote an earlier word (should -> shall); rather than dropping words we
+    // re-emit from the divergence point, duplicating at most a word at the seam.
+    expect(suffixAfter("I think we shall go", "I think we should")).toBe("shall go")
+  })
+
+  it("trims surrounding whitespace", () => {
+    expect(suffixAfter("  hi there  ", "")).toBe("hi there")
+  })
+})
+
+describe("RtcFeed interruption split", () => {
+  it("splits a resumed turn when another speaker interjected after a pause", () => {
+    const feed = new RtcFeed()
+    feed.handleCaption(caption(ALICE, 1, 1, "I think we should"), t(0))
+    feed.handleCaption(caption(BOB, 7, 1, "wait"), t(1000))
+    feed.handleCaption(caption(ALICE, 1, 2, "I think we should go with option two"), t(3000))
+    expect(feed.transcriptSnapshot()).toEqual([
+      { speaker: "Speaker 1", startedAt: t(0), text: "I think we should" },
+      { speaker: "Speaker 1", startedAt: t(3000), text: "go with option two" },
+      { speaker: "Speaker 2", startedAt: t(1000), text: "wait" },
+    ])
+  })
+
+  it("does not split fast crosstalk (another speaker but under the interruption gap)", () => {
+    const feed = new RtcFeed()
+    feed.handleCaption(caption(ALICE, 1, 1, "one"), t(0))
+    feed.handleCaption(caption(BOB, 7, 1, "two"), t(300))
+    feed.handleCaption(caption(ALICE, 1, 2, "one three"), t(500))
+    const alice = feed.transcriptSnapshot().filter((u) => u.speaker === "Speaker 1")
+    expect(alice).toEqual([{ speaker: "Speaker 1", startedAt: t(0), text: "one three" }])
+  })
+
+  it("splits on a long solo pause even with nobody else speaking", () => {
+    const feed = new RtcFeed()
+    feed.handleCaption(caption(ALICE, 1, 1, "first thought"), t(0))
+    feed.handleCaption(caption(ALICE, 1, 2, "first thought and then some"), t(6000))
+    expect(feed.transcriptSnapshot()).toEqual([
+      { speaker: "Speaker 1", startedAt: t(0), text: "first thought" },
+      { speaker: "Speaker 1", startedAt: t(6000), text: "and then some" },
+    ])
+  })
+
+  it("does not split a solo pause shorter than the silence gap", () => {
+    const feed = new RtcFeed()
+    feed.handleCaption(caption(ALICE, 1, 1, "a"), t(0))
+    feed.handleCaption(caption(ALICE, 1, 2, "a b"), t(4000))
+    expect(feed.transcriptSnapshot()).toEqual([{ speaker: "Speaker 1", startedAt: t(0), text: "a b" }])
+  })
+
+  it("does not treat the same speaker's other message as an interruption", () => {
+    // Two messageIds from the SAME device must not split each other, even across a
+    // long gap: only ANOTHER device counts as an interruption.
+    const feed = new RtcFeed()
+    feed.handleCaption(caption(ALICE, 1, 1, "first"), t(0))
+    feed.handleCaption(caption(ALICE, 2, 1, "second"), t(2000))
+    feed.handleCaption(caption(ALICE, 1, 2, "first extended"), t(3000))
+    const msg1 = feed.transcriptSnapshot().filter((u) => u.startedAt === t(0))
+    expect(msg1).toEqual([{ speaker: "Speaker 1", startedAt: t(0), text: "first extended" }])
+  })
+
+  it("splits a long continuous monologue by max segment duration", () => {
+    const feed = new RtcFeed()
+    let version = 1
+    let text = "w0"
+    feed.handleCaption(caption(ALICE, 1, version, text), t(0))
+    // Revisions every 2.5s (under the silence gap) so only the 60s segment cap can
+    // trigger a split; cross the cap at t=60000.
+    for (let ms = 2500; ms <= 62500; ms += 2500) {
+      version += 1
+      text += ` w${ms}`
+      feed.handleCaption(caption(ALICE, 1, version, text), t(ms))
+    }
+    const result = feed.transcriptSnapshot()
+    expect(result).toHaveLength(2)
+    expect(result[0].startedAt).toBe(t(0))
+    expect(result[0].text.startsWith("w0")).toBe(true)
+    expect(result[1].startedAt).toBe(t(60000))
+    expect(result[1].text).toBe("w60000 w62500")
+  })
+
+  it("carries a per-segment version history so alternatives stay attached after a split", () => {
+    const feed = new RtcFeed()
+    feed.handleCaption(caption(ALICE, 1, 1, "hello wor"), t(0))
+    feed.handleCaption(caption(ALICE, 1, 2, "hello world"), t(200))
+    feed.handleCaption(caption(BOB, 2, 1, "hi"), t(1000))
+    feed.handleCaption(caption(ALICE, 1, 3, "hello world and more"), t(3000))
+    expect(feed.versionsSnapshot()).toEqual([
+      { speaker: "Speaker 1", startedAt: t(0), versions: ["hello wor", "hello world"] },
+      { speaker: "Speaker 1", startedAt: t(3000), versions: ["and more"] },
+      { speaker: "Speaker 2", startedAt: t(1000), versions: ["hi"] },
+    ])
+  })
+
+  it("keeps the whole final text in one block when it is never interrupted", () => {
+    const feed = new RtcFeed()
+    feed.handleCaption(caption(ALICE, 1, 1, "keep"), t(0))
+    feed.handleCaption(caption(ALICE, 1, 2, "keep it whole"), t(800))
+    expect(feed.transcriptSnapshot()).toEqual([
+      { speaker: "Speaker 1", startedAt: t(0), text: "keep it whole" },
+    ])
   })
 })

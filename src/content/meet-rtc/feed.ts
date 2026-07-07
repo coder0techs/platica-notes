@@ -6,6 +6,48 @@ import type { CaptionHistory, ChatMessage, Utterance } from "../../shared/types"
 import { ChatLog } from "../core/collector"
 import type { RtcCaptionEvent, RtcChatEvent } from "./bridge"
 
+// Meet streams one messageId per utterance and keeps growing it even after other
+// speakers interject or the speaker pauses, so a single messageId can span several
+// real turns. Anchoring all of its text at the first-seen time sorts late words back
+// into an early block and breaks chronology. We therefore split a messageId into
+// segments — each a block with its own start time — on any of these signals:
+const INTERRUPTION_GAP_MS = 1000 // another speaker spoke AND this message was quiet for at least this long
+const SILENCE_GAP_MS = 5000 // this message was quiet for at least this long, even with nobody else
+const SEGMENT_MAX_MS = 60000 // a single uninterrupted segment may not grow past this (keeps a monologue time-addressable)
+
+const elapsedMs = (fromIso: string, toIso: string): number => Date.parse(toIso) - Date.parse(fromIso)
+
+// A word for prefix comparison, folded the same way collapseVersions folds frames:
+// lowercased with punctuation stripped, so Meet's case/punctuation churn between
+// frames does not defeat the match.
+const normWord = (w: string): string => w.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "")
+
+// The tail of `full` that follows the words already shown in `base` — i.e. the new
+// words a split segment should carry. Matching is word-wise and normalized. When
+// `base` is not a clean prefix (Meet reworded an earlier word), we return the
+// remainder from the first divergence: at worst a word is duplicated at the seam,
+// never dropped. An empty base returns the whole (trimmed) text.
+export function suffixAfter(full: string, base: string): string {
+  const trimmed = full.trim()
+  if (!base.trim()) return trimmed
+  const fullWords = trimmed.split(/\s+/)
+  const baseWords = base.trim().split(/\s+/)
+  let i = 0
+  while (i < baseWords.length && i < fullWords.length && normWord(fullWords[i]) === normWord(baseWords[i])) i++
+  return fullWords.slice(i).join(" ")
+}
+
+// One block of a messageId: the text spoken between two split points. `base` is the
+// cumulative text owned by earlier segments (the prefix suffixAfter strips off).
+interface Segment {
+  startedAt: string
+  base: string
+  text: string
+  // Every distinct text this segment took, in order (already prefix-stripped).
+  // Consecutive identical frames are deduped on push.
+  versions: string[]
+}
+
 interface CaptionState {
   // First-seen counter used for snapshot ordering. Entries are insert-only (revisions
   // mutate in place), so Map insertion order already equals first-seen order and the
@@ -13,18 +55,25 @@ interface CaptionState {
   // reinsertion of entries (e.g. merge/replay logic).
   order: number
   deviceId: string
-  startedAt: string
-  text: string
   version: number
-  // Every distinct text this caption took, in order. Consecutive identical
-  // frames (Meet bumps messageVersion without changing text) are deduped on push.
-  versions: string[]
+  // Latest cumulative full text of the whole messageId (staleness guard + the base
+  // handed to the next segment on a split).
+  fullText: string
+  // Arrival time of the last accepted revision — drives the pause-based split rules.
+  lastAt: string
+  // One or more blocks; a split appends a new one. Always at least one entry.
+  segments: Segment[]
 }
 
 export class RtcFeed {
   // Keyed by deviceId + "/" + messageId: messageId alone is only unique per device.
   private captions = new Map<string, CaptionState>()
   private nextOrder = 0
+  // The deviceId of the most recently accepted caption event. Between two revisions
+  // of the same messageId every event is by definition from another device, so
+  // "the last caption was not from this device" is exactly "someone else spoke since
+  // my last revision" — O(1), no scan. Chat does not touch this (it never splits speech).
+  private lastEventDeviceId = ""
   private chat = new ChatLog()
   private roster: Map<string, string>
 
@@ -43,21 +92,42 @@ export class RtcFeed {
     const existing = this.captions.get(key)
     if (existing) {
       if (ev.messageVersion <= existing.version) return false
-      existing.text = ev.text
-      existing.version = ev.messageVersion
-      if (existing.versions[existing.versions.length - 1] !== ev.text) {
-        existing.versions.push(ev.text)
+
+      const otherSpoke = this.lastEventDeviceId !== "" && this.lastEventDeviceId !== ev.deviceId
+      const sinceLast = elapsedMs(existing.lastAt, at)
+      const currentSegment = existing.segments[existing.segments.length - 1]
+      const segmentAge = elapsedMs(currentSegment.startedAt, at)
+      const shouldSplit =
+        (otherSpoke && sinceLast >= INTERRUPTION_GAP_MS) ||
+        sinceLast >= SILENCE_GAP_MS ||
+        segmentAge >= SEGMENT_MAX_MS
+      if (shouldSplit) {
+        // Everything shown so far belongs to the closing segment; the new one carries
+        // only the words that follow, timestamped at this revision.
+        existing.segments.push({ startedAt: at, base: existing.fullText, text: "", versions: [] })
       }
+
+      existing.version = ev.messageVersion
+      existing.fullText = ev.text
+      existing.lastAt = at
+      const segment = existing.segments[existing.segments.length - 1]
+      segment.text = suffixAfter(ev.text, segment.base)
+      if (segment.versions[segment.versions.length - 1] !== segment.text) {
+        segment.versions.push(segment.text)
+      }
+      this.lastEventDeviceId = ev.deviceId
       return true
     }
+    const firstText = suffixAfter(ev.text, "")
     this.captions.set(key, {
       order: this.nextOrder++,
       deviceId: ev.deviceId,
-      startedAt: at,
-      text: ev.text,
       version: ev.messageVersion,
-      versions: [ev.text],
+      fullText: ev.text,
+      lastAt: at,
+      segments: [{ startedAt: at, base: "", text: firstText, versions: [firstText] }],
     })
+    this.lastEventDeviceId = ev.deviceId
     return true
   }
 
@@ -79,19 +149,27 @@ export class RtcFeed {
   }
 
   transcriptSnapshot(): Utterance[] {
+    // One utterance per segment. Empty segments (a split boundary that a later
+    // revision has not yet filled) are dropped so they never emit a blank turn.
     return [...this.captions.values()]
       .sort((a, b) => a.order - b.order)
-      .map((c) => ({ speaker: this.speakerFor(c.deviceId), startedAt: c.startedAt, text: c.text }))
+      .flatMap((c) =>
+        c.segments
+          .filter((s) => s.text.trim() !== "")
+          .map((s) => ({ speaker: this.speakerFor(c.deviceId), startedAt: s.startedAt, text: s.text })),
+      )
   }
 
   versionsSnapshot(): CaptionHistory[] {
+    // Mirrors transcriptSnapshot's per-segment split (same filter) so each turn's
+    // alternatives stay attached to it — the format keys alts by (speaker, startedAt).
     return [...this.captions.values()]
       .sort((a, b) => a.order - b.order)
-      .map((c) => ({
-        speaker: this.speakerFor(c.deviceId),
-        startedAt: c.startedAt,
-        versions: [...c.versions],
-      }))
+      .flatMap((c) =>
+        c.segments
+          .filter((s) => s.text.trim() !== "")
+          .map((s) => ({ speaker: this.speakerFor(c.deviceId), startedAt: s.startedAt, versions: [...s.versions] })),
+      )
   }
 
   chatSnapshot(): ChatMessage[] {

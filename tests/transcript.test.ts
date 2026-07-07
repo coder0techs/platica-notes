@@ -189,6 +189,54 @@ describe("flattenTimeline", () => {
   })
 })
 
+describe("interruption-split interaction", () => {
+  // feed.ts splits an interrupted speaker's turn into two utterances, each with its
+  // own startedAt (A1 at the start, A2 at the resume time). These tests pin the
+  // downstream contract: the time sort keeps them in true chronological order and
+  // the interrupter is NOT re-merged away.
+  it("keeps an interrupted-then-resumed speaker in chronological order (flatten)", () => {
+    const out = flattenTimeline(
+      [
+        u("Alice", "2026-06-10T10:01:00.000Z", "I think we should"),
+        u("Alice", "2026-06-10T10:01:03.000Z", "go with option two"),
+        u("Bob", "2026-06-10T10:01:01.000Z", "wait"),
+      ],
+      [],
+    )
+    expect(out.map((e) => [e.speaker, e.text])).toEqual([
+      ["Alice", "I think we should"],
+      ["Bob", "wait"],
+      ["Alice", "go with option two"],
+    ])
+  })
+
+  it("does not re-merge two of a speaker's segments across the interrupter (mergeTimeline)", () => {
+    const out = mergeTimeline(
+      [
+        u("Alice", "2026-06-10T10:01:00.000Z", "I think we should"),
+        u("Alice", "2026-06-10T10:01:03.000Z", "go with option two"),
+        u("Bob", "2026-06-10T10:01:01.000Z", "wait"),
+      ],
+      [],
+    )
+    expect(out.map((e) => e.speaker)).toEqual(["Alice", "Bob", "Alice"])
+  })
+
+  it("re-merges same-speaker segments when nothing interleaves (periodic split invisible in the panel)", () => {
+    // A 60s periodic split with no chat/other speaker between the two segments
+    // collapses back to one block in the panel — the split only matters once
+    // something time-sorts between the pieces.
+    const out = mergeTimeline(
+      [
+        u("Alice", "2026-06-10T10:01:00.000Z", "part one"),
+        u("Alice", "2026-06-10T10:02:00.000Z", "part two"),
+      ],
+      [],
+    )
+    expect(out).toEqual([{ kind: "speech", speaker: "Alice", text: "part one part two", at: "2026-06-10T10:01:00.000Z" }])
+  })
+})
+
 describe("mergeTimeline with notes", () => {
   it("never folds a note into a speech run — a note splits same-speaker speech", () => {
     const out = mergeTimeline(
