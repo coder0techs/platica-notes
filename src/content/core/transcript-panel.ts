@@ -234,8 +234,6 @@ export function mountTranscriptPanel(opts: {
   // Notes/bookmarks read as the recorder's own marks: a fixed amber accent (not a
   // per-speaker color) so they stand apart from speech and chat.
   const NOTE_COLOR = "#fdd663"
-  // Participant join/leave markers get their own fixed accent, distinct from notes.
-  const PRESENCE_COLOR = "#81c995"
 
   function matches(entry: { speaker: string; text: string }): boolean {
     if (!query) return true
@@ -247,14 +245,20 @@ export function mountTranscriptPanel(opts: {
     body.replaceChildren()
     for (const entry of timeline) {
       const block = document.createElement("div")
-      block.style.cssText = "margin-bottom:12px;"
-      const head = document.createElement("div")
       const isNote = entry.kind === "note"
       const isPresence = entry.kind === "join" || entry.kind === "leave"
       const isBookmark = isNote && entry.text.trim() === ""
       // Bookmarks and presence markers have no body — just the heading line.
       const noBody = isBookmark || isPresence
-      const headColor = isNote ? NOTE_COLOR : isPresence ? PRESENCE_COLOR : colorFor(entry.speaker)
+      // Voice reads down the left; chat and presence markers align to the right so
+      // they are visually distinct from what was spoken aloud. Notes stay left (the
+      // recorder's own left-margin marks).
+      const alignRight = entry.kind === "chat" || isPresence
+      block.style.cssText = `margin-bottom:12px;${alignRight ? "text-align:right;" : ""}`
+      const head = document.createElement("div")
+      // Presence markers take the participant's own colour (like their speech/chat);
+      // notes keep the fixed amber accent.
+      const headColor = isNote ? NOTE_COLOR : colorFor(entry.speaker)
       head.style.cssText = `color:${headColor};font:500 12px ${FONT};margin-bottom:2px;`
       // Chat is tagged so a pasted line is never mistaken for something said aloud;
       // notes/bookmarks are the recorder's own marks; join/leave are presence markers.
