@@ -1,10 +1,11 @@
 import { sendToBackground } from "../../shared/messages"
+import type { BackgroundResponse } from "../../shared/messages"
 import { getLocal, getSettings, saveSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
 import { DEFAULT_SETTINGS } from "../../shared/types"
 import type { ActiveSession, DebugEvent, Note, Settings } from "../../shared/types"
 import { SessionWriter } from "../core/persistence"
 import { isBookmarkChord, isHideUiChord } from "../core/hotkeys"
-import { isUiHidden, mountLanguagePrompt, mountMeetingControls, pulseActivity, setUiHidden, showToast } from "../core/ui"
+import { isUiHidden, mountLanguagePrompt, mountMeetingControls, pulseActivity, setUiHidden, showPersistentNotice, showToast } from "../core/ui"
 import { mountTranscriptPanel } from "../core/transcript-panel"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
 import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
@@ -104,6 +105,25 @@ function dlog(msg: string, extra?: Record<string, unknown>): void {
   onDebugEvent?.()
 }
 
+// Set once the extension context is invalidated (reload/update mid-meeting). From
+// that point every chrome.* call is dead: writes are sealed at the SessionWriter,
+// sendToBackground returns {invalidated:true} instead of throwing, and we show a
+// one-time notice telling the user to reload. Idempotent — later failures are silent.
+let contextInvalidated = false
+function onContextInvalidated(): void {
+  if (contextInvalidated) return
+  contextInvalidated = true
+  showPersistentNotice(
+    "Plática Notes was updated and can't keep recording in this tab. " +
+      "Reload the page (or rejoin the call) to resume recording and save this meeting.",
+  )
+}
+
+/** Surface the reload notice if a background call failed on an orphaned context. */
+function noteIfInvalidated(response: BackgroundResponse): void {
+  if (!response.ok && response.invalidated) onContextInvalidated()
+}
+
 void main().catch((error) => console.error("[platica-notes]", error))
 
 async function main(): Promise<void> {
@@ -112,6 +132,7 @@ async function main(): Promise<void> {
   if (!tabIdResponse.ok) {
     console.error("[platica-notes] could not get tab id:", tabIdResponse.error)
     dlog("could not get tab id", { error: tabIdResponse.error })
+    noteIfInvalidated(tabIdResponse)
     return
   }
   const tabId = tabIdResponse.data
@@ -231,6 +252,7 @@ async function runMeeting(tabId: number): Promise<void> {
     if (!response.ok) {
       console.error("[platica-notes] stale-session finalize failed:", response.error)
       dlog("stale-session finalize failed", { error: response.error })
+      noteIfInvalidated(response)
     }
   }
 
@@ -241,7 +263,7 @@ async function runMeeting(tabId: number): Promise<void> {
   )
   if (!joined) return
   dlog("meeting started", { tab: tabId })
-  await sendToBackground({ kind: "meetingStarted" })
+  noteIfInvalidated(await sendToBackground({ kind: "meetingStarted" }))
 
   const settings = await getSettings()
   let ending = false
@@ -299,6 +321,10 @@ async function runMeeting(tabId: number): Promise<void> {
     // Stamp the current page-level roster and self name into every persisted
     // snapshot so a reload can re-seed them (see the resume block above).
     () => ({ ...session, roster: Object.fromEntries(roster), selfName: selfName ?? undefined }),
+    1000,
+    // A write that fails on an orphaned context surfaces the reload notice; the
+    // writer seals itself so it stops hammering a dead chrome.storage.
+    onContextInvalidated,
   )
   writer.requestWrite()
 
@@ -536,6 +562,7 @@ async function runMeeting(tabId: number): Promise<void> {
     if (!response.ok) {
       console.error("[platica-notes] finalize failed:", response.error)
       dlog("finalize failed", { error: response.error })
+      noteIfInvalidated(response)
     }
     meetingDone()
   }

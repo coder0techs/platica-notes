@@ -1,13 +1,20 @@
+import { isContextInvalidatedError } from "../../shared/messages"
+
 export class SessionWriter<T> {
   private timer: ReturnType<typeof setTimeout> | null = null
   private pending = false
   private closed = false
+  private notifiedInvalidated = false
   private chain: Promise<void> = Promise.resolve()
 
   constructor(
     private readonly write: (snapshot: T) => Promise<void>,
     private readonly getSnapshot: () => T,
     private readonly intervalMs = 1000,
+    // Called once if a write fails because the extension context was invalidated
+    // (reload/update mid-meeting). The writer then seals itself: retrying a dead
+    // chrome.storage is pointless noise, and there is no session left to save.
+    private readonly onInvalidated?: () => void,
   ) {}
 
   requestWrite(): void {
@@ -31,6 +38,9 @@ export class SessionWriter<T> {
 
   /** Final write: cancels any armed trailing write, then persists after all in-flight writes. */
   async writeNow(): Promise<void> {
+    // A sealed writer never writes again (normal teardown calls writeNow before
+    // close, so this only bites after a context-invalidation seal).
+    if (this.closed) return
     if (this.timer) {
       clearTimeout(this.timer)
       this.timer = null
@@ -54,6 +64,16 @@ export class SessionWriter<T> {
     this.chain = this.chain
       .then(() => this.write(this.getSnapshot()))
       .catch((error) => {
+        if (isContextInvalidatedError(error)) {
+          // Orphaned context: stop retrying and notify once. close() makes every
+          // later requestWrite a no-op, so no retry storm and no stray console noise.
+          if (!this.notifiedInvalidated) {
+            this.notifiedInvalidated = true
+            this.close()
+            this.onInvalidated?.()
+          }
+          return
+        }
         console.error("[platica-notes] session write failed:", error)
       })
     return this.chain

@@ -73,6 +73,48 @@ export function showToast(message: string, durationMs = 8000): void {
   setTimeout(() => toast.remove(), durationMs)
 }
 
+// Amber, so a notice that needs action reads distinctly from the on-brand purple
+// toast (which just confirms things are fine).
+const NOTICE_BG = "#7a4b00"
+const NOTICE_ID = "platica-notice"
+
+/**
+ * A persistent, dismissible banner for a state the user must act on (e.g. the
+ * extension was updated mid-meeting and capture can't continue until they reload).
+ * Unlike showToast it never auto-dismisses. Single instance: a second call
+ * replaces the first. Respects hide-UI via registerUiEl.
+ */
+export function showPersistentNotice(message: string): { dismiss: () => void } {
+  document.getElementById(NOTICE_ID)?.remove()
+  const notice = document.createElement("div")
+  notice.id = NOTICE_ID
+  // Sits below the top-center controls row, same lane as the toast.
+  notice.style.cssText =
+    "position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
+    "box-sizing:border-box;max-width:min(460px,calc(100vw - 24px));display:flex;align-items:center;gap:10px;" +
+    `background:${NOTICE_BG};color:#fff;padding:11px 14px;border-radius:8px;` +
+    "font:14px system-ui;box-shadow:0 4px 16px rgba(0,0,0,.35);"
+
+  const text = document.createElement("span")
+  text.textContent = message
+  text.style.cssText = "flex:1;line-height:1.35;"
+
+  const close = document.createElement("button")
+  close.type = "button"
+  close.textContent = "✕"
+  close.setAttribute("aria-label", "Dismiss")
+  close.style.cssText =
+    "flex:none;background:none;border:none;color:rgba(255,255,255,.8);cursor:pointer;" +
+    "font:16px system-ui;line-height:1;padding:0 2px;"
+  const dismiss = () => notice.remove()
+  close.addEventListener("click", dismiss)
+
+  notice.append(text, close)
+  registerUiEl(notice)
+  document.documentElement.appendChild(notice)
+  return { dismiss }
+}
+
 // Shared Google-Meet-native dark pill style so the language select and privacy
 // toggle read as one native control group.
 const PILL_BASE =

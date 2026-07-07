@@ -134,4 +134,62 @@ describe("SessionWriter", () => {
     await vi.advanceTimersByTimeAsync(5000) // trailing timer must NOT fire
     expect(writes).toHaveLength(countAfterWriteNow)
   })
+
+  it("on a context-invalidation write error, notifies once and stops writing", async () => {
+    let writeCalls = 0
+    let invalidatedCount = 0
+    let counter = 0
+    const writer = new SessionWriter<number>(
+      async () => {
+        writeCalls++
+        throw new Error("Extension context invalidated.")
+      },
+      () => ++counter,
+      1000,
+      () => {
+        invalidatedCount++
+      },
+    )
+
+    writer.requestWrite()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(invalidatedCount).toBe(1)
+    const callsAfterFirst = writeCalls
+
+    // The writer must be sealed: further requests are no-ops (no retry storm) and
+    // onInvalidated is not fired again.
+    writer.requestWrite()
+    await writer.writeNow()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(writeCalls).toBe(callsAfterFirst)
+    expect(invalidatedCount).toBe(1)
+  })
+
+  it("a non-invalidation write error does not seal the writer or notify", async () => {
+    const writes: number[] = []
+    let invalidatedCount = 0
+    let writeCalls = 0
+    let counter = 0
+    const writer = new SessionWriter<number>(
+      async (snapshot) => {
+        writeCalls++
+        if (writeCalls === 1) throw new Error("disk full")
+        writes.push(snapshot)
+      },
+      () => ++counter,
+      1000,
+      () => {
+        invalidatedCount++
+      },
+    )
+
+    writer.requestWrite()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(invalidatedCount).toBe(0)
+
+    // Writer still works after a transient error.
+    await writer.writeNow()
+    expect(writes).toHaveLength(1)
+    expect(invalidatedCount).toBe(0)
+  })
 })
