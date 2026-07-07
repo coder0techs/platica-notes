@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
   decodeTranscriptWrapper,
-  decodeChatWrapper,
+  decodeCollectionsChat,
+  decodeOutgoingChat,
   decodeRoster,
   buildSubscribe,
   buildAck,
@@ -162,8 +163,11 @@ function buildLeafMessage(opts: {
   sender?: string
   timestamp?: number
   trailing?: boolean
+  messageId?: string
 }): number[] {
   const out: number[] = []
+  // f1 = message resource name ("spaces/…/messages/…"), the stable dedup id.
+  if (opts.messageId !== undefined) lenField(1, strBytes(opts.messageId), out)
   if (opts.deviceId !== undefined) lenField(2, strBytes(opts.deviceId), out)
   if (opts.timestamp !== undefined) { tagBytes(3, 0, out); writeVarint(opts.timestamp, out) }
   if (opts.text !== undefined) {
@@ -182,116 +186,117 @@ function buildLeafMessage(opts: {
   return out
 }
 
-function buildChatWrapper(opts: {
-  deviceId?: string
-  text?: string
-  sender?: string
-  timestamp?: number
-  trailing?: boolean
-  seq?: number
-  extraInContainer?: boolean
-}): Uint8Array {
-  // root.f1 (wrapper) { f1 varint = seq; f4 (container) { f1 = message } }
-  const message = buildLeafMessage(opts)
-  const container: number[] = []
-  lenField(1, message, container)
-  if (opts.extraInContainer) { tagBytes(99, 0, container); writeVarint(7, container) }  // unknown
-  const wrapper: number[] = []
-  if (opts.seq !== undefined) { tagBytes(1, 0, wrapper); writeVarint(opts.seq, wrapper) }
-  lenField(4, container, wrapper)
-  const root: number[] = []
-  lenField(1, wrapper, root)
+// ---------- collections-channel chat tests ----------
+
+// Meet moved chat off the meet_messages channel onto the collections channel,
+// wrapped as a meeting-space-collections update. Live-verified nesting:
+//   root.f1 → f2 → f13 → f4 (messages collection) → { f1 = metadata; repeated f2 = message }
+// where each message node is the SAME shape as before (f1=resource id, f2=deviceId,
+// f5.f1=text, f8.f1=sender). Devices arrive under the sibling f13 → f1 branch.
+function buildCollectionsChat(
+  messages: Array<{ deviceId?: string; text?: string; sender?: string; messageId?: string }>,
+): Uint8Array {
+  const f4: number[] = []
+  const meta: number[] = []; tagBytes(1, 0, meta); writeVarint(44, meta)
+  lenField(1, meta, f4)                                  // f4.f1 = metadata
+  for (const m of messages) lenField(2, buildLeafMessage(m), f4)  // f4.f2 = repeated message
+  const c: number[] = []; lenField(4, f4, c)             // f13.f4
+  const b: number[] = []; lenField(13, c, b)             // f2.f13
+  const a: number[] = []; lenField(2, b, a)              // f1.f2
+  const root: number[] = []; lenField(1, a, root)        // root.f1
   return u8(root)
 }
 
-// ---------- chat tests ----------
-
-describe("decodeChatWrapper — real wire vectors", () => {
-  // Truncated at 160 bytes by the diagnostic logger, so the trailing f8 sender is
-  // cut off — the hardened reader must decode deviceId + text without throwing.
-  const MSG1 = "0aac0a080122a70a0aa00a0a2d7370616365732f6636516d625a736a54634d422f6d657373616765732f31373831353139303239343139363331121f7370616365732f6636516d625a736a54634d422f646576696365732f34363318d7d4b7d6ec33220c08b5a5bfd10610989f8cc8012a240a22d181d0bed0bed0b1d189d0b5d0bdd0b8d0b520d0b8d0b720d187d0b0d182d0b020313001428c090a1c416c65"
-  const MSG2 = "0aab0a080222a60a0a9f0a0a2d7370616365732f6636516d625a736a54634d422f6d657373616765732f31373831353139303334323131313335121f7370616365732f6636516d625a736a54634d422f646576696365732f34363318d8d4b7d6ec33220b08baa5bfd1061098d4d6642a240a22d181d0bed0bed0b1d189d0b5d0bdd0b8d0b520d0b8d0b720d187d0b0d182d0b020323001428c090a1c416c6578"
-
-  it("decodes real msg1 → text + deviceId", () => {
-    const result = decodeChatWrapper(hexToBytes(MSG1))
-    expect(result).not.toBeNull()
-    expect(result!.text).toBe("сообщение из чата 1")
-    expect(result!.deviceId).toBe("spaces/f6QmbZsjTcMB/devices/463")
-    expect(result!.deviceId!.endsWith("/devices/463")).toBe(true)
+describe("decodeCollectionsChat", () => {
+  it("decodes a single incoming chat message with id, device, text and sender", () => {
+    const buf = buildCollectionsChat([
+      { messageId: "spaces/abc/messages/m1", deviceId: "spaces/abc/devices/306", text: "hola", sender: "Grace Hopper" },
+    ])
+    const result = decodeCollectionsChat(buf)
+    expect(result).toHaveLength(1)
+    expect(result[0].messageId).toBe("spaces/abc/messages/m1")
+    expect(result[0].deviceId).toBe("spaces/abc/devices/306")
+    expect(result[0].text).toBe("hola")
+    expect(result[0].sender).toBe("Grace Hopper")
   })
 
-  it("decodes real msg2 → text + deviceId", () => {
-    const result = decodeChatWrapper(hexToBytes(MSG2))
-    expect(result).not.toBeNull()
-    expect(result!.text).toBe("сообщение из чата 2")
-    expect(result!.deviceId!.endsWith("/devices/463")).toBe(true)
+  it("decodes every message when the collection batches several (repeated f2)", () => {
+    const buf = buildCollectionsChat([
+      { messageId: "spaces/abc/messages/m1", deviceId: "spaces/abc/devices/1", text: "first", sender: "Grace Hopper" },
+      { messageId: "spaces/abc/messages/m2", deviceId: "spaces/abc/devices/2", text: "second", sender: "Ada Lovelace" },
+    ])
+    const result = decodeCollectionsChat(buf)
+    expect(result.map((m) => m.text)).toEqual(["first", "second"])
+    expect(result.map((m) => m.sender)).toEqual(["Grace Hopper", "Ada Lovelace"])
+  })
+
+  it("returns [] when the collections update carries devices (f13.f1), not messages (f13.f4)", () => {
+    // roster-shaped update: f13 → f1 (device leaf), no f4 messages collection
+    const leaf: number[] = []; lenField(1, strBytes("spaces/abc/devices/9"), leaf); lenField(2, strBytes("Grace Hopper"), leaf)
+    const devColl: number[] = []; lenField(2, leaf, devColl)
+    const c: number[] = []; lenField(1, devColl, c)      // f13.f1 (devices), not f4
+    const b: number[] = []; lenField(13, c, b)
+    const a: number[] = []; lenField(2, b, a)
+    const root: number[] = []; lenField(1, a, root)
+    expect(decodeCollectionsChat(u8(root))).toEqual([])
+  })
+
+  it("drops a message missing deviceId or text", () => {
+    const buf = buildCollectionsChat([{ messageId: "spaces/abc/messages/m1", sender: "Grace Hopper" }])
+    expect(decodeCollectionsChat(buf)).toEqual([])
+  })
+
+  it("does not throw on truncated garbage", () => {
+    expect(() => decodeCollectionsChat(u8([0x0a, 100, 0x12, 0x01, 0x41]))).not.toThrow()
+    expect(decodeCollectionsChat(u8([0x0a, 100, 0x12, 0x01, 0x41]))).toEqual([])
   })
 })
 
-describe("decodeChatWrapper", () => {
-  it("decodes a synthetic full message with embedded sender", () => {
-    // Real vectors truncate the f8 sender; this synthetic vector carries it whole.
-    const buf = buildChatWrapper({
-      deviceId: "spaces/abc/devices/7",
-      text: "hello chat",
-      sender: "Grace Hopper",
-      timestamp: 1781519029,
-      trailing: true,
-      seq: 1,
-    })
-    const result = decodeChatWrapper(buf)
-    expect(result).not.toBeNull()
-    expect(result!.deviceId).toBe("spaces/abc/devices/7")
-    expect(result!.text).toBe("hello chat")
-    expect(result!.sender).toBe("Grace Hopper")
+// ---------- outgoing (own) chat tests ----------
+
+// Our OWN chat is not echoed back to us; it exists only as an outgoing send on the
+// meet_messages channel. Live-verified nesting of that send:
+//   root.f1 → f1 → f3 → f1 → f2 (message) → { f3 = client ts; f5 = {f1 = text}; f6 }
+// No deviceId / sender / message-id — the server assigns those; we attribute the
+// text to the local user.
+function buildOutgoingChat(opts: { text?: string; sentAt?: number }): Uint8Array {
+  const msg: number[] = []
+  if (opts.sentAt !== undefined) { tagBytes(3, 0, msg); writeVarint(opts.sentAt, msg) }
+  if (opts.text !== undefined) {
+    const textSub: number[] = []; lenField(1, strBytes(opts.text), textSub)
+    lenField(5, textSub, msg)
+  }
+  tagBytes(6, 0, msg); writeVarint(1, msg)
+  const l4: number[] = []; lenField(2, msg, l4)   // f2 = message
+  const l3: number[] = []; lenField(1, l4, l3)    // f1
+  const l2: number[] = []; tagBytes(1, 0, l2); writeVarint(1, l2); lenField(3, l3, l2)  // f1 varint + f3
+  const l1: number[] = []; lenField(1, l2, l1)    // f1
+  const root: number[] = []; lenField(1, l1, root)
+  return u8(root)
+}
+
+describe("decodeOutgoingChat", () => {
+  it("extracts the text and client timestamp from an outgoing send", () => {
+    const buf = buildOutgoingChat({ text: "чат сообщение от меня", sentAt: 1783415260661 })
+    const r = decodeOutgoingChat(buf)
+    expect(r).not.toBeNull()
+    expect(r!.text).toBe("чат сообщение от меня")
+    expect(r!.sentAt).toBe(1783415260661)
   })
 
-  it("returns object with only deviceId when text submessage absent", () => {
-    // Contract: returns whatever fields were decoded, never throws.
-    const buf = buildChatWrapper({ deviceId: "dev-1" })
-    const result = decodeChatWrapper(buf)
-    expect(result).not.toBeNull()
-    expect(result!.deviceId).toBe("dev-1")
-    expect(result!.text).toBeUndefined()
-    expect(result!.sender).toBeUndefined()
+  it("returns the text even when no timestamp is present", () => {
+    const buf = buildOutgoingChat({ text: "hi" })
+    expect(decodeOutgoingChat(buf)!.text).toBe("hi")
   })
 
-  it("returns null when the message (root.f1.f4.f1) is absent", () => {
-    // No field 1 at root level → wrapper never found → null
-    const result = decodeChatWrapper(new Uint8Array([0x08, 0x01]))  // field 1 wire 0, not wire 2
-    expect(result).toBeNull()
+  it("returns null when the packet carries no message text", () => {
+    const buf = buildOutgoingChat({ sentAt: 1 })
+    expect(decodeOutgoingChat(buf)).toBeNull()
   })
 
-  it("returns null when the container (f4) is missing", () => {
-    // wrapper present but no f4 inside it
-    const wrapper: number[] = []; tagBytes(1, 0, wrapper); writeVarint(5, wrapper)
-    const root: number[] = []; lenField(1, wrapper, root)
-    expect(decodeChatWrapper(u8(root))).toBeNull()
-  })
-
-  it("skips unknown fields in the container alongside the message", () => {
-    const buf = buildChatWrapper({ text: "test", extraInContainer: true })
-    const result = decodeChatWrapper(buf)
-    expect(result!.text).toBe("test")
-  })
-
-  it("decodes the FIRST message when the container repeats f1", () => {
-    const first = buildLeafMessage({ deviceId: "dev-1", text: "first" })
-    const second = buildLeafMessage({ deviceId: "dev-2", text: "second" })
-    const container: number[] = []
-    lenField(1, first, container)
-    lenField(1, second, container)
-    const wrapper: number[] = []; lenField(4, container, wrapper)
-    const root: number[] = []; lenField(1, wrapper, root)
-    const result = decodeChatWrapper(u8(root))
-    expect(result!.deviceId).toBe("dev-1")
-    expect(result!.text).toBe("first")
-  })
-
-  it("returns null / does not throw on truncated garbage", () => {
-    // valid root.f1 LEN tag but declared length far exceeds the payload
-    const buf = u8([0x0a, 100, 0x22, 0x01, 0x41])
-    expect(() => decodeChatWrapper(buf)).not.toThrow()
+  it("returns null / does not throw on unrelated or garbage bytes", () => {
+    expect(decodeOutgoingChat(u8([0x08, 0x01]))).toBeNull()
+    expect(() => decodeOutgoingChat(u8([0x0a, 100, 0x12, 0x01, 0x41]))).not.toThrow()
   })
 })
 
@@ -498,7 +503,7 @@ describe("hostile input — truncated / oversized / garbage", () => {
   // All public decoders exercised over every hostile buffer.
   const publicDecoders: Array<(buf: Uint8Array) => unknown> = [
     decodeTranscriptWrapper,
-    decodeChatWrapper,
+    decodeCollectionsChat,
     decodeRoster,
     readNestedOp,
     readNestedSeq,
@@ -562,15 +567,15 @@ describe("hostile input — truncated / oversized / garbage", () => {
     expect(decodeTranscriptWrapper(buf)).toBeNull()
   })
 
-  it("chat wrapper: unknown wire type mid-nesting → null, not throw", () => {
-    // Craft a valid wrapper, then inject wire type 7 where the container (f4) goes.
-    const message = buildLeafMessage({ text: "x" })
-    const container: number[] = []; lenField(1, message, container)
-    const wrapper: number[] = []
-    tagBytes(4, 7, wrapper)  // field 4, wire 7 (illegal) instead of wire 2
-    for (const b of container) wrapper.push(b)
-    const root: number[] = []; lenField(1, wrapper, root)
-    expect(decodeChatWrapper(u8(root))).toBeNull()
+  it("collections chat: unknown wire type mid-nesting → empty, not throw", () => {
+    // Valid outer f1→f2→f13, then inject wire type 7 where the f4 messages
+    // collection goes — the decoder must abort cleanly to [].
+    const inner: number[] = []
+    tagBytes(4, 7, inner)  // field 4, wire 7 (illegal) instead of wire 2
+    const b13: number[] = []; lenField(13, inner, b13)
+    const b2: number[] = []; lenField(2, b13, b2)
+    const root: number[] = []; lenField(1, b2, root)
+    expect(decodeCollectionsChat(u8(root))).toEqual([])
   })
 
   it("roster: unknown wire type in leaf → empty results, not throw", () => {

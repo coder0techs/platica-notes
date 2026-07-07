@@ -1,19 +1,27 @@
 import type { ChatMessage } from "../../shared/types"
 
 /**
- * ChatLog collects chat messages with consecutive deduplication.
+ * ChatLog collects chat messages with deduplication.
  *
- * The same chat message can arrive more than once (a repeated revision over the
- * data channel), so we drop a message identical to the immediately preceding
- * one. Non-consecutive repeats (e.g. the same sender writing "+1" twice during
- * a meeting) are real messages and must be kept.
+ * When a stable message id is available (the collections channel carries a
+ * "spaces/…/messages/…" resource name), it is authoritative: the same id is
+ * dropped no matter when it re-arrives, because that channel re-syncs/replays
+ * messages. A genuine double-send has a distinct id and is kept.
+ *
+ * Without an id (older/echoed messages), we fall back to consecutive dedup: drop
+ * a message identical to the immediately preceding one (a repeated revision),
+ * but keep a non-consecutive repeat (e.g. the same sender writing "+1" twice).
  */
 export class ChatLog {
   private messages: ChatMessage[] = []
   private last: { sender: string; text: string } | null = null
+  private seenIds = new Set<string>()
 
-  add(message: ChatMessage): boolean {
-    if (this.last && this.last.sender === message.sender && this.last.text === message.text) {
+  add(message: ChatMessage, id?: string): boolean {
+    if (id !== undefined) {
+      if (this.seenIds.has(id)) return false
+      this.seenIds.add(id)
+    } else if (this.last && this.last.sender === message.sender && this.last.text === message.text) {
       return false
     }
     this.messages.push(message)

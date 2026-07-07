@@ -15,6 +15,13 @@ const caption = (
 const chat = (deviceId: string, text: string, sender?: string): RtcChatEvent =>
   sender === undefined ? { type: "chat", deviceId, text } : { type: "chat", deviceId, text, sender }
 
+const chatWithId = (deviceId: string, text: string, messageId: string): RtcChatEvent => ({
+  type: "chat",
+  deviceId,
+  text,
+  messageId,
+})
+
 const ALICE = "spaces/abc/devices/1"
 const BOB = "spaces/abc/devices/2"
 
@@ -93,6 +100,16 @@ describe("RtcFeed chat", () => {
     expect(feed.handleChat(chat(BOB, "hello"), later)).toBe(true)
     expect(feed.handleChat(chat(ALICE, "+1"), later)).toBe(true)
     expect(feed.chatSnapshot()).toHaveLength(3)
+  })
+
+  it("dedupes a re-synced message by id, even non-consecutively", () => {
+    // The collections channel replays messages, so the same id can re-arrive
+    // after other messages. handleChat must thread messageId to the ChatLog.
+    const feed = new RtcFeed()
+    expect(feed.handleChat(chatWithId(ALICE, "hi", "spaces/abc/messages/m1"), at)).toBe(true)
+    expect(feed.handleChat(chatWithId(BOB, "yo", "spaces/abc/messages/m2"), later)).toBe(true)
+    expect(feed.handleChat(chatWithId(ALICE, "hi", "spaces/abc/messages/m1"), later)).toBe(false)
+    expect(feed.chatSnapshot()).toHaveLength(2)
   })
 
   it("prefers the embedded sender over the roster entry", () => {

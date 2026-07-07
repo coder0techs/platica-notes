@@ -36,6 +36,10 @@ export interface RtcChatEvent {
   deviceId: string
   text: string
   sender?: string
+  // Stable message resource name ("spaces/…/messages/…") from the collections
+  // channel. The feed dedupes on it: that channel re-syncs messages, so the same
+  // one can arrive in more than one packet. Absent for messages without an id.
+  messageId?: string
 }
 
 export interface RtcDeviceEvent {

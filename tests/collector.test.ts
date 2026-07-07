@@ -30,4 +30,23 @@ describe("ChatLog", () => {
     log.add({ sender: "Alice", sentAt: at, text: "hi" })
     expect(log.add({ sender: "Bob", sentAt: at, text: "hi" })).toBe(true)
   })
+
+  it("drops a message whose id was already seen, even non-consecutively", () => {
+    // The collections channel re-syncs/replays messages, so the same message can
+    // arrive again after other messages — the consecutive guard would miss it.
+    const log = new ChatLog()
+    log.add({ sender: "Alice", sentAt: at, text: "hi" }, "spaces/x/messages/m1")
+    log.add({ sender: "Bob", sentAt: at, text: "hello" }, "spaces/x/messages/m2")
+    expect(log.add({ sender: "Alice", sentAt: at, text: "hi" }, "spaces/x/messages/m1")).toBe(false)
+    expect(log.snapshot()).toHaveLength(2)
+  })
+
+  it("keeps two distinct-id messages with identical sender+text", () => {
+    // A real double-send (distinct ids) must survive even though the text is
+    // identical and consecutive — the id is authoritative when present.
+    const log = new ChatLog()
+    log.add({ sender: "Alice", sentAt: at, text: "+1" }, "spaces/x/messages/m1")
+    expect(log.add({ sender: "Alice", sentAt: at, text: "+1" }, "spaces/x/messages/m2")).toBe(true)
+    expect(log.snapshot()).toHaveLength(2)
+  })
 })

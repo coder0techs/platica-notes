@@ -18,6 +18,10 @@ export interface ChatPayload {
   deviceId?: string
   text?: string
   sender?: string
+  // Stable per-message resource name ("spaces/…/messages/…"), field 1 of the
+  // message node. Used to dedupe: the collections channel re-syncs messages, so
+  // the same message can arrive in more than one packet.
+  messageId?: string
 }
 
 export interface RosterEntry {
@@ -147,14 +151,14 @@ export function decodeTranscriptWrapper(buf: Uint8Array): Transcript | null {
   }
 }
 
-// ---------- chat decoder ----------
+// ---------- chat message-node decoder ----------
 
-// Live-verified nesting (all len-delim unless noted), from real meet_messages bytes:
-//   root.f1 (wrapper) { f1 varint = seq (skip); f4 (container) { f1 (message) ... } }
-//   message: f2=deviceId(string), f5={f1=text(string)}, f8={f1=sender display name(string)}
-// Other message fields (f1 message-name, f3 timestamp, f4 sub, f6) are skipped.
-// One message per packet in observed samples; if the container repeats f1 we decode
-// the FIRST entry only (batching is unobserved — not worth a repeated-message array).
+// The chat message node (all len-delim unless noted), live-verified on the wire:
+//   message: f1=resource id ("spaces/…/messages/…"), f2=deviceId(string),
+//            f5={f1=text(string)}, f8={f1=sender display name(string)}
+// Other fields (f3 timestamp, f4 sub, f6, f10) are skipped. This node shape is
+// stable; only its transport envelope changed (see decodeCollectionsChat). The id
+// (f1) is the stable dedup key — the collections channel replays messages.
 
 // Read the f1 sub-string of a len-delimited submessage (used for both text f5.f1 and
 // sender f8.f1). Tolerates unknown fields and truncation via boundedEnd.
@@ -177,7 +181,8 @@ function decodeChatMessage(buf: Uint8Array, start: number, end: number): ChatPay
   const out: ChatPayload = {}
   while (c.i < safeEnd) {
     const { field, wire } = readTag(c)
-    if (field === 2 && wire === 2) out.deviceId = readString(c)
+    if (field === 1 && wire === 2) out.messageId = readString(c)
+    else if (field === 2 && wire === 2) out.deviceId = readString(c)
     else if (field === 5 && wire === 2) {
       const subLen = readVarint(c)
       const subEnd = boundedEnd(c, subLen)
@@ -210,16 +215,90 @@ function walkLen(c: Cursor, end: number, targetField: number): { start: number; 
   return null
 }
 
-export function decodeChatWrapper(buf: Uint8Array): ChatPayload | null {
+// ---------- collections-channel chat decoder ----------
+
+// Google Meet moved chat off the meet_messages data channel onto the collections
+// channel (the same one that carries the roster), delivered as a meeting-space-
+// collections update backed by Google Chat. Live-verified nesting:
+//   root.f1 → f2 → f13 → f4 (messages collection) → { f1 = metadata; repeated f2 = message }
+// Each message node has the SAME shape decodeChatMessage already handles
+// (f1 = resource id, f2 = deviceId, f5.f1 = text, f8.f1 = sender); devices arrive
+// under the sibling f13 → f1 branch (handled by decodeRoster), so a device-only
+// update yields no messages here. Returns every message in the packet (the
+// collection can batch/replay several); callers dedupe by messageId.
+export function decodeCollectionsChat(buf: Uint8Array): ChatPayload[] {
+  const out: ChatPayload[] = []
   try {
-    // root.f1 (wrapper) → f4 (container) → f1 (message). Field numbers live-verified.
     const c: Cursor = { buf, i: 0 }
-    const wrapper = walkLen(c, buf.length, 1); if (!wrapper) return null
-    const cw: Cursor = { buf, i: wrapper.start }
-    const container = walkLen(cw, wrapper.end, 4); if (!container) return null
-    const cc: Cursor = { buf, i: container.start }
-    const message = walkLen(cc, container.end, 1); if (!message) return null
-    return decodeChatMessage(buf, message.start, message.end)
+    const s1 = walkLen(c, buf.length, 1); if (!s1) return out
+    const c1: Cursor = { buf, i: s1.start }
+    const s2 = walkLen(c1, s1.end, 2); if (!s2) return out
+    const c2: Cursor = { buf, i: s2.start }
+    const s13 = walkLen(c2, s2.end, 13); if (!s13) return out
+    const c13: Cursor = { buf, i: s13.start }
+    const s4 = walkLen(c13, s13.end, 4); if (!s4) return out
+    // Read the repeated f2 message entries inside the messages collection.
+    const c4: Cursor = { buf, i: s4.start }
+    const safeEnd = Math.min(s4.end, buf.length)
+    while (c4.i < safeEnd) {
+      const { field, wire } = readTag(c4)
+      if (field === 2 && wire === 2) {
+        const l = readVarint(c4)
+        const end = boundedEnd(c4, l)
+        const msg = decodeChatMessage(buf, c4.i, end)
+        c4.i = end
+        // Drop entries lacking the essentials (matches the old chat guard).
+        if (msg.deviceId && msg.text) out.push(msg)
+      } else {
+        skip(c4, wire)
+      }
+    }
+  } catch {
+    /* tolerate malformed input — return whatever decoded cleanly */
+  }
+  return out
+}
+
+// ---------- outgoing (own) chat decoder ----------
+
+// The local user's own chat is never echoed back to this client (the collections
+// channel only carries OTHER participants' messages), so it exists only as an
+// OUTGOING send on the meet_messages channel. Live-verified nesting of that send:
+//   root.f1 → f1 → f3 → f1 → f2 (message) → { f3 = client ts; f5 = {f1 = text}; f6 }
+// It carries neither deviceId nor sender nor a server message id — the caller
+// attributes the text to the local user and dedupes on the client timestamp.
+export function decodeOutgoingChat(buf: Uint8Array): { text: string; sentAt?: number } | null {
+  try {
+    const c: Cursor = { buf, i: 0 }
+    const a = walkLen(c, buf.length, 1); if (!a) return null
+    const ca: Cursor = { buf, i: a.start }
+    const b = walkLen(ca, a.end, 1); if (!b) return null
+    const cb: Cursor = { buf, i: b.start }
+    const d = walkLen(cb, b.end, 3); if (!d) return null
+    const cd: Cursor = { buf, i: d.start }
+    const e = walkLen(cd, d.end, 1); if (!e) return null
+    const ce: Cursor = { buf, i: e.start }
+    const node = walkLen(ce, e.end, 2); if (!node) return null
+    // Within the message node: f5 = {f1 = text}, f3 = client timestamp.
+    const cn: Cursor = { buf, i: node.start }
+    const safeEnd = Math.min(node.end, buf.length)
+    let text: string | undefined
+    let sentAt: number | undefined
+    while (cn.i < safeEnd) {
+      const { field, wire } = readTag(cn)
+      if (field === 5 && wire === 2) {
+        const l = readVarint(cn)
+        const end = boundedEnd(cn, l)
+        text = firstSubString(buf, cn.i, end)
+        cn.i = end
+      } else if (field === 3 && wire === 0) {
+        sentAt = readVarint(cn)
+      } else {
+        skip(cn, wire)
+      }
+    }
+    if (!text) return null
+    return sentAt === undefined ? { text } : { text, sentAt }
   } catch {
     return null
   }

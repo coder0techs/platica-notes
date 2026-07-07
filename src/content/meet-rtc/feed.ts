@@ -75,7 +75,7 @@ export class RtcFeed {
     // since transcript speakers resolve at snapshot time).
     if (ev.sender && ev.sender.trim()) this.roster.set(ev.deviceId, ev.sender)
     const sender = ev.sender && ev.sender.trim() ? ev.sender : this.speakerFor(ev.deviceId)
-    return this.chat.add({ sender, sentAt: at, text: ev.text })
+    return this.chat.add({ sender, sentAt: at, text: ev.text }, ev.messageId)
   }
 
   transcriptSnapshot(): Utterance[] {

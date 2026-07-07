@@ -9,7 +9,8 @@
 import {
   buildAck,
   buildSubscribe,
-  decodeChatWrapper,
+  decodeCollectionsChat,
+  decodeOutgoingChat,
   decodeRoster,
   decodeTranscriptWrapper,
   readNestedOp,
@@ -346,22 +347,40 @@ function handleCaptions(bytes: Uint8Array): void {
   })
 }
 
+// Chat now rides the collections channel (Google Meet moved it off meet_messages
+// onto Google-Chat-backed meeting-space collections). One packet can carry several
+// messages (the collection batches/replays), so decode returns an array; the feed
+// dedupes replays by messageId.
 function handleChat(bytes: Uint8Array): void {
-  const p = decodeChatWrapper(bytes)
-  // Decode-result diagnostic: see whether the chat decoder yields anything on
-  // live wire data. Runs before the empty-guard below. Never throws into capture.
-  try {
-    record({ phase: "chat-decoded", got: p ? { deviceId: p.deviceId, text: p.text, sender: p.sender } : null })
-  } catch {
-    /* diagnostics must never affect capture */
+  const messages = decodeCollectionsChat(bytes)
+  for (const p of messages) {
+    // Decode-result diagnostic: see what the chat decoder yields on live wire data.
+    try {
+      record({ phase: "chat-decoded", got: { deviceId: p.deviceId, text: p.text, sender: p.sender, messageId: p.messageId } })
+    } catch {
+      /* diagnostics must never affect capture */
+    }
+    if (!p.deviceId || !p.text) continue
+    // Chat text in the diagnostics ring is deliberately the same truncated-PII
+    // class as transcript text above (truncation now applied inside record).
+    record({ phase: "chat", deviceId: p.deviceId, text: p.text })
+    // Pass sender/messageId through only when present; the feed prefers the
+    // embedded sender over the roster and dedupes on messageId.
+    dispatch({
+      type: "chat",
+      deviceId: p.deviceId,
+      text: p.text,
+      ...(p.sender ? { sender: p.sender } : {}),
+      ...(p.messageId ? { messageId: p.messageId } : {}),
+    })
   }
-  if (!p || !p.deviceId || !p.text) return
-  // Chat text in the diagnostics ring is deliberately the same truncated-PII
-  // class as transcript text above (truncation now applied inside record).
-  record({ phase: "chat", deviceId: p.deviceId, text: p.text })
-  // Pass the embedded sender through only when present; the feed prefers it over
-  // the roster lookup. Spread keeps the event shape unchanged when sender is absent.
-  dispatch({ type: "chat", deviceId: p.deviceId, text: p.text, ...(p.sender ? { sender: p.sender } : {}) })
+}
+
+// The collections channel multiplexes roster (devices) and chat (messages), so a
+// single consumer feeds both decoders; each ignores the other's entries.
+function handleCollections(bytes: Uint8Array): void {
+  handleRoster(bytes)
+  handleChat(bytes)
 }
 
 function handleRoster(bytes: Uint8Array): void {
@@ -381,6 +400,34 @@ function handleRoster(bytes: Uint8Array): void {
     dispatched++
   }
   if (dispatched > 0) record({ phase: "roster", count: dispatched })
+}
+
+// Diagnostic-only consumer for data channels we do NOT otherwise read (copresent,
+// coannotations, s11y-sync, and any future label). Meet stopped opening the
+// meet_messages channel our chat reader is bound to, and an incoming chat message
+// from another participant was never observed on it — so we do not yet know which
+// channel now carries received chat. This logs the raw (gzip-normalized) bytes of
+// every message on such a channel, but ONLY when the debug log is enabled: the
+// debugEnabled guard runs BEFORE any read/decompress, so a default install reads
+// nothing off these channels and does no work. It never decodes, dispatches, or
+// otherwise changes capture — it exists purely to locate the incoming-chat
+// transport from a real two-party meeting, then it can be removed.
+function attachRawDiagnostic(ch: RTCDataChannel): void {
+  let queue: Promise<void> = Promise.resolve()
+  ch.addEventListener("message", (e: MessageEvent) => {
+    // Gate first: no reading, no work, nothing recorded unless debug is on.
+    if (!debugEnabled) return
+    if (!(e.data instanceof ArrayBuffer) && !(e.data instanceof Uint8Array)) return
+    const data = e.data as ArrayBuffer
+    queue = queue.then(async () => {
+      try {
+        const bytes = await toBytes(data)
+        record({ phase: "channel-raw", label: ch.label, bytes: bytes.length, hex: toHex(bytes, bytes.length) })
+      } catch {
+        /* diagnostics must never affect capture */
+      }
+    })
+  })
 }
 
 function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void): void {
@@ -464,10 +511,13 @@ function handleChannel(ch: RTCDataChannel, pc: RTCPeerConnection): void {
       const open = sessions.filter((s) => s.channel.readyState === "open").length
       record({ phase: "captions-closed", id: ch.id, pc: pc.connectionState, sessions: sessions.length, openSessions: open })
     })
-  } else if (ch.label === "meet_messages") {
-    attachConsumer(ch, handleChat)
   } else if (ch.label === "collections") {
-    attachConsumer(ch, handleRoster)
+    attachConsumer(ch, handleCollections)
+  } else {
+    // Any other channel (copresent, coannotations, s11y-sync, …). We do not read
+    // these for capture; attach a debug-gated raw logger so a two-party meeting
+    // reveals where incoming chat now flows (see attachRawDiagnostic).
+    attachRawDiagnostic(ch)
   }
 }
 
@@ -510,9 +560,48 @@ function install(): boolean {
           const seq = readNestedSeq(u)
           if (seq !== undefined) s.seq = seq
         }
+      } else {
+        // Own outgoing chat (real feature, always on): the local user's message is
+        // never echoed back to this client (collections only carries OTHERS' chat),
+        // so we read it from the outgoing meet_messages send and attribute it to
+        // self. Read-only: we decode a view and call through to the real send.
+        if (this.label === "meet_messages" && (data instanceof ArrayBuffer || data instanceof Uint8Array)) {
+          try {
+            const own = decodeOutgoingChat(data instanceof Uint8Array ? data : new Uint8Array(data))
+            if (own?.text) {
+              record({ phase: "chat", deviceId: lastSelfDeviceId ?? "self", text: own.text })
+              dispatch({
+                type: "chat",
+                deviceId: lastSelfDeviceId ?? "self",
+                text: own.text,
+                ...(lastSelfName ? { sender: lastSelfName } : {}),
+                // Dedupe key: the client timestamp is stable across any retransmit
+                // of the same send; fall back to the text when it is absent.
+                messageId: `self-out/${own.sentAt ?? own.text}`,
+              })
+            }
+          } catch {
+            /* own-chat capture must never affect the send */
+          }
+        }
+        // Diagnostic (debug-gated): log OUTGOING sends on non-media channels, so a
+        // future channel/format change is visible in the debug log.
+        if (debugEnabled && this.label !== "media-session") {
+          const label = this.label
+          if (typeof data === "string") {
+            record({ phase: "send-str", label, len: data.length, text: data.slice(0, 500) })
+          } else if (data instanceof ArrayBuffer || data instanceof Uint8Array) {
+            const copy = data instanceof Uint8Array ? data.slice() : new Uint8Array(data.slice(0))
+            void toBytes(copy)
+              .then((bytes) => record({ phase: "send-raw", label, bytes: bytes.length, hex: toHex(bytes, bytes.length) }))
+              .catch(() => {
+                /* diagnostics must never affect the send */
+              })
+          }
+        }
       }
     } catch {
-      /* best-effort counters */
+      /* best-effort counters + diagnostics must never affect the send */
     }
     return (origSend as any).apply(this, arguments as any)
   }
@@ -632,6 +721,49 @@ function install(): boolean {
     }
   }
 
+  // Diagnostic (debug-only): log OUTGOING request bodies. Chat you send is a POST
+  // to Google's chat backend (a non-meet host), carried in the REQUEST body — the
+  // response readers above never see it. This locates the chat-send endpoint and
+  // its payload so own-message capture can be wired. Skips static assets and
+  // bodyless requests; records url + method + a text preview + a bounded hex.
+  // Read-only: nothing here changes the request.
+  function logOutbound(method: string, url: string, bytes: Uint8Array | undefined): void {
+    try {
+      if (!debugEnabled || !bytes || bytes.length === 0) return
+      const lower = url.toLowerCase()
+      if (
+        lower.includes(".js") || lower.includes(".css") || lower.includes(".png") ||
+        lower.includes(".jpg") || lower.includes(".woff") || lower.includes(".svg") ||
+        lower.includes(".ico") || lower.includes("/gen_204") || lower.includes("/log?")
+      ) {
+        return
+      }
+      void toBytes(bytes)
+        .then((norm) => {
+          let text: string | undefined
+          try {
+            text = new TextDecoder("utf-8", { fatal: false }).decode(norm).slice(0, 400)
+          } catch {
+            /* non-text body */
+          }
+          record({ phase: "outbound", method, url, bytes: norm.length, text, hex: toHex(norm, Math.min(norm.length, 400)) })
+        })
+        .catch(() => {
+          /* diagnostics must never affect the request */
+        })
+    } catch {
+      /* diagnostics must never affect the request */
+    }
+  }
+
+  function bodyToBytes(body: unknown): Uint8Array | undefined {
+    if (typeof body === "string") return new TextEncoder().encode(body)
+    if (body instanceof Uint8Array) return body
+    if (body instanceof ArrayBuffer) return new Uint8Array(body)
+    if (ArrayBuffer.isView(body)) return new Uint8Array(body.buffer, body.byteOffset, body.byteLength)
+    return undefined
+  }
+
   // fetch: call through, read a CLONE of the response body asynchronously, and
   // ALWAYS return the original Response untouched (the clone is what we consume,
   // so Meet's reader sees a pristine body). Never await the logging.
@@ -646,6 +778,18 @@ function install(): boolean {
           (input instanceof Request ? input.method : "GET") ||
           "GET"
         const url = input instanceof Request ? input.url : String(input)
+        // Diagnostic: log the OUTGOING request body (where our own chat lives).
+        if (debugEnabled) {
+          const b = bodyToBytes((args[1] as RequestInit | undefined)?.body)
+          if (b) logOutbound(method, url, b)
+          else if (input instanceof Request) {
+            try {
+              input.clone().arrayBuffer().then((ab) => logOutbound(method, url, new Uint8Array(ab))).catch(() => {})
+            } catch {
+              /* clone may throw on some request types */
+            }
+          }
+        }
         // Skip the clone+read entirely unless this URL's body is actually used.
         if (!wantsBody(url)) return p
         Promise.resolve(p)
@@ -715,6 +859,28 @@ function install(): boolean {
     } as typeof XMLHttpRequest.prototype.open
   } catch (err) {
     record({ phase: "hook-error", where: "xhr-open", error: String(err) })
+  }
+
+  // XHR send: diagnostic (debug-only) log of the OUTGOING request body, same
+  // purpose as the fetch outbound logger. Calls through untouched.
+  try {
+    const origXhrSend = XMLHttpRequest.prototype.send
+    XMLHttpRequest.prototype.send = function (
+      this: XMLHttpRequest & { __platicaMethod?: string; __platicaUrl?: string },
+      body?: Document | XMLHttpRequestBodyInit | null,
+    ) {
+      try {
+        if (debugEnabled && body != null) {
+          const b = bodyToBytes(body)
+          if (b) logOutbound(this.__platicaMethod ?? "GET", this.__platicaUrl ?? "", b)
+        }
+      } catch {
+        /* diagnostics must never affect the request */
+      }
+      return (origXhrSend as any).apply(this, arguments as any)
+    } as typeof XMLHttpRequest.prototype.send
+  } catch (err) {
+    record({ phase: "hook-error", where: "xhr-send", error: String(err) })
   }
 
   const OrigPC = w.RTCPeerConnection
