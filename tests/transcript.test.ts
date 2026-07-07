@@ -107,11 +107,52 @@ describe("mergeTimeline", () => {
     const out = mergeTimeline(
       [
         u("Alice", "2026-06-10T10:01:00.000Z", "one"),
-        u("Alice", "2026-06-10T10:01:05.000Z", "two"),
+        u("Alice", "2026-06-10T10:01:02.000Z", "two"),
       ],
       [],
     )
     expect(out).toEqual([{ kind: "speech", speaker: "Alice", text: "one two", at: "2026-06-10T10:01:00.000Z" }])
+  })
+
+  it("breaks a same-speaker run when the pause exceeds the paragraph gap", () => {
+    // A long silence between two utterances of the same speaker is a new paragraph,
+    // not a continuation — the panel must show the break the way the saved file does.
+    const out = mergeTimeline(
+      [
+        u("Alice", "2026-06-10T10:01:00.000Z", "before the pause"),
+        u("Alice", "2026-06-10T10:01:13.000Z", "after a long pause"),
+      ],
+      [],
+    )
+    expect(out.map((e) => [e.speaker, e.text])).toEqual([
+      ["Alice", "before the pause"],
+      ["Alice", "after a long pause"],
+    ])
+  })
+
+  it("keeps a same-speaker run merged when the pause is under the paragraph gap", () => {
+    const out = mergeTimeline(
+      [
+        u("Alice", "2026-06-10T10:01:00.000Z", "still"),
+        u("Alice", "2026-06-10T10:01:02.000Z", "talking"),
+      ],
+      [],
+    )
+    expect(out).toEqual([{ kind: "speech", speaker: "Alice", text: "still talking", at: "2026-06-10T10:01:00.000Z" }])
+  })
+
+  it("measures the pause from the last merged piece, not the block start", () => {
+    // Three pieces 3s apart span 6s in total but never pause longer than the gap,
+    // so they stay one block: the break is about a real silence, not block length.
+    const out = mergeTimeline(
+      [
+        u("Alice", "2026-06-10T10:01:00.000Z", "a"),
+        u("Alice", "2026-06-10T10:01:03.000Z", "b"),
+        u("Alice", "2026-06-10T10:01:06.000Z", "c"),
+      ],
+      [],
+    )
+    expect(out).toEqual([{ kind: "speech", speaker: "Alice", text: "a b c", at: "2026-06-10T10:01:00.000Z" }])
   })
 
   it("returns only chat when there is no transcript", () => {
@@ -222,10 +263,9 @@ describe("interruption-split interaction", () => {
     expect(out.map((e) => e.speaker)).toEqual(["Alice", "Bob", "Alice"])
   })
 
-  it("re-merges same-speaker segments when nothing interleaves (periodic split invisible in the panel)", () => {
-    // A 60s periodic split with no chat/other speaker between the two segments
-    // collapses back to one block in the panel — the split only matters once
-    // something time-sorts between the pieces.
+  it("breaks a long monologue's segments into separate paragraphs (the pause between them is real)", () => {
+    // A 60s gap is well past the paragraph threshold, so the two segments render as
+    // two blocks — the panel now surfaces the pause instead of gluing them.
     const out = mergeTimeline(
       [
         u("Alice", "2026-06-10T10:01:00.000Z", "part one"),
@@ -233,7 +273,7 @@ describe("interruption-split interaction", () => {
       ],
       [],
     )
-    expect(out).toEqual([{ kind: "speech", speaker: "Alice", text: "part one part two", at: "2026-06-10T10:01:00.000Z" }])
+    expect(out.map((e) => e.text)).toEqual(["part one", "part two"])
   })
 })
 

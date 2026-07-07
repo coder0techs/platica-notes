@@ -63,23 +63,43 @@ export function flattenTimeline(transcript: Utterance[], chat: ChatMessage[], no
     .map((x) => x.entry)
 }
 
+// A silence at least this long between two of a speaker's consecutive utterances
+// starts a new paragraph in the panel rather than continuing the previous one. Sub-
+// second gaps dominate continuous speech, so this only breaks on a real pause and
+// keeps the panel readable. Presentation-only: independent of feed.ts's data-level
+// split thresholds (the saved file, built from flattenTimeline, breaks on every
+// utterance regardless).
+const PARAGRAPH_GAP_MS = 4000
+
 // Merge speech and chat into one chronological timeline (used by the live panel).
 // Unlike mergeUtterances (which collapses by array adjacency), this interleaves by
 // time FIRST so a chat dropped mid-monologue lands in its true position, THEN
 // collapses consecutive same-speaker SPEECH - a chat or a different speaker breaks
-// the run, so a link pasted during a long turn splits it where it happened. Chat is
-// never folded into a speaker's speech.
+// the run, and so does a pause of at least PARAGRAPH_GAP_MS, so a link pasted during
+// a long turn (or the speaker falling silent and resuming) splits it where it
+// happened. Chat is never folded into a speaker's speech.
 export function mergeTimeline(transcript: Utterance[], chat: ChatMessage[], notes: Note[] = []): TimelineEntry[] {
   const sorted = flattenTimeline(transcript, chat, notes)
   const out: TimelineEntry[] = []
+  // Arrival time of the last entry folded into the current block; the pause is
+  // measured from here (not the block's start) so a long block of continuous
+  // speech never breaks on its own length.
+  let lastPieceAt = ""
   for (const entry of sorted) {
     const last = out[out.length - 1]
-    if (entry.kind === "speech" && last && last.kind === "speech" && last.speaker === entry.speaker) {
-      // Same-speaker speech run: join (dropping empty pieces so no double spaces).
+    const continues =
+      entry.kind === "speech" &&
+      last &&
+      last.kind === "speech" &&
+      last.speaker === entry.speaker &&
+      Date.parse(entry.at) - Date.parse(lastPieceAt) < PARAGRAPH_GAP_MS
+    if (continues) {
+      // Same-speaker speech run within the gap: join (dropping empty pieces so no double spaces).
       if (entry.text) last.text = last.text ? `${last.text} ${entry.text}` : entry.text
     } else {
       out.push({ ...entry })
     }
+    lastPieceAt = entry.at
   }
   return out
 }
