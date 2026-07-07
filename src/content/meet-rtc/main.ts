@@ -20,6 +20,7 @@ import {
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "./bridge"
 import type { RtcConfig, RtcEvent } from "./bridge"
 import { makeChannelIdAllocator, shouldRecreateCaptions } from "./lifecycle"
+import { extractMeetBuild } from "./build-probe"
 import { base64ToBytes, extractRosterPairs, extractSelfDevice, extractSelfName } from "./identity"
 import { DEFAULT_SETTINGS } from "../../shared/types"
 // Meet finishes its own media-session handshake within this window; sending the
@@ -337,7 +338,7 @@ function handleCaptions(bytes: Uint8Array): void {
     firstTranscript = false
     log("first transcript", { lang: captionLanguage })
   }
-  record({ phase: "transcript", text: m.text, deviceId: m.deviceId, messageId: m.messageId })
+  record({ phase: "transcript", text: m.text, deviceId: m.deviceId, messageId: m.messageId, langId: m.langId })
   dispatch({
     type: "transcript",
     deviceId: m.deviceId,
@@ -913,7 +914,26 @@ function install(): boolean {
   const version = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev"
   const commit = typeof __BUILD_COMMIT__ === "string" ? __BUILD_COMMIT__ : "dev"
   record({ phase: "installed", version, commit })
+  // Capture Meet's server build tag so a future capture regression can be pinned to
+  // a specific Meet release. WIZ_global_data may not exist yet at document_start, so
+  // poll a few times, then give up quietly. Fully guarded; the debug log is where it
+  // lands (record() drops it when debug is off).
+  probeMeetBuild()
   return true
+}
+
+function probeMeetBuild(tries = 0): void {
+  try {
+    const build = extractMeetBuild((window as unknown as { WIZ_global_data?: unknown }).WIZ_global_data)
+    if (build) {
+      record({ phase: "meet-build", build })
+      return
+    }
+  } catch (err) {
+    record({ phase: "meet-build-error", error: String(err) })
+    return
+  }
+  if (tries < 5) setTimeout(() => probeMeetBuild(tries + 1), 1000)
 }
 
 if (!install()) {
