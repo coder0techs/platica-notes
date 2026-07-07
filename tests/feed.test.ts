@@ -304,21 +304,32 @@ describe("RtcFeed interruption split", () => {
     expect(alice).toEqual([{ speaker: "Speaker 1", startedAt: t(0), text: "one three" }])
   })
 
-  it("splits on a long solo pause even with nobody else speaking", () => {
+  it("does not split a solo pause, however long, when nobody else speaks", () => {
+    // Only another speaker interrupting splits a turn. A solo pause never does:
+    // Meet already starts a fresh messageId after a real pause, so there is
+    // nothing to split, and splitting a lone messageId would only fragment it.
     const feed = new RtcFeed()
     feed.handleCaption(caption(ALICE, 1, 1, "first thought"), t(0))
     feed.handleCaption(caption(ALICE, 1, 2, "first thought and then some"), t(6000))
     expect(feed.transcriptSnapshot()).toEqual([
-      { speaker: "Speaker 1", startedAt: t(0), text: "first thought" },
-      { speaker: "Speaker 1", startedAt: t(6000), text: "and then some" },
+      { speaker: "Speaker 1", startedAt: t(0), text: "first thought and then some" },
     ])
   })
 
-  it("does not split a solo pause shorter than the silence gap", () => {
+  it("keeps a long continuous monologue as a single block", () => {
     const feed = new RtcFeed()
-    feed.handleCaption(caption(ALICE, 1, 1, "a"), t(0))
-    feed.handleCaption(caption(ALICE, 1, 2, "a b"), t(4000))
-    expect(feed.transcriptSnapshot()).toEqual([{ speaker: "Speaker 1", startedAt: t(0), text: "a b" }])
+    let version = 1
+    let text = "w0"
+    feed.handleCaption(caption(ALICE, 1, version, text), t(0))
+    for (let ms = 2500; ms <= 62500; ms += 2500) {
+      version += 1
+      text += ` w${ms}`
+      feed.handleCaption(caption(ALICE, 1, version, text), t(ms))
+    }
+    const result = feed.transcriptSnapshot()
+    expect(result).toHaveLength(1)
+    expect(result[0].startedAt).toBe(t(0))
+    expect(result[0].text.endsWith("w62500")).toBe(true)
   })
 
   it("does not treat the same speaker's other message as an interruption", () => {
@@ -330,26 +341,6 @@ describe("RtcFeed interruption split", () => {
     feed.handleCaption(caption(ALICE, 1, 2, "first extended"), t(3000))
     const msg1 = feed.transcriptSnapshot().filter((u) => u.startedAt === t(0))
     expect(msg1).toEqual([{ speaker: "Speaker 1", startedAt: t(0), text: "first extended" }])
-  })
-
-  it("splits a long continuous monologue by max segment duration", () => {
-    const feed = new RtcFeed()
-    let version = 1
-    let text = "w0"
-    feed.handleCaption(caption(ALICE, 1, version, text), t(0))
-    // Revisions every 2.5s (under the silence gap) so only the 60s segment cap can
-    // trigger a split; cross the cap at t=60000.
-    for (let ms = 2500; ms <= 62500; ms += 2500) {
-      version += 1
-      text += ` w${ms}`
-      feed.handleCaption(caption(ALICE, 1, version, text), t(ms))
-    }
-    const result = feed.transcriptSnapshot()
-    expect(result).toHaveLength(2)
-    expect(result[0].startedAt).toBe(t(0))
-    expect(result[0].text.startsWith("w0")).toBe(true)
-    expect(result[1].startedAt).toBe(t(60000))
-    expect(result[1].text).toBe("w60000 w62500")
   })
 
   it("carries a per-segment version history so alternatives stay attached after a split", () => {

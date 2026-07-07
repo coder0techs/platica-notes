@@ -6,14 +6,15 @@ import type { CaptionHistory, ChatMessage, Utterance } from "../../shared/types"
 import { ChatLog } from "../core/collector"
 import type { RtcCaptionEvent, RtcChatEvent } from "./bridge"
 
-// Meet streams one messageId per utterance and keeps growing it even after other
-// speakers interject or the speaker pauses, so a single messageId can span several
-// real turns. Anchoring all of its text at the first-seen time sorts late words back
-// into an early block and breaks chronology. We therefore split a messageId into
-// segments — each a block with its own start time — on any of these signals:
-const INTERRUPTION_GAP_MS = 1000 // another speaker spoke AND this message was quiet for at least this long
-const SILENCE_GAP_MS = 5000 // this message was quiet for at least this long, even with nobody else
-const SEGMENT_MAX_MS = 60000 // a single uninterrupted segment may not grow past this (keeps a monologue time-addressable)
+// Meet keeps one messageId growing even after another speaker interjects, so a
+// single messageId can span an interruption. Anchoring all of its text at the
+// first-seen time sorts the post-interruption words back before the interrupter and
+// breaks chronology. We therefore split such a messageId into segments — each a
+// block with its own start time — when another speaker spoke AND this message had
+// gone quiet for at least INTERRUPTION_GAP_MS. (A solo pause is NOT split: Meet
+// already starts a fresh messageId after a real pause, so there is nothing to fix
+// and splitting a lone messageId would only fragment it.)
+const INTERRUPTION_GAP_MS = 1000
 
 const elapsedMs = (fromIso: string, toIso: string): number => Date.parse(toIso) - Date.parse(fromIso)
 
@@ -95,12 +96,7 @@ export class RtcFeed {
 
       const otherSpoke = this.lastEventDeviceId !== "" && this.lastEventDeviceId !== ev.deviceId
       const sinceLast = elapsedMs(existing.lastAt, at)
-      const currentSegment = existing.segments[existing.segments.length - 1]
-      const segmentAge = elapsedMs(currentSegment.startedAt, at)
-      const shouldSplit =
-        (otherSpoke && sinceLast >= INTERRUPTION_GAP_MS) ||
-        sinceLast >= SILENCE_GAP_MS ||
-        segmentAge >= SEGMENT_MAX_MS
+      const shouldSplit = otherSpoke && sinceLast >= INTERRUPTION_GAP_MS
       if (shouldSplit) {
         // Everything shown so far belongs to the closing segment; the new one carries
         // only the words that follow, timestamped at this revision.
