@@ -16,6 +16,17 @@ import type { RtcCaptionEvent, RtcChatEvent } from "./bridge"
 // and splitting a lone messageId would only fragment it.)
 const INTERRUPTION_GAP_MS = 1000
 
+// The local user's own outgoing chat is captured on two independent transports:
+// the meet_messages send hook (id "self-out/…") and the embedded Google Chat frame
+// (id "self-topic/…"). Both can fire for a single send, and because their dedup ids
+// differ, ChatLog's id dedup cannot collapse them. Guard here: a self-authored
+// message (id prefixed "self-") whose exact text was already accepted within this
+// window is the other transport's copy of the same send — drop it. A genuine
+// re-send of the same text arrives well outside the window and is kept.
+const SELF_CHAT_DEDUP_MS = 5000
+
+const isSelfChatId = (id?: string): boolean => id !== undefined && id.startsWith("self-")
+
 const elapsedMs = (fromIso: string, toIso: string): number => Date.parse(toIso) - Date.parse(fromIso)
 
 // A word for prefix comparison, folded the same way collapseVersions folds frames:
@@ -80,6 +91,8 @@ export class RtcFeed {
   // my last revision" — O(1), no scan. Chat does not touch this (it never splits speech).
   private lastEventDeviceId = ""
   private chat = new ChatLog()
+  // text → ms of the last accepted self-authored chat, for cross-transport dedup.
+  private lastSelfChatAt = new Map<string, number>()
   private roster: Map<string, string>
 
   // The roster map can be shared with the caller (it streams from join time,
@@ -138,6 +151,16 @@ export class RtcFeed {
 
   /** Returns true if appended (not a consecutive duplicate). */
   handleChat(ev: RtcChatEvent, at: string): boolean {
+    // Cross-transport dedup for the user's own chat: the same send can arrive on
+    // both self transports with different ids, so collapse a self message whose
+    // exact text was just accepted (see SELF_CHAT_DEDUP_MS).
+    if (isSelfChatId(ev.messageId)) {
+      const textKey = ev.text.trim()
+      const atMs = Date.parse(at)
+      const prev = this.lastSelfChatAt.get(textKey)
+      if (prev !== undefined && atMs - prev < SELF_CHAT_DEDUP_MS) return false
+      this.lastSelfChatAt.set(textKey, atMs)
+    }
     // Sender resolved at append time, not at snapshot time (unlike transcript speakers).
     // Deliberate: chat needs a human-readable name immediately (seconds after join,
     // before the roster is fully streamed); transcripts can afford retroactive resolution.

@@ -377,3 +377,28 @@ describe("RtcFeed interruption split", () => {
     ])
   })
 })
+
+describe("RtcFeed own-chat cross-transport dedup", () => {
+  it("collapses the same self message captured on both transports", () => {
+    // meet_messages hook ("self-out/…") and the chat frame ("self-topic/…") both
+    // fire for one send; ChatLog cannot collapse them (distinct ids), the feed must.
+    const feed = new RtcFeed()
+    expect(feed.handleChat(chatWithId("self", "Hello team", "self-out/123"), t(0))).toBe(true)
+    expect(feed.handleChat(chatWithId("self", "Hello team", "self-topic/456"), t(200))).toBe(false)
+    expect(feed.chatSnapshot()).toHaveLength(1)
+  })
+
+  it("keeps a genuine re-send of the same text outside the window", () => {
+    const feed = new RtcFeed()
+    expect(feed.handleChat(chatWithId("self", "ok", "self-topic/1"), t(0))).toBe(true)
+    expect(feed.handleChat(chatWithId("self", "ok", "self-topic/2"), t(6000))).toBe(true)
+    expect(feed.chatSnapshot()).toHaveLength(2)
+  })
+
+  it("does not apply the self guard to others' chat with identical text", () => {
+    const feed = new RtcFeed()
+    expect(feed.handleChat(chatWithId(ALICE, "ok", "spaces/a/messages/1"), t(0))).toBe(true)
+    expect(feed.handleChat(chatWithId(BOB, "ok", "spaces/a/messages/2"), t(200))).toBe(true)
+    expect(feed.chatSnapshot()).toHaveLength(2)
+  })
+})
