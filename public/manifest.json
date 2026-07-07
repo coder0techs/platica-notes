@@ -10,7 +10,7 @@
     "128": "icons/icon128.png"
   },
   "permissions": ["storage", "unlimitedStorage", "downloads"],
-  "host_permissions": ["https://meet.google.com/*"],
+  "host_permissions": ["https://meet.google.com/*", "https://chat.google.com/*"],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
@@ -24,6 +24,13 @@
     {
       "matches": ["https://meet.google.com/*"],
       "js": ["content-meet.js"]
+    },
+    {
+      "matches": ["https://chat.google.com/*"],
+      "js": ["chatgoogle-main.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
     }
   ],
   "background": { "service_worker": "background.js" },

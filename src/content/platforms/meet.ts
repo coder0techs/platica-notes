@@ -10,6 +10,7 @@ import { mountTranscriptPanel } from "../core/transcript-panel"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
 import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
 import { RtcFeed } from "../meet-rtc/feed"
+import { parseOwnChatMessage } from "../chatgoogle/parse"
 import {
   nextLeaveState,
   nextMediaZeroSince,
@@ -183,6 +184,26 @@ async function main(): Promise<void> {
       return
     }
     activeMeetingHandler?.(parsed)
+  })
+
+  // The local user's OWN outgoing chat never returns over the meeting page's
+  // WebRTC channels — Google routes the in-meeting chat through an embedded
+  // Google Chat frame (chat.google.com). Our MAIN-world hook in that frame
+  // (chatgoogle/main.ts) reads the outgoing message text and postMessages it up
+  // here. Validate the sender ORIGIN (only the chat frame may send these), then
+  // feed it as a chat event attributed to self. Deduped on the topic id so a
+  // retransmit of the same send counts once.
+  window.addEventListener("message", (event) => {
+    if (event.origin !== "https://chat.google.com") return
+    const own = parseOwnChatMessage(event.data)
+    if (!own) return
+    activeMeetingHandler?.({
+      type: "chat",
+      deviceId: "self",
+      text: own.text,
+      sender: selfName ?? "You",
+      messageId: `self-topic/${own.messageId ?? own.text}`,
+    })
   })
 
   // The MAIN-world script must know the caption language before its first
