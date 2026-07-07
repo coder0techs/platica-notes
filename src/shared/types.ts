@@ -3,6 +3,13 @@ export type PlatformId = "meet" | "zoom" | "teams"
 export interface Utterance {
   speaker: string
   startedAt: string // ISO 8601
+  /**
+   * ISO 8601 time the caption text last grew (reached its length). Marks the end of
+   * the spoken segment, ignoring Meet's late no-growth "flush" revisions. Used by the
+   * live panel to tell a long phrase from a real pause; optional so simpler callers
+   * (and legacy data) fall back to startedAt.
+   */
+  endedAt?: string
   text: string
 }
 

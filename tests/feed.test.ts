@@ -44,7 +44,7 @@ describe("RtcFeed transcript", () => {
     expect(feed.handleCaption(caption(ALICE, 1, 1, "Hel"), at)).toBe(true)
     expect(feed.handleCaption(caption(ALICE, 1, 2, "Hello there"), later)).toBe(true)
     expect(feed.transcriptSnapshot()).toEqual([
-      { speaker: "Speaker 1", startedAt: at, text: "Hello there" },
+      { speaker: "Speaker 1", startedAt: at, endedAt: later, text: "Hello there" },
     ])
   })
 
@@ -54,7 +54,7 @@ describe("RtcFeed transcript", () => {
     expect(feed.handleCaption(caption(ALICE, 1, 2, "Older revision"), later)).toBe(false)
     expect(feed.handleCaption(caption(ALICE, 1, 3, "Same version"), later)).toBe(false)
     expect(feed.transcriptSnapshot()).toEqual([
-      { speaker: "Speaker 1", startedAt: at, text: "Final text" },
+      { speaker: "Speaker 1", startedAt: at, endedAt: at, text: "Final text" },
     ])
   })
 
@@ -65,8 +65,8 @@ describe("RtcFeed transcript", () => {
     feed.handleCaption(caption(ALICE, 1, 2, "Hello everyone"), later)
     const result = feed.transcriptSnapshot()
     expect(result).toHaveLength(2)
-    expect(result[0]).toEqual({ speaker: "Speaker 1", startedAt: at, text: "Hello everyone" })
-    expect(result[1]).toEqual({ speaker: "Speaker 2", startedAt: at, text: "Hi" })
+    expect(result[0]).toEqual({ speaker: "Speaker 1", startedAt: at, endedAt: later, text: "Hello everyone" })
+    expect(result[1]).toEqual({ speaker: "Speaker 2", startedAt: at, endedAt: at, text: "Hi" })
   })
 
   it("resolves names retroactively when the roster arrives after speech", () => {
@@ -289,9 +289,9 @@ describe("RtcFeed interruption split", () => {
     feed.handleCaption(caption(BOB, 7, 1, "wait"), t(1000))
     feed.handleCaption(caption(ALICE, 1, 2, "I think we should go with option two"), t(3000))
     expect(feed.transcriptSnapshot()).toEqual([
-      { speaker: "Speaker 1", startedAt: t(0), text: "I think we should" },
-      { speaker: "Speaker 1", startedAt: t(3000), text: "go with option two" },
-      { speaker: "Speaker 2", startedAt: t(1000), text: "wait" },
+      { speaker: "Speaker 1", startedAt: t(0), endedAt: t(0), text: "I think we should" },
+      { speaker: "Speaker 1", startedAt: t(3000), endedAt: t(3000), text: "go with option two" },
+      { speaker: "Speaker 2", startedAt: t(1000), endedAt: t(1000), text: "wait" },
     ])
   })
 
@@ -301,7 +301,7 @@ describe("RtcFeed interruption split", () => {
     feed.handleCaption(caption(BOB, 7, 1, "two"), t(300))
     feed.handleCaption(caption(ALICE, 1, 2, "one three"), t(500))
     const alice = feed.transcriptSnapshot().filter((u) => u.speaker === "Speaker 1")
-    expect(alice).toEqual([{ speaker: "Speaker 1", startedAt: t(0), text: "one three" }])
+    expect(alice).toEqual([{ speaker: "Speaker 1", startedAt: t(0), endedAt: t(500), text: "one three" }])
   })
 
   it("does not split a solo pause, however long, when nobody else speaks", () => {
@@ -312,7 +312,7 @@ describe("RtcFeed interruption split", () => {
     feed.handleCaption(caption(ALICE, 1, 1, "first thought"), t(0))
     feed.handleCaption(caption(ALICE, 1, 2, "first thought and then some"), t(6000))
     expect(feed.transcriptSnapshot()).toEqual([
-      { speaker: "Speaker 1", startedAt: t(0), text: "first thought and then some" },
+      { speaker: "Speaker 1", startedAt: t(0), endedAt: t(6000), text: "first thought and then some" },
     ])
   })
 
@@ -340,7 +340,7 @@ describe("RtcFeed interruption split", () => {
     feed.handleCaption(caption(ALICE, 2, 1, "second"), t(2000))
     feed.handleCaption(caption(ALICE, 1, 2, "first extended"), t(3000))
     const msg1 = feed.transcriptSnapshot().filter((u) => u.startedAt === t(0))
-    expect(msg1).toEqual([{ speaker: "Speaker 1", startedAt: t(0), text: "first extended" }])
+    expect(msg1).toEqual([{ speaker: "Speaker 1", startedAt: t(0), endedAt: t(3000), text: "first extended" }])
   })
 
   it("carries a per-segment version history so alternatives stay attached after a split", () => {
@@ -361,7 +361,19 @@ describe("RtcFeed interruption split", () => {
     feed.handleCaption(caption(ALICE, 1, 1, "keep"), t(0))
     feed.handleCaption(caption(ALICE, 1, 2, "keep it whole"), t(800))
     expect(feed.transcriptSnapshot()).toEqual([
-      { speaker: "Speaker 1", startedAt: t(0), text: "keep it whole" },
+      { speaker: "Speaker 1", startedAt: t(0), endedAt: t(800), text: "keep it whole" },
+    ])
+  })
+
+  it("stamps endedAt at the last growth of the text, not a later no-growth flush", () => {
+    // Meet re-sends a messageId's final text at meeting end without adding words;
+    // endedAt must stay at the real spoken end, not jump to the flush time.
+    const feed = new RtcFeed()
+    feed.handleCaption(caption(ALICE, 1, 1, "hello"), t(0))
+    feed.handleCaption(caption(ALICE, 1, 2, "hello world"), t(2000))
+    feed.handleCaption(caption(ALICE, 1, 3, "hello world"), t(30000)) // flush, no growth
+    expect(feed.transcriptSnapshot()).toEqual([
+      { speaker: "Speaker 1", startedAt: t(0), endedAt: t(2000), text: "hello world" },
     ])
   })
 })

@@ -42,6 +42,10 @@ export function suffixAfter(full: string, base: string): string {
 // cumulative text owned by earlier segments (the prefix suffixAfter strips off).
 interface Segment {
   startedAt: string
+  // Time the text last GREW (reached its length). Marks the spoken end of the
+  // segment, ignoring Meet's late no-growth flush revisions — so the panel can tell
+  // a long phrase from a real pause.
+  endedAt: string
   base: string
   text: string
   // Every distinct text this segment took, in order (already prefix-stripped).
@@ -100,14 +104,19 @@ export class RtcFeed {
       if (shouldSplit) {
         // Everything shown so far belongs to the closing segment; the new one carries
         // only the words that follow, timestamped at this revision.
-        existing.segments.push({ startedAt: at, base: existing.fullText, text: "", versions: [] })
+        existing.segments.push({ startedAt: at, endedAt: at, base: existing.fullText, text: "", versions: [] })
       }
 
       existing.version = ev.messageVersion
       existing.fullText = ev.text
       existing.lastAt = at
       const segment = existing.segments[existing.segments.length - 1]
+      const prevLength = segment.text.length
       segment.text = suffixAfter(ev.text, segment.base)
+      // Advance endedAt only when the text actually grew, so a late flush that
+      // re-sends or shortens the text does not stretch the segment's end past when
+      // it was really spoken.
+      if (segment.text.length > prevLength) segment.endedAt = at
       if (segment.versions[segment.versions.length - 1] !== segment.text) {
         segment.versions.push(segment.text)
       }
@@ -121,7 +130,7 @@ export class RtcFeed {
       version: ev.messageVersion,
       fullText: ev.text,
       lastAt: at,
-      segments: [{ startedAt: at, base: "", text: firstText, versions: [firstText] }],
+      segments: [{ startedAt: at, endedAt: at, base: "", text: firstText, versions: [firstText] }],
     })
     this.lastEventDeviceId = ev.deviceId
     return true
@@ -152,7 +161,7 @@ export class RtcFeed {
       .flatMap((c) =>
         c.segments
           .filter((s) => s.text.trim() !== "")
-          .map((s) => ({ speaker: this.speakerFor(c.deviceId), startedAt: s.startedAt, text: s.text })),
+          .map((s) => ({ speaker: this.speakerFor(c.deviceId), startedAt: s.startedAt, endedAt: s.endedAt, text: s.text })),
       )
   }
 

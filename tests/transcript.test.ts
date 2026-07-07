@@ -92,7 +92,13 @@ describe("mergeTimeline", () => {
       [cm("Alice", "2026-06-10T10:01:30.000Z", "(see chat)")],
     )
     expect(out).toHaveLength(2)
-    expect(out[1]).toEqual({ kind: "chat", speaker: "Alice", text: "(see chat)", at: "2026-06-10T10:01:30.000Z" })
+    expect(out[1]).toEqual({
+      kind: "chat",
+      speaker: "Alice",
+      text: "(see chat)",
+      at: "2026-06-10T10:01:30.000Z",
+      endAt: "2026-06-10T10:01:30.000Z",
+    })
   })
 
   it("orders speech before chat at the same instant", () => {
@@ -111,7 +117,9 @@ describe("mergeTimeline", () => {
       ],
       [],
     )
-    expect(out).toEqual([{ kind: "speech", speaker: "Alice", text: "one two", at: "2026-06-10T10:01:00.000Z" }])
+    expect(out).toEqual([
+      { kind: "speech", speaker: "Alice", text: "one two", at: "2026-06-10T10:01:00.000Z", endAt: "2026-06-10T10:01:02.000Z" },
+    ])
   })
 
   it("breaks a same-speaker run when the pause exceeds the paragraph gap", () => {
@@ -138,7 +146,35 @@ describe("mergeTimeline", () => {
       ],
       [],
     )
-    expect(out).toEqual([{ kind: "speech", speaker: "Alice", text: "still talking", at: "2026-06-10T10:01:00.000Z" }])
+    expect(out).toEqual([
+      { kind: "speech", speaker: "Alice", text: "still talking", at: "2026-06-10T10:01:00.000Z", endAt: "2026-06-10T10:01:02.000Z" },
+    ])
+  })
+
+  it("merges a long continuous phrase with the next turn when the pause after its END is short", () => {
+    // Meet chops continuous speech into back-to-back phrase messageIds: phrase 1
+    // spans 20s, phrase 2 starts 1s after it ENDED. Measured end->start the pause is
+    // 1s, so they stay one paragraph despite starts being 21s apart.
+    const out = mergeTimeline(
+      [
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", endedAt: "2026-06-10T10:01:20.000Z", text: "a long continuous phrase" },
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:21.000Z", endedAt: "2026-06-10T10:01:25.000Z", text: "kept going" },
+      ],
+      [],
+    )
+    expect(out).toHaveLength(1)
+    expect(out[0].text).toBe("a long continuous phrase kept going")
+  })
+
+  it("breaks when the silence after the previous utterance's END exceeds the gap", () => {
+    const out = mergeTimeline(
+      [
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", endedAt: "2026-06-10T10:01:05.000Z", text: "before" },
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:20.000Z", endedAt: "2026-06-10T10:01:22.000Z", text: "after" },
+      ],
+      [],
+    )
+    expect(out.map((e) => e.text)).toEqual(["before", "after"])
   })
 
   it("measures the pause from the last merged piece, not the block start", () => {
@@ -152,12 +188,16 @@ describe("mergeTimeline", () => {
       ],
       [],
     )
-    expect(out).toEqual([{ kind: "speech", speaker: "Alice", text: "a b c", at: "2026-06-10T10:01:00.000Z" }])
+    expect(out).toEqual([
+      { kind: "speech", speaker: "Alice", text: "a b c", at: "2026-06-10T10:01:00.000Z", endAt: "2026-06-10T10:01:06.000Z" },
+    ])
   })
 
   it("returns only chat when there is no transcript", () => {
     const out = mergeTimeline([], [cm("Bob", "2026-06-10T10:00:00.000Z", "hello")])
-    expect(out).toEqual([{ kind: "chat", speaker: "Bob", text: "hello", at: "2026-06-10T10:00:00.000Z" }])
+    expect(out).toEqual([
+      { kind: "chat", speaker: "Bob", text: "hello", at: "2026-06-10T10:00:00.000Z", endAt: "2026-06-10T10:00:00.000Z" },
+    ])
   })
 
   it("returns an empty array when both inputs are empty", () => {
@@ -216,7 +256,9 @@ describe("flattenTimeline", () => {
 
   it("keeps a bare bookmark (empty text) as a note entry", () => {
     const out = flattenTimeline([], [], [nt("2026-06-10T10:00:30.000Z", "")])
-    expect(out).toEqual([{ kind: "note", speaker: "", text: "", at: "2026-06-10T10:00:30.000Z" }])
+    expect(out).toEqual([
+      { kind: "note", speaker: "", text: "", at: "2026-06-10T10:00:30.000Z", endAt: "2026-06-10T10:00:30.000Z" },
+    ])
   })
 
   it("at an identical instant, orders speech, then chat, then note", () => {
