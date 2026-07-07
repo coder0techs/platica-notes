@@ -71,7 +71,16 @@ content-to-background message contract.
   route to the private folder and are excluded from the debug log entirely.
 - **The Meet DOM contract is fragile.** `meet.ts` keys off a few Meet selectors
   (the leave icon, the meeting title). Re-verify them on a live meeting before
-  each release; they are the most likely thing to break silently.
+  each release; they are the most likely thing to break silently. Concrete
+  pre-release check (all in the `meet.ts` DOM-contract block near the top):
+  - `ICON_FONT` (`.google-symbols`) + `LEAVE_ICON_TEXT` (`call_end`) — the leave
+    button still carries this icon ligature; confirm leaving the call is detected.
+  - `MEETING_TITLE` (`.u6vdEc`) — still resolves the human title; if it breaks,
+    capture still works but the file is named from `document.title` (the code).
+  - `MEETING_PATH` regex still matches a real meeting URL.
+  - Channel labels in `meet-rtc/main.ts` (`media-session`, `captions`,
+    `collections`, `meet_messages`) still route; the debug log's `channel` phases
+    list what Meet actually opened, and `meet-build` records the Meet build tested.
 - **The saved-file format is structured.** `src/background/format.ts` emits the
   v2 format (YAML front matter plus a turn grid). Body text is newline-collapsed
   via `inlineText`, and front-matter scalars go through `yamlScalar`, to prevent

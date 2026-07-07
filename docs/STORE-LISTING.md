@@ -57,6 +57,12 @@ meeting's transcript and chat to the user's own computer.
 - **Host permission `https://meet.google.com/*`** — The extension only operates on
   Google Meet; it must run its content scripts there to read the meeting's live
   captions and chat. No other site is requested (no `<all_urls>`).
+- **Host permission `https://chat.google.com/*`** — Google Meet renders the
+  in-meeting chat inside an embedded Google Chat (`chat.google.com`) frame. To
+  capture the messages the user sends themselves (which never come back over the
+  meeting page), a content script must run in that frame to read the outgoing
+  message text locally. It reads only the user's own outgoing chat and never makes
+  a network request; the text is passed to the meeting tab in-browser.
 
 ## Privacy practices tab (data disclosures)
 
