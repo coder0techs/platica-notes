@@ -61,6 +61,29 @@ export function seedAttendees(prefix: string[], rosterNames: string[], selfName:
   return out
 }
 
+// Whether a roster device appearance is a mid-meeting JOIN worth marking inline.
+// Join arrives as an ordinary device event (deviceId -> name) that also streams
+// the initial roster and any post-reload re-sync, so we suppress the noise:
+//   - alreadyKnown: this deviceId was already accounted for this meeting (seeded
+//     from the roster at join, or seen earlier) — not a new arrival.
+//   - within the settle window (measured from THIS run's start, not the session's
+//     startedAt — a reload replays the whole roster): the initial roster / reload
+//     re-sync, whose members are already in the front-matter list.
+//   - self: the local user is never marked as "joining" their own recording.
+// The caller owns the known-device set (adds every seen deviceId regardless).
+export function isMidMeetingJoin(
+  name: string,
+  selfName: string | null,
+  alreadyKnown: boolean,
+  elapsedSinceJoinMs: number,
+  settleMs: number,
+): boolean {
+  if (alreadyKnown) return false
+  if (elapsedSinceJoinMs < settleMs) return false
+  if (selfName && name === selfName) return false
+  return true
+}
+
 // Authoritative end signal from the RTC layer. The MAIN-world script reports the
 // number of open media-session data channels (one per peer connection); when it
 // reaches zero the call's media path is down. A reconnect, however, can briefly

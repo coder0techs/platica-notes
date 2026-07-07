@@ -355,3 +355,52 @@ describe("isNearBottom", () => {
     expect(isNearBottom(150, 120)).toBe(false)
   })
 })
+
+describe("timeline with participant events", () => {
+  const pe = (at: string, name: string, kind: "join" | "leave" = "join") => ({ at, name, kind })
+
+  it("flattenTimeline includes a join as its own entry (empty text, at === endAt)", () => {
+    const out = flattenTimeline([], [], [], [pe("2026-06-10T10:05:00.000Z", "Grace Hopper")])
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({
+      kind: "join",
+      speaker: "Grace Hopper",
+      text: "",
+      at: "2026-06-10T10:05:00.000Z",
+      endAt: "2026-06-10T10:05:00.000Z",
+    })
+  })
+
+  it("places a join at its chronological position among speech and chat", () => {
+    const out = flattenTimeline(
+      [u("Alice", "2026-06-10T10:00:00.000Z", "hi"), u("Bob", "2026-06-10T10:10:00.000Z", "bye")],
+      [cm("Alice", "2026-06-10T10:06:00.000Z", "brb")],
+      [],
+      [pe("2026-06-10T10:05:00.000Z", "Grace Hopper")],
+    )
+    expect(out.map((e) => e.kind)).toEqual(["speech", "join", "chat", "speech"])
+  })
+
+  it("sorts a join before speech at the same instant (tie-break)", () => {
+    const at = "2026-06-10T10:05:00.000Z"
+    const out = flattenTimeline([u("Alice", at, "hi")], [], [], [pe(at, "Grace Hopper")])
+    expect(out.map((e) => e.kind)).toEqual(["join", "speech"])
+  })
+
+  it("mergeTimeline: a join breaks a same-speaker run where it happened", () => {
+    const out = mergeTimeline(
+      [u("Alice", "2026-06-10T10:00:00.000Z", "first"), u("Alice", "2026-06-10T10:00:02.000Z", "second")],
+      [],
+      [],
+      [pe("2026-06-10T10:00:01.000Z", "Grace Hopper")],
+    )
+    expect(out.map((e) => e.kind)).toEqual(["speech", "join", "speech"])
+    expect(out[0].text).toBe("first")
+    expect(out[2].text).toBe("second")
+  })
+
+  it("renders a reserved leave entry too", () => {
+    const out = flattenTimeline([], [], [], [pe("2026-06-10T10:05:00.000Z", "Grace Hopper", "leave")])
+    expect(out[0]).toMatchObject({ kind: "leave", speaker: "Grace Hopper" })
+  })
+})

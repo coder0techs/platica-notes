@@ -143,6 +143,49 @@ describe("formatMeetingText (v3)", () => {
     expect(text).toMatch(/### Bookmark · \d{2}:\d{2} · \+04:00\n\n\*\*Alice\*\*/)
   })
 
+  it("renders a participant join as a heading block with no body line", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [{ speaker: "Alice", startedAt: "2026-06-10T10:06:00.000Z", text: "after" }],
+      chat: [],
+      participantEvents: [{ at: "2026-06-10T10:05:00.000Z", name: "Grace Hopper", kind: "join" }],
+    }))
+    expect(text).toMatch(/### Joined · Grace Hopper · \d{2}:\d{2} · \+05:00\n\n\*\*Alice\*\*/)
+    // A join must not look like a speaker turn.
+    expect(text).not.toMatch(/^\*\*Grace Hopper\*\* · \d/m)
+  })
+
+  it("renders a reserved leave marker as a heading (nothing emits it yet, but the renderer handles it)", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [],
+      chat: [],
+      participantEvents: [{ at: "2026-06-10T10:07:00.000Z", name: "Grace Hopper", kind: "leave" }],
+    }))
+    expect(text).toMatch(/### Left · Grace Hopper · \d{2}:\d{2} · \+07:00/)
+  })
+
+  it("neutralizes newlines in a participant name so a marker cannot forge a turn header", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [],
+      chat: [],
+      participantEvents: [{ at: "2026-06-10T10:05:00.000Z", name: "Grace\n**Ada** · 10:00", kind: "join" }],
+    }))
+    expect(text).toContain("### Joined · Grace **Ada** · 10:00 · ")
+    expect(text).not.toMatch(/\n\*\*Ada\*\* · 10:00/)
+  })
+
+  it("interleaves a join into the transcript at its timestamp", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [
+        { speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "before" },
+        { speaker: "Bob", startedAt: "2026-06-10T10:05:00.000Z", text: "after" },
+      ],
+      chat: [],
+      participantEvents: [{ at: "2026-06-10T10:03:00.000Z", name: "Grace Hopper", kind: "join" }],
+    }))
+    expect(text.indexOf("Joined · Grace Hopper")).toBeGreaterThan(text.indexOf("before"))
+    expect(text.indexOf("Joined · Grace Hopper")).toBeLessThan(text.indexOf("after"))
+  })
+
   it("interleaves a note into the transcript at its timestamp", () => {
     const text = formatMeetingText(makeMeeting({
       transcript: [

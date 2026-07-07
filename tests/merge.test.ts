@@ -110,4 +110,14 @@ describe("mergeMeetings", () => {
     expect(m.visits).toHaveLength(3)
     expect(m.endedAt).toBe("2026-06-30T11:20:00.000Z")
   })
+
+  it("concatenates participant events across visits", () => {
+    const t = meeting({ participantEvents: [{ at: "2026-06-30T10:10:00.000Z", name: "Grace", kind: "join" }] })
+    const i = meeting({ id: "m2", participantEvents: [{ at: "2026-06-30T10:40:00.000Z", name: "Linus", kind: "join" }] })
+    const m = mergeMeetings(t, i)
+    expect(m.participantEvents).toEqual([
+      { at: "2026-06-30T10:10:00.000Z", name: "Grace", kind: "join" },
+      { at: "2026-06-30T10:40:00.000Z", name: "Linus", kind: "join" },
+    ])
+  })
 })

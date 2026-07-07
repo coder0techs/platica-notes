@@ -32,6 +32,13 @@ export interface Note {
   text: string
 }
 
+export interface ParticipantEvent {
+  at: string // ISO 8601
+  name: string
+  /** v1 emits only "join"; "leave" is reserved (renderers handle it, nothing emits it yet). */
+  kind: "join" | "leave"
+}
+
 export interface DebugEvent {
   t: string
   ctx: "rtc" | "adapter" | "bg"
@@ -53,6 +60,8 @@ export interface ActiveSession {
   rawVersions?: CaptionHistory[]
   /** Recorder's bookmarks/notes, timestamped. Rides alongside transcript so reload/recovery keep them. */
   notes?: Note[]
+  /** Participant join (and, later, leave) markers, timestamped. Rides alongside notes for reload/recovery. */
+  participantEvents?: ParticipantEvent[]
   /**
    * Learned deviceId -> display name map and the local user's own name. Persisted
    * so a mid-meeting page reload keeps resolving speaker names: Meet only streams
@@ -88,6 +97,8 @@ export interface Meeting {
   rawVersions?: CaptionHistory[]
   /** Recorder's bookmarks/notes, timestamped. */
   notes?: Note[]
+  /** Participant join (and, later, leave) markers, timestamped. */
+  participantEvents?: ParticipantEvent[]
   /** Display name of the local user who recorded this meeting. */
   recorder?: string
   /** BCP 47 caption language the stream was captured with, snapshot at finalize. */

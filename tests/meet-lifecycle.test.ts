@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  isMidMeetingJoin,
   nextLeaveState,
   nextMediaZeroSince,
   seedAttendees,
@@ -12,6 +13,26 @@ import {
 
 const GRACE = 8000
 const THRESHOLD = 3
+
+describe("isMidMeetingJoin", () => {
+  const SETTLE = 10000
+  it("marks a genuinely new device that arrives after the settle window", () => {
+    expect(isMidMeetingJoin("Grace Hopper", "Ada Lovelace", false, 15000, SETTLE)).toBe(true)
+  })
+  it("does not mark a device already known this meeting", () => {
+    expect(isMidMeetingJoin("Grace Hopper", "Ada Lovelace", true, 15000, SETTLE)).toBe(false)
+  })
+  it("does not mark a device within the settle window (initial roster / reload re-sync)", () => {
+    expect(isMidMeetingJoin("Grace Hopper", "Ada Lovelace", false, 5000, SETTLE)).toBe(false)
+    expect(isMidMeetingJoin("Grace Hopper", "Ada Lovelace", false, 0, SETTLE)).toBe(false)
+  })
+  it("never marks the local user (self) as joining", () => {
+    expect(isMidMeetingJoin("Ada Lovelace", "Ada Lovelace", false, 15000, SETTLE)).toBe(false)
+  })
+  it("marks a new arrival when self name is not yet known", () => {
+    expect(isMidMeetingJoin("Grace Hopper", null, false, 15000, SETTLE)).toBe(true)
+  })
+})
 const MEDIA_GRACE = 5000
 
 describe("shouldDrainTail (phantom-duplicate grace)", () => {

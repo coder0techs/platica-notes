@@ -1,4 +1,4 @@
-import type { ChatMessage, Note, Utterance } from "../../shared/types"
+import type { ChatMessage, Note, ParticipantEvent, Utterance } from "../../shared/types"
 import { isNearBottom, mergeTimeline } from "../../shared/transcript"
 import { registerUiEl } from "./ui"
 
@@ -65,7 +65,7 @@ export function mountTranscriptPanel(opts: {
   onVisibilityChange?: (visible: boolean) => void
   onAddNote?: (text: string) => void
 } = {}): {
-  update(transcript: Utterance[], chat: ChatMessage[], notes: Note[]): void
+  update(transcript: Utterance[], chat: ChatMessage[], notes: Note[], participantEvents?: ParticipantEvent[]): void
   toggle(): void
   unmount(): void
 } {
@@ -73,6 +73,7 @@ export function mountTranscriptPanel(opts: {
   let latestTranscript: Utterance[] = []
   let latestChat: ChatMessage[] = []
   let latestNotes: Note[] = []
+  let latestParticipantEvents: ParticipantEvent[] = []
   let query = ""
   let stickToBottom = true
   let throttleTimer: number | null = null
@@ -233,6 +234,8 @@ export function mountTranscriptPanel(opts: {
   // Notes/bookmarks read as the recorder's own marks: a fixed amber accent (not a
   // per-speaker color) so they stand apart from speech and chat.
   const NOTE_COLOR = "#fdd663"
+  // Participant join/leave markers get their own fixed accent, distinct from notes.
+  const PRESENCE_COLOR = "#81c995"
 
   function matches(entry: { speaker: string; text: string }): boolean {
     if (!query) return true
@@ -240,22 +243,35 @@ export function mountTranscriptPanel(opts: {
   }
 
   function render(): void {
-    const timeline = mergeTimeline(latestTranscript, latestChat, latestNotes).filter(matches)
+    const timeline = mergeTimeline(latestTranscript, latestChat, latestNotes, latestParticipantEvents).filter(matches)
     body.replaceChildren()
     for (const entry of timeline) {
       const block = document.createElement("div")
       block.style.cssText = "margin-bottom:12px;"
       const head = document.createElement("div")
       const isNote = entry.kind === "note"
+      const isPresence = entry.kind === "join" || entry.kind === "leave"
       const isBookmark = isNote && entry.text.trim() === ""
-      const headColor = isNote ? NOTE_COLOR : colorFor(entry.speaker)
+      // Bookmarks and presence markers have no body — just the heading line.
+      const noBody = isBookmark || isPresence
+      const headColor = isNote ? NOTE_COLOR : isPresence ? PRESENCE_COLOR : colorFor(entry.speaker)
       head.style.cssText = `color:${headColor};font:500 12px ${FONT};margin-bottom:2px;`
       // Chat is tagged so a pasted line is never mistaken for something said aloud;
-      // notes/bookmarks are tagged as the recorder's own marks.
-      const label = isBookmark ? "🔖 Bookmark" : isNote ? "📌 Note" : entry.kind === "chat" ? `${entry.speaker} (chat)` : entry.speaker
+      // notes/bookmarks are the recorder's own marks; join/leave are presence markers.
+      const label = isBookmark
+        ? "🔖 Bookmark"
+        : isNote
+          ? "📌 Note"
+          : entry.kind === "join"
+            ? `👋 ${entry.speaker} joined`
+            : entry.kind === "leave"
+              ? `🚪 ${entry.speaker} left`
+              : entry.kind === "chat"
+                ? `${entry.speaker} (chat)`
+                : entry.speaker
       head.textContent = `${label} ${formatClock(entry.at)}`
       block.append(head)
-      if (!isBookmark) {
+      if (!noBody) {
         const text = document.createElement("div")
         text.style.cssText =
           "color:#e8eaed;font:400 13px/1.5 Roboto,system-ui,sans-serif;white-space:pre-wrap;overflow-wrap:anywhere;"
@@ -286,10 +302,11 @@ export function mountTranscriptPanel(opts: {
   }
 
   return {
-    update(transcript: Utterance[], chat: ChatMessage[], notes: Note[]): void {
+    update(transcript: Utterance[], chat: ChatMessage[], notes: Note[], participantEvents: ParticipantEvent[] = []): void {
       latestTranscript = transcript
       latestChat = chat
       latestNotes = notes
+      latestParticipantEvents = participantEvents
       scheduleRender()
     },
     toggle(): void {

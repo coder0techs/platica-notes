@@ -45,6 +45,7 @@ export function mergeMeetings(target: Meeting, incoming: Meeting): Meeting {
     chat: [...target.chat, ...incoming.chat],
     rawVersions: [...(target.rawVersions ?? []), ...(incoming.rawVersions ?? [])],
     notes: [...(target.notes ?? []), ...(incoming.notes ?? [])],
+    participantEvents: [...(target.participantEvents ?? []), ...(incoming.participantEvents ?? [])],
     participants: [...new Set([...target.participants, ...incoming.participants])],
     visits: [...targetVisits, { startedAt: incoming.startedAt, endedAt: incoming.endedAt }],
   }

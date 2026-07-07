@@ -1,20 +1,21 @@
-import type { ChatMessage, Note, Utterance } from "./types"
+import type { ChatMessage, Note, ParticipantEvent, Utterance } from "./types"
 
-// One row of the unified meeting timeline: a speech turn, a chat message, or a
-// recorder's note/bookmark.
+// One row of the unified meeting timeline: a speech turn, a chat message, a
+// recorder's note/bookmark, or a participant join/leave marker.
 export interface TimelineEntry {
-  kind: "speech" | "chat" | "note"
+  kind: "speech" | "chat" | "note" | "join" | "leave"
   speaker: string
   text: string
   at: string // ISO 8601 — start of the entry
-  // ISO 8601 — end of the entry (for speech, when its text last grew; for chat/note,
-  // same as `at`). Lets the panel measure the real pause between turns.
+  // ISO 8601 — end of the entry (for speech, when its text last grew; for chat/note/
+  // join/leave, same as `at`). Lets the panel measure the real pause between turns.
   endAt: string
 }
 
-// Tie-break order when several entries share the same instant: speech first
-// (it is what was happening), then chat, then the recorder's note last.
-const KIND_ORDER: Record<TimelineEntry["kind"], number> = { speech: 0, chat: 1, note: 2 }
+// Tie-break order when several entries share the same instant: a join precedes
+// the speech it enables, speech (what was happening) next, then chat, then a
+// leave, then the recorder's note last.
+const KIND_ORDER: Record<TimelineEntry["kind"], number> = { join: 0, speech: 1, chat: 2, leave: 3, note: 4 }
 
 // Collapses consecutive utterances from the same speaker into one block, joining
 // their text with a single space. Strictly order-preserving: a different speaker
@@ -41,7 +42,12 @@ export function mergeUtterances(utterances: Utterance[]): Utterance[] {
 // utterance / chat message. Same sort and tie-break as mergeTimeline (at an
 // identical instant, speech sorts before chat), but no run-collapsing. This is
 // what the saved file consumes; the live panel still uses mergeTimeline.
-export function flattenTimeline(transcript: Utterance[], chat: ChatMessage[], notes: Note[] = []): TimelineEntry[] {
+export function flattenTimeline(
+  transcript: Utterance[],
+  chat: ChatMessage[],
+  notes: Note[] = [],
+  participantEvents: ParticipantEvent[] = [],
+): TimelineEntry[] {
   const raw: TimelineEntry[] = [
     ...transcript.map(
       (utterance): TimelineEntry => ({
@@ -62,6 +68,9 @@ export function flattenTimeline(transcript: Utterance[], chat: ChatMessage[], no
       }),
     ),
     ...notes.map((note): TimelineEntry => ({ kind: "note", speaker: "", text: note.text, at: note.at, endAt: note.at })),
+    ...participantEvents.map(
+      (event): TimelineEntry => ({ kind: event.kind, speaker: event.name, text: "", at: event.at, endAt: event.at }),
+    ),
   ]
   return raw
     .map((entry, index) => ({ entry, index }))
@@ -90,8 +99,13 @@ const PARAGRAPH_GAP_MS = 4000
 // the run, and so does a real pause (>= PARAGRAPH_GAP_MS between the previous block's
 // end and this entry's start), so the speaker falling silent and resuming splits it
 // where it happened. Chat is never folded into a speaker's speech.
-export function mergeTimeline(transcript: Utterance[], chat: ChatMessage[], notes: Note[] = []): TimelineEntry[] {
-  const sorted = flattenTimeline(transcript, chat, notes)
+export function mergeTimeline(
+  transcript: Utterance[],
+  chat: ChatMessage[],
+  notes: Note[] = [],
+  participantEvents: ParticipantEvent[] = [],
+): TimelineEntry[] {
+  const sorted = flattenTimeline(transcript, chat, notes, participantEvents)
   const out: TimelineEntry[] = []
   // End time of the current (last) block. The pause is measured from here to the next
   // entry's start, so continuous speech never breaks on a single phrase's length.

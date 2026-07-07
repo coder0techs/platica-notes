@@ -2,7 +2,7 @@ import { sendToBackground } from "../../shared/messages"
 import type { BackgroundResponse } from "../../shared/messages"
 import { getLocal, getSettings, saveSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
 import { DEFAULT_SETTINGS } from "../../shared/types"
-import type { ActiveSession, DebugEvent, Note, Settings } from "../../shared/types"
+import type { ActiveSession, DebugEvent, Note, ParticipantEvent, Settings } from "../../shared/types"
 import { SessionWriter } from "../core/persistence"
 import { isBookmarkChord, isHideUiChord } from "../core/hotkeys"
 import { isUiHidden, mountLanguagePrompt, mountMeetingControls, pulseActivity, setUiHidden, showPersistentNotice, showToast } from "../core/ui"
@@ -12,6 +12,7 @@ import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge
 import { RtcFeed } from "../meet-rtc/feed"
 import { parseOwnChatMessage } from "../chatgoogle/parse"
 import {
+  isMidMeetingJoin,
   nextLeaveState,
   nextMediaZeroSince,
   seedAttendees,
@@ -49,6 +50,10 @@ const CAPTION_FLUSH_MS = 2500
 // make-before-break and never reached zero. Evaluated on the END_WATCH_INTERVAL_MS
 // cadence, so effective latency is ~grace + one tick — well inside the tail budget.
 const MEDIA_END_GRACE_MS = 5000
+// A roster device seen within this window of a meeting's start is treated as the
+// initial roster (or a reload re-sync), not a mid-meeting join — so those already
+// present get no "joined" marker. Measured from THIS runMeeting's start.
+const JOIN_SETTLE_MS = 10000
 
 // Roster events stream from join time — often before our leave-icon detection
 // lands — so the deviceId → name map lives at page level and survives across
@@ -79,6 +84,11 @@ let addNoteToActive: ((text: string) => void) | null = null
 // roster device events and the self name. Meeting-scoped (not the page-level roster
 // map) so names never bleed from a previous meeting in the same tab.
 let recordAttendee: ((name: string) => void) | null = null
+// Set by runMeeting; classifies a roster device event as a mid-meeting JOIN and,
+// when it is one, appends a timestamped marker to the active meeting. Meeting-scoped
+// (own known-device set + settle window) so the initial roster and reload re-sync do
+// not produce markers. Null between meetings.
+let recordDevice: ((deviceId: string, name: string) => void) | null = null
 // Set by runMeeting; re-resolves the live transcript (speaker names resolve from
 // the roster at snapshot time) and pushes it to the panel. Called when a roster
 // device event arrives so a name learned mid-meeting shows up in the panel without
@@ -164,6 +174,7 @@ async function main(): Promise<void> {
       if (typeof parsed.deviceId === "string" && parsed.deviceId && typeof parsed.deviceName === "string" && parsed.deviceName) {
         roster.set(parsed.deviceId, parsed.deviceName)
         recordAttendee?.(parsed.deviceName)
+        recordDevice?.(parsed.deviceId, parsed.deviceName)
         refreshTranscript?.()
       }
       return
@@ -314,6 +325,7 @@ async function runMeeting(tabId: number): Promise<void> {
   const prefixParticipants = resumed?.participants ?? []
   const prefixRawVersions = resumed?.rawVersions ?? []
   const prefixNotes = resumed?.notes ?? []
+  const prefixParticipantEvents = resumed?.participantEvents ?? []
 
   const session: ActiveSession = {
     platform: "meet",
@@ -327,6 +339,7 @@ async function runMeeting(tabId: number): Promise<void> {
     participants: [...prefixParticipants],
     rawVersions: [...prefixRawVersions],
     notes: [...prefixNotes],
+    participantEvents: [...prefixParticipantEvents],
   }
   // A new meeting always starts in the default language; a resumed one keeps the
   // language it was captured with. Reset the live subscription so a previous
@@ -369,6 +382,15 @@ async function runMeeting(tabId: number): Promise<void> {
 
   // Recorder's notes/bookmarks for this meeting, seeded from a resumed snapshot.
   const notes: Note[] = [...prefixNotes]
+
+  // Mid-meeting join markers. The settle window is measured from THIS run's start
+  // (not session.startedAt — a resumed session's startedAt is far in the past, which
+  // would misclassify the whole reload re-sync as joins). knownDevices is seeded
+  // with everyone already in the page roster at join, so only genuinely new arrivals
+  // after the window produce a marker. participantEvents carries the resumed prefix.
+  const joinWatchStart = Date.now()
+  const knownDevices = new Set<string>(roster.keys())
+  const participantEvents: ParticipantEvent[] = [...prefixParticipantEvents]
 
   // Always wire up onDebugEvent so an OFF→ON mid-meeting toggle starts flushing
   // immediately. The closure self-gates on debugEnabled — no cost when debug is
@@ -418,7 +440,7 @@ async function runMeeting(tabId: number): Promise<void> {
     onVisibilityChange: (open) => controls.setTranscriptActive(open),
     onAddNote: addNote,
   })
-  panel.update(session.transcript, session.chat, session.notes ?? [])
+  panel.update(session.transcript, session.chat, session.notes ?? [], session.participantEvents ?? [])
 
   // Opt-in, loud, NON-blocking prompt to confirm/switch the caption language at the
   // start of a fresh meeting (capture is already running in the default). Skipped on
@@ -437,8 +459,24 @@ async function runMeeting(tabId: number): Promise<void> {
   // handler so a name learned mid-meeting appears without waiting for a caption.
   refreshTranscript = () => {
     session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
-    panel.update(session.transcript, session.chat, session.notes ?? [])
+    panel.update(session.transcript, session.chat, session.notes ?? [], session.participantEvents ?? [])
     writer.requestWrite()
+  }
+
+  // Classify each roster device appearance. A genuinely new device seen after the
+  // settle window (and not self) is a mid-meeting join → append a marker. Always
+  // logs the classification (leave-investigation aid) and records the deviceId.
+  recordDevice = (deviceId, name) => {
+    const alreadyKnown = knownDevices.has(deviceId)
+    const isJoin = isMidMeetingJoin(name, selfName, alreadyKnown, Date.now() - joinWatchStart, JOIN_SETTLE_MS)
+    knownDevices.add(deviceId)
+    dlog("device seen", { deviceId, name, alreadyKnown, isJoin })
+    if (!isJoin) return
+    participantEvents.push({ at: new Date().toISOString(), name: name.trim(), kind: "join" })
+    session.participantEvents = [...participantEvents]
+    panel.update(session.transcript, session.chat, session.notes ?? [], session.participantEvents)
+    writer.requestWrite()
+    pulseActivity()
   }
 
   // Append a timestamped note (empty text = a bare bookmark) to this meeting.
@@ -446,7 +484,7 @@ async function runMeeting(tabId: number): Promise<void> {
   function addNote(text: string): void {
     notes.push({ at: new Date().toISOString(), text: text.trim() })
     session.notes = [...notes]
-    panel.update(session.transcript, session.chat, session.notes)
+    panel.update(session.transcript, session.chat, session.notes, session.participantEvents ?? [])
     writer.requestWrite()
     pulseActivity()
   }
@@ -470,7 +508,7 @@ async function runMeeting(tabId: number): Promise<void> {
       }
       session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
       session.rawVersions = [...prefixRawVersions, ...feed.versionsSnapshot()]
-      panel.update(session.transcript, session.chat, session.notes ?? [])
+      panel.update(session.transcript, session.chat, session.notes ?? [], session.participantEvents ?? [])
       writer.requestWrite()
       pulseActivity()
     } else if (event.type === "chat") {
@@ -478,7 +516,7 @@ async function runMeeting(tabId: number): Promise<void> {
       session.chat = [...prefixChat, ...feed.chatSnapshot()]
       // Chat now shares the live timeline, so reflect it in the panel (and pulse)
       // exactly like a caption.
-      panel.update(session.transcript, session.chat, session.notes ?? [])
+      panel.update(session.transcript, session.chat, session.notes ?? [], session.participantEvents ?? [])
       writer.requestWrite()
       pulseActivity()
     }
@@ -558,6 +596,7 @@ async function runMeeting(tabId: number): Promise<void> {
     // so a late debug event can't resurrect the session.
     activeMeetingHandler = null
     recordAttendee = null
+    recordDevice = null
     refreshTranscript = null
     addNoteToActive = null
     onMediaState = null
@@ -572,6 +611,7 @@ async function runMeeting(tabId: number): Promise<void> {
     session.chat = [...prefixChat, ...feed.chatSnapshot()]
     session.participants = [...attendees]
     session.notes = [...notes]
+    session.participantEvents = [...participantEvents]
     // Capture the complete debug trail (including this "meeting ended") into the
     // final snapshot. Stays undefined when disabled — no behavioural change.
     if (debugEnabled) session.debug = [...prefixDebug, ...debugEvents.slice(debugStart)]

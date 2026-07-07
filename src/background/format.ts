@@ -135,7 +135,7 @@ export function formatMeetingText(meeting: Meeting, opts: FormatOptions = {}): s
   // from our own timestamps — no untrusted text, so injection-safety is intact.
   const visitAnchors = (meeting.visits ?? []).slice(1).map(v => v.startedAt)
   let visitPtr = 0
-  for (const entry of flattenTimeline(meeting.transcript, meeting.chat, meeting.notes)) {
+  for (const entry of flattenTimeline(meeting.transcript, meeting.chat, meeting.notes, meeting.participantEvents)) {
     while (visitPtr < visitAnchors.length && visitAnchors[visitPtr] <= entry.at) {
       const anchor = visitAnchors[visitPtr]
       lines.push(`## Visit ${visitPtr + 2} · rejoined ${clockLabel(anchor)} · +${elapsedLabel(meeting.startedAt, anchor)}`, "")
@@ -153,6 +153,14 @@ export function formatMeetingText(meeting: Meeting, opts: FormatOptions = {}): s
       } else {
         lines.push(`### Note · ${when}`, `> ${inlineText(entry.text)}`, "")
       }
+      continue
+    }
+    // A participant join/leave is an annotation, not an utterance: render it as a
+    // heading block with the name (inlineText'd so it can't forge a turn header)
+    // and no body. Only "join" is emitted today; "leave" is handled for the future.
+    if (entry.kind === "join" || entry.kind === "leave") {
+      const verb = entry.kind === "join" ? "Joined" : "Left"
+      lines.push(`### ${verb} · ${inlineText(entry.speaker)} · ${when}`, "")
       continue
     }
     // inlineText the speaker too: in the prose format the name IS the structural
