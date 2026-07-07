@@ -372,6 +372,37 @@ export function decodeRoster(buf: Uint8Array): RosterEntry[] {
   return results
 }
 
+// A participant LEAVING arrives on the same collections channel, at the same
+// nesting as the single-device form (outer.f1 → f2 → f13 → f1), but the device is
+// a BARE deviceId string at f3 with NO name leaf (live-verified wire form; a join
+// instead carries the device under an f2 leaf {f1=id, f2=name}). decodeRoster
+// requires a name so it silently drops these — this reads the removal. The sibling
+// f1 submessage carries a state enum (46=removed vs 43=present) we do not rely on;
+// the bare f3 id (no f2 leaf) is the discriminator. Returns removed deviceId(s);
+// tolerant of malformed input.
+export function decodeRosterLeave(buf: Uint8Array): string[] {
+  const out: string[] = []
+  try {
+    const c: Cursor = { buf, i: 0 }
+    const s1 = walkLen(c, buf.length, 1); if (!s1) return out
+    const c1: Cursor = { buf, i: s1.start }
+    const s2 = walkLen(c1, s1.end, 2); if (!s2) return out
+    const c2: Cursor = { buf, i: s2.start }
+    const s13 = walkLen(c2, s2.end, 13); if (!s13) return out
+    const c13: Cursor = { buf, i: s13.start }
+    const node = walkLen(c13, s13.end, 1); if (!node) return out
+    // Within f13.f1: f3 is the removed deviceId (bare string). Absent on joins,
+    // which instead carry an f2 leaf here.
+    const cNode: Cursor = { buf, i: node.start }
+    const idField = walkLen(cNode, node.end, 3)
+    if (idField) {
+      const id = decoder.decode(buf.slice(idField.start, Math.min(idField.end, buf.length)))
+      if (id) out.push(id)
+    }
+  } catch { /* tolerate malformed */ }
+  return out
+}
+
 // ---------- subscribe / ack builders ----------
 
 // MediaSessionDcBigPacket: subscribe to captions in `lang`.

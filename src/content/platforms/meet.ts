@@ -89,6 +89,9 @@ let recordAttendee: ((name: string) => void) | null = null
 // (own known-device set + settle window) so the initial roster and reload re-sync do
 // not produce markers. Null between meetings.
 let recordDevice: ((deviceId: string, name: string) => void) | null = null
+// Set by runMeeting; on a device removal (RtcDeviceLeaveEvent) appends a "leave"
+// marker for a known participant. Meeting-scoped. Null between meetings.
+let recordLeave: ((deviceId: string) => void) | null = null
 // Set by runMeeting; re-resolves the live transcript (speaker names resolve from
 // the roster at snapshot time) and pushes it to the panel. Called when a roster
 // device event arrives so a name learned mid-meeting shows up in the panel without
@@ -177,6 +180,10 @@ async function main(): Promise<void> {
         recordDevice?.(parsed.deviceId, parsed.deviceName)
         refreshTranscript?.()
       }
+      return
+    }
+    if (parsed.type === "device-leave") {
+      if (typeof parsed.deviceId === "string" && parsed.deviceId) recordLeave?.(parsed.deviceId)
       return
     }
     if (parsed.type === "self") {
@@ -479,6 +486,25 @@ async function runMeeting(tabId: number): Promise<void> {
     pulseActivity()
   }
 
+  // Mark a participant leaving. The device must be one we knew this meeting, its
+  // name must resolve, it must not be self, and each device leaves at most once
+  // (Meet can re-broadcast the removal). Note: Meet's removal can lag the actual
+  // exit (it holds a device briefly in case of a fast rejoin), so the marker's
+  // time is when the removal was observed, not necessarily the exact exit.
+  const leftDevices = new Set<string>()
+  recordLeave = (deviceId) => {
+    const name = roster.get(deviceId)
+    dlog("device left", { deviceId, name, known: knownDevices.has(deviceId) })
+    if (!name || leftDevices.has(deviceId) || !knownDevices.has(deviceId)) return
+    if (selfName && name === selfName) return
+    leftDevices.add(deviceId)
+    participantEvents.push({ at: new Date().toISOString(), name: name.trim(), kind: "leave" })
+    session.participantEvents = [...participantEvents]
+    panel.update(session.transcript, session.chat, session.notes ?? [], session.participantEvents)
+    writer.requestWrite()
+    pulseActivity()
+  }
+
   // Append a timestamped note (empty text = a bare bookmark) to this meeting.
   // Reached from the panel's note input and the global Alt+Shift+B bookmark chord.
   function addNote(text: string): void {
@@ -597,6 +623,7 @@ async function runMeeting(tabId: number): Promise<void> {
     activeMeetingHandler = null
     recordAttendee = null
     recordDevice = null
+    recordLeave = null
     refreshTranscript = null
     addNoteToActive = null
     onMediaState = null

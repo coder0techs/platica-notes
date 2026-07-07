@@ -48,6 +48,14 @@ export interface RtcDeviceEvent {
   deviceName: string
 }
 
+// A participant left: the collections channel removed their device (bare deviceId,
+// no name — see decodeRosterLeave). The adapter maps the id back to the name it
+// already learned and emits a "leave" marker.
+export interface RtcDeviceLeaveEvent {
+  type: "device-leave"
+  deviceId: string
+}
+
 // The local user's own display name, parsed from the GetUser RPC; the adapter
 // binds it to unresolved (non-roster) speakers — Meet never rosters self.
 export interface RtcSelfEvent {
@@ -65,7 +73,13 @@ export interface RtcMediaEvent {
   pcState: RTCPeerConnectionState
 }
 
-export type RtcEvent = RtcCaptionEvent | RtcChatEvent | RtcDeviceEvent | RtcSelfEvent | RtcMediaEvent
+export type RtcEvent =
+  | RtcCaptionEvent
+  | RtcChatEvent
+  | RtcDeviceEvent
+  | RtcDeviceLeaveEvent
+  | RtcSelfEvent
+  | RtcMediaEvent
 
 export interface RtcConfig {
   captionLanguage: string

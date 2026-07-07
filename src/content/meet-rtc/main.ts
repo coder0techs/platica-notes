@@ -12,6 +12,7 @@ import {
   decodeCollectionsChat,
   decodeOutgoingChat,
   decodeRoster,
+  decodeRosterLeave,
   decodeTranscriptWrapper,
   readNestedOp,
   readNestedSeq,
@@ -401,6 +402,15 @@ function handleRoster(bytes: Uint8Array): void {
     dispatched++
   }
   if (dispatched > 0) record({ phase: "roster", count: dispatched })
+
+  // Removals ride the same packet as a nameless deviceId (decodeRoster drops them
+  // for lack of a name). Emit a device-leave so the adapter can mark a "left".
+  const left = decodeRosterLeave(bytes)
+  for (const deviceId of left) {
+    if (!deviceId) continue
+    dispatch({ type: "device-leave", deviceId })
+    record({ phase: "roster-leave", deviceId })
+  }
 }
 
 // Diagnostic-only consumer for data channels we do NOT otherwise read (copresent,

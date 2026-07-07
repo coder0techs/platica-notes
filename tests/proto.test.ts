@@ -4,6 +4,7 @@ import {
   decodeCollectionsChat,
   decodeOutgoingChat,
   decodeRoster,
+  decodeRosterLeave,
   buildSubscribe,
   buildAck,
   readNestedOp,
@@ -395,6 +396,27 @@ describe("decodeRoster", () => {
   it("handles collection form with zero devices", () => {
     const buf = buildCollectionForm([])
     expect(decodeRoster(buf)).toEqual([])
+  })
+})
+
+describe("decodeRosterLeave", () => {
+  // Real wire vector: device 574 leaving. The removed device arrives as a bare
+  // deviceId string at f1→f2→f13→f1→f3 (no name leaf), which decodeRoster drops.
+  const LEAVE_574 =
+    "0a2b12296a270a250a02082e1a1f7370616365732f4d7351636e785a755776474d2f646576696365732f353734"
+
+  it("extracts the removed deviceId from a real leave packet", () => {
+    expect(decodeRosterLeave(hexToBytes(LEAVE_574))).toEqual(["spaces/MsQcnxZuWvGM/devices/574"])
+  })
+
+  it("returns nothing for a normal join packet (device carries a name leaf)", () => {
+    const buf = buildSingleDeviceForm({ deviceId: "d3", deviceName: "Carol" })
+    expect(decodeRosterLeave(buf)).toEqual([])
+  })
+
+  it("returns nothing for an unrelated/garbage buffer and never throws", () => {
+    expect(decodeRosterLeave(new Uint8Array([0x08, 0x01]))).toEqual([])
+    expect(() => decodeRosterLeave(new Uint8Array([0x0a, 0xff, 0xff]))).not.toThrow()
   })
 })
 
