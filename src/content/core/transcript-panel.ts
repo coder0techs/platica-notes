@@ -223,6 +223,9 @@ export function mountTranscriptPanel(opts: {
     visible = next
     card.style.display = next ? "flex" : "none"
     if (next) {
+      // Sit the jump pill just ABOVE the note footer so it never covers the input.
+      // Measured now that the card is displayed (offsetHeight is 0 while hidden).
+      jump.style.bottom = `${footer.offsetHeight + 10}px`
       stickToBottom = true
       render()
       scrollToBottom()
@@ -242,6 +245,11 @@ export function mountTranscriptPanel(opts: {
 
   function render(): void {
     const timeline = mergeTimeline(latestTranscript, latestChat, latestNotes, latestParticipantEvents).filter(matches)
+    // Capture BEFORE rebuilding: replaceChildren can disturb scrollTop, and any
+    // scroll events it fires must not flip stickToBottom. If the user scrolled up to
+    // read, we restore their exact position instead of auto-scrolling to the bottom.
+    const stick = stickToBottom
+    const prevTop = body.scrollTop
     body.replaceChildren()
     for (const entry of timeline) {
       const block = document.createElement("div")
@@ -284,7 +292,8 @@ export function mountTranscriptPanel(opts: {
       }
       body.append(block)
     }
-    if (stickToBottom) scrollToBottom()
+    if (stick) scrollToBottom()
+    else body.scrollTop = prevTop
   }
 
   // Leading-edge render, then a coalesced trailing render at most once per
