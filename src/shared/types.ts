@@ -71,6 +71,12 @@ export interface ActiveSession {
    */
   roster?: Record<string, string>
   selfName?: string
+  /**
+   * URL of the embedded Google Chat conversation frame (chat.google.com), captured
+   * from that frame. Lets a downstream tool reach the chat (e.g. via MCP) for
+   * attachments or messages that never reached the transcript. Best-effort.
+   */
+  chatUrl?: string
   /** BCP 47 caption language active for this session; tracks mid-meeting changes. */
   captionLanguage?: string
   debug?: DebugEvent[]
@@ -105,6 +111,8 @@ export interface Meeting {
   language?: string
   /** Join link of the recorded meeting, e.g. https://meet.google.com/abc-defg-hij. */
   meetingUrl?: string
+  /** URL of the embedded Google Chat conversation frame, if captured (best-effort). */
+  chatUrl?: string
   /**
    * Per-visit spans when this meeting was assembled from several rejoins of the
    * same Meet code (see background/merge.ts). Absent (undefined) for a normal

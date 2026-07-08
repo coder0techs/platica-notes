@@ -60,6 +60,10 @@ const JOIN_SETTLE_MS = 10000
 // meetings in the same tab. Transcript/chat events without an active meeting
 // are dropped (nothing to attribute them to yet).
 const roster = new Map<string, string>()
+// URL of the embedded Google Chat frame (chat.google.com), forwarded up from the
+// frame hook (chatgoogle/main.ts). Page-level so it survives across meetings in the
+// tab; stamped into each session snapshot so it reaches the saved file's header.
+let chatUrl: string | null = null
 // The local user's own name (from the GetUser RPC). Kept at page level (it can
 // arrive before a meeting's feed exists) for the attendee list and reload
 // persistence. Speaker resolution does not use it: self's deviceId → name arrives
@@ -213,6 +217,12 @@ async function main(): Promise<void> {
   // retransmit of the same send counts once.
   window.addEventListener("message", (event) => {
     if (event.origin !== "https://chat.google.com") return
+    // The frame carries its own URL (the chat conversation link); keep the first
+    // chat.google.com URL we see for the saved file's header.
+    const data = event.data as { url?: unknown } | null
+    if (data && typeof data.url === "string" && data.url.startsWith("https://chat.google.com") && !chatUrl) {
+      chatUrl = data.url
+    }
     const own = parseOwnChatMessage(event.data)
     if (!own) return
     activeMeetingHandler?.({
@@ -323,6 +333,7 @@ async function runMeeting(tabId: number): Promise<void> {
   if (resumed) {
     for (const [id, name] of Object.entries(resumed.roster ?? {})) roster.set(id, name)
     if (!selfName && resumed.selfName) selfName = resumed.selfName
+    if (!chatUrl && resumed.chatUrl) chatUrl = resumed.chatUrl
   }
   const prefixTranscript = resumed ? resumed.transcript : []
   const prefixChat = resumed ? resumed.chat : []
@@ -361,7 +372,7 @@ async function runMeeting(tabId: number): Promise<void> {
     (snapshot) => setLocal({ [sessionKey(tabId)]: snapshot }),
     // Stamp the current page-level roster and self name into every persisted
     // snapshot so a reload can re-seed them (see the resume block above).
-    () => ({ ...session, roster: Object.fromEntries(roster), selfName: selfName ?? undefined }),
+    () => ({ ...session, roster: Object.fromEntries(roster), selfName: selfName ?? undefined, chatUrl: chatUrl ?? undefined }),
     1000,
     // A write that fails on an orphaned context surfaces the reload notice; the
     // writer seals itself so it stops hammering a dead chrome.storage.
@@ -390,14 +401,24 @@ async function runMeeting(tabId: number): Promise<void> {
   // Recorder's notes/bookmarks for this meeting, seeded from a resumed snapshot.
   const notes: Note[] = [...prefixNotes]
 
-  // Mid-meeting join markers. The settle window is measured from THIS run's start
-  // (not session.startedAt — a resumed session's startedAt is far in the past, which
-  // would misclassify the whole reload re-sync as joins). knownDevices is seeded
-  // with everyone already in the page roster at join, so only genuinely new arrivals
-  // after the window produce a marker. participantEvents carries the resumed prefix.
+  // Join/leave markers, keyed by NAME not deviceId. Meet churns deviceIds — a
+  // reconnect gives the same person a NEW deviceId while the old one tombstones —
+  // so a deviceId-keyed model emitted a false "joined" (new id) AND a false "left"
+  // (old id) for one person merely reconnecting. Instead we track the set of active
+  // deviceIds PER NAME: a name JOINS when its set goes empty→non-empty (after the
+  // settle window), LEAVES only when its set goes non-empty→empty (all their devices
+  // gone). A reconnect keeps the set non-empty throughout, so it emits neither.
+  // The settle window is measured from THIS run's start (a resumed session's
+  // startedAt is far in the past, which would misclassify the reload re-sync).
   const joinWatchStart = Date.now()
-  const knownDevices = new Set<string>(roster.keys())
   const participantEvents: ParticipantEvent[] = [...prefixParticipantEvents]
+  const activeByName = new Map<string, Set<string>>()
+  // Seed with everyone already present at join (page roster is deviceId→name).
+  for (const [deviceId, name] of roster) {
+    const set = activeByName.get(name) ?? new Set<string>()
+    set.add(deviceId)
+    activeByName.set(name, set)
+  }
 
   // Always wire up onDebugEvent so an OFF→ON mid-meeting toggle starts flushing
   // immediately. The closure self-gates on debugEnabled — no cost when debug is
@@ -470,39 +491,45 @@ async function runMeeting(tabId: number): Promise<void> {
     writer.requestWrite()
   }
 
-  // Classify each roster device appearance. A genuinely new device seen after the
-  // settle window (and not self) is a mid-meeting join → append a marker. Always
-  // logs the classification (leave-investigation aid) and records the deviceId.
-  recordDevice = (deviceId, name) => {
-    const alreadyKnown = knownDevices.has(deviceId)
-    const isJoin = isMidMeetingJoin(name, selfName, alreadyKnown, Date.now() - joinWatchStart, JOIN_SETTLE_MS)
-    knownDevices.add(deviceId)
-    dlog("device seen", { deviceId, name, alreadyKnown, isJoin })
-    if (!isJoin) return
-    participantEvents.push({ at: new Date().toISOString(), name: name.trim(), kind: "join" })
+  const pushPresence = (name: string, kind: "join" | "leave"): void => {
+    participantEvents.push({ at: new Date().toISOString(), name: name.trim(), kind })
     session.participantEvents = [...participantEvents]
     panel.update(session.transcript, session.chat, session.notes ?? [], session.participantEvents)
     writer.requestWrite()
     pulseActivity()
   }
 
-  // Mark a participant leaving. The device must be one we knew this meeting, its
-  // name must resolve, it must not be self, and each device leaves at most once
-  // (Meet can re-broadcast the removal). Note: Meet's removal can lag the actual
-  // exit (it holds a device briefly in case of a fast rejoin), so the marker's
-  // time is when the removal was observed, not necessarily the exact exit.
-  const leftDevices = new Set<string>()
+  // A roster device appeared. Add it to its name's active set; a name whose set was
+  // EMPTY and goes non-empty after the settle window (and is not self) is a genuine
+  // join. A reconnect (new deviceId while an old one is still active) keeps the set
+  // non-empty → no marker.
+  recordDevice = (deviceId, name) => {
+    if (ending) return
+    const set = activeByName.get(name) ?? new Set<string>()
+    const wasActive = set.size > 0
+    set.add(deviceId)
+    activeByName.set(name, set)
+    // isMidMeetingJoin's `alreadyKnown` is "this name already had an active device".
+    const isJoin = isMidMeetingJoin(name, selfName, wasActive, Date.now() - joinWatchStart, JOIN_SETTLE_MS)
+    dlog("device seen", { deviceId, name, wasActive, isJoin })
+    if (isJoin) pushPresence(name, "join")
+  }
+
+  // A roster device was removed (tombstone). Drop it from its name's active set; a
+  // name whose set goes EMPTY (all devices gone, not self) is a genuine leave. A
+  // reconnect's stale-device tombstone leaves the set non-empty → no marker. The
+  // `ending` guard suppresses the end-of-meeting teardown cascade (Meet drops every
+  // device at once when the call ends). Timing note: Meet can lag the tombstone.
   recordLeave = (deviceId) => {
+    if (ending) return
     const name = roster.get(deviceId)
-    dlog("device left", { deviceId, name, known: knownDevices.has(deviceId) })
-    if (!name || leftDevices.has(deviceId) || !knownDevices.has(deviceId)) return
+    const set = name ? activeByName.get(name) : undefined
+    if (!name || !set || !set.has(deviceId)) return
+    set.delete(deviceId)
+    dlog("device left", { deviceId, name, remaining: set.size })
+    if (set.size > 0) return
     if (selfName && name === selfName) return
-    leftDevices.add(deviceId)
-    participantEvents.push({ at: new Date().toISOString(), name: name.trim(), kind: "leave" })
-    session.participantEvents = [...participantEvents]
-    panel.update(session.transcript, session.chat, session.notes ?? [], session.participantEvents)
-    writer.requestWrite()
-    pulseActivity()
+    pushPresence(name, "leave")
   }
 
   // Append a timestamped note (empty text = a bare bookmark) to this meeting.
@@ -615,7 +642,24 @@ async function runMeeting(tabId: number): Promise<void> {
     // before we snapshot. The `ending` guard above makes a concurrent
     // endMeeting call a no-op during this window.
     dlog("finalizing after caption flush", { reason })
-    await delay(CAPTION_FLUSH_MS)
+    // Persist the current transcript BEFORE the flush wait. Meet can reload the
+    // page right after Leave, tearing down this content script mid-wait before the
+    // finalize below runs (observed: the first Leave produced no file, the session
+    // resumed on the reload and only saved on the next Leave). Writing now means the
+    // stored session is complete-so-far regardless.
+    session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
+    session.chat = [...prefixChat, ...feed.chatSnapshot()]
+    session.participantEvents = [...participantEvents]
+    writer.requestWrite()
+    // Wait for Meet's trailing caption revisions, but ONLY while the media path is
+    // still up. Once it drops (pc closed) no further captions can arrive, so there
+    // is nothing to flush — finalize at once rather than sitting in the wait window
+    // where a post-Leave reload can kill the finalize before it saves the file.
+    const flushStart = Date.now()
+    while (Date.now() - flushStart < CAPTION_FLUSH_MS) {
+      if (mediaZeroSince !== null) break
+      await delay(150)
+    }
     // Now stop routing: a caption event arriving after finalization would
     // re-create the session key the background just cleaned up. The page-level
     // RTC listener stays armed for the next meeting. Null onDebugEvent here too

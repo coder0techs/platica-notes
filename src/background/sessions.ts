@@ -81,6 +81,7 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
       language: session.captionLanguage ?? settings.captionLanguage,
       meetingUrl:
         session.platform === "meet" && session.path ? `https://meet.google.com${session.path}` : undefined,
+      chatUrl: session.chatUrl,
     }
     // Commit to history — folding into a prior visit of the same meeting when the
     // user opted in (mergeRejoins). `stored` carries the merge target's identity

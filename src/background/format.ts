@@ -99,6 +99,7 @@ export interface FormatOptions {
 export function formatMeetingText(meeting: Meeting, opts: FormatOptions = {}): string {
   const fm: string[] = ["---", `title: ${yamlScalar(meeting.title)}`]
   if (meeting.meetingUrl) fm.push(`url: ${yamlScalar(meeting.meetingUrl)}`)
+  if (meeting.chatUrl) fm.push(`chat_url: ${yamlScalar(meeting.chatUrl)}`)
   if (meeting.language) fm.push(`language: ${yamlScalar(meeting.language)}`)
   fm.push(`timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`)
   fm.push(`started: ${isoLocal(meeting.startedAt)}`)

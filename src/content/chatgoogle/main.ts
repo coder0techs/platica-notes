@@ -15,11 +15,22 @@ import { isCreateTopicUrl, parseCreateTopicBody, parseCreateTopicResponse } from
 // The meeting page (chat.google.com's parent) that consumes captured messages.
 const MEET_ORIGIN = "https://meet.google.com"
 
-// Forward one captured outgoing message to the meeting page. Best-effort: a
-// postMessage failure must never affect the chat frame.
+// Forward one captured outgoing message to the meeting page. Carries this frame's
+// own URL (the Google Chat conversation link) so the meeting page can record it.
+// Best-effort: a postMessage failure must never affect the chat frame.
 function forward(text: string, messageId?: string): void {
   try {
-    window.parent.postMessage({ source: "platica-chatgoogle", text, messageId }, MEET_ORIGIN)
+    window.parent.postMessage({ source: "platica-chatgoogle", text, messageId, url: location.href }, MEET_ORIGIN)
+  } catch {
+    /* forwarding must never affect the page */
+  }
+}
+
+// Announce this frame's URL to the meeting page even before any message is sent,
+// so the chat link is captured for meetings where the local user never chats.
+function forwardUrl(): void {
+  try {
+    window.parent.postMessage({ source: "platica-chatgoogle", url: location.href }, MEET_ORIGIN)
   } catch {
     /* forwarding must never affect the page */
   }
@@ -119,4 +130,9 @@ function install(): boolean {
   return true
 }
 
-install()
+if (install()) {
+  // The frame's URL settles after its SPA routing; announce at load and again a
+  // little later so the meeting page records the conversation link regardless.
+  forwardUrl()
+  setTimeout(forwardUrl, 4000)
+}

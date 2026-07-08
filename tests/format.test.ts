@@ -53,6 +53,12 @@ describe("formatMeetingText (v3)", () => {
     expect(frontMatter(formatMeetingText(makeMeeting()))).not.toContain("url:")
   })
 
+  it("renders the chat url in the front matter when present, omits it when absent", () => {
+    const withChat = frontMatter(formatMeetingText(makeMeeting({ chatUrl: "https://chat.google.com/room/AAAA" })))
+    expect(withChat).toContain('chat_url: "https://chat.google.com/room/AAAA"')
+    expect(frontMatter(formatMeetingText(makeMeeting()))).not.toContain("chat_url:")
+  })
+
   it("opens the body with an H1 of the meeting title", () => {
     const text = formatMeetingText(makeMeeting())
     expect(text).toContain("\n# Sprint sync\n")
