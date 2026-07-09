@@ -317,10 +317,11 @@ describe("decodeOutgoingChat", () => {
 
 // ---------- roster builder helpers ----------
 
-function buildLeaf(opts: { deviceId?: string; deviceName?: string; extra?: boolean }): number[] {
+function buildLeaf(opts: { deviceId?: string; deviceName?: string; extra?: boolean; state?: number }): number[] {
   const out: number[] = []
   if (opts.deviceId !== undefined) lenField(1, strBytes(opts.deviceId), out)
   if (opts.deviceName !== undefined) lenField(2, strBytes(opts.deviceName), out)
+  if (opts.state !== undefined) { tagBytes(4, 0, out); writeVarint(opts.state, out) }  // presence state
   if (opts.extra) { tagBytes(5, 0, out); writeVarint(3, out) }  // unknown field
   return out
 }
@@ -396,6 +397,39 @@ describe("decodeRoster", () => {
   it("handles collection form with zero devices", () => {
     const buf = buildCollectionForm([])
     expect(decodeRoster(buf)).toEqual([])
+  })
+
+  it("extracts the presence state (leaf field 4) when present", () => {
+    // A leaf carrying state 6 = the participant left (the instant-leave signal).
+    const l2: number[] = []
+    lenField(2, buildLeaf({ deviceId: "d1", deviceName: "Grace", state: 6 }), l2)
+    lenField(2, buildLeaf({ deviceId: "d2", deviceName: "Ada", state: 1 }), l2)
+    const l1: number[] = []; lenField(2, l2, l1)
+    const outer: number[] = []; lenField(2, l1, outer)
+    const result = decodeRoster(u8(outer))
+    expect(result).toEqual([
+      { deviceId: "d1", deviceName: "Grace", state: 6 },
+      { deviceId: "d2", deviceName: "Ada", state: 1 },
+    ])
+  })
+
+  it("omits state when the leaf has no field 4", () => {
+    const result = decodeRoster(buildSingleDeviceForm({ deviceId: "d3", deviceName: "Carol" }))
+    expect(result[0]).toEqual({ deviceId: "d3", deviceName: "Carol" })
+    expect(result[0].state).toBeUndefined()
+  })
+
+  it("decodes state 6 (left) from a real collections leave packet", () => {
+    // Wire vector from a test call: a device the instant it said goodbye and
+    // left (leaf field 4 = 6). This is the instant-leave signal the People panel
+    // reacts to, ~1.5min before the device-removal tombstone.
+    const hex =
+      "0a9f02129c026a99020a96020a020839128f020a1f7370616365732f37395648774e74364f7579592f646576696365732f323434120e4b6174686c65656e20426f6f74681a6568747470733a2f2f6c68332e676f6f676c6575736572636f6e74656e742e636f6d2f612f534b703678635451734b7a71526d724e6e42736a565571364a6a42317a6a397856424b344e4667464a65614a796a73474e444d6b3063573d733139322d632d6d6f200648015802720410011802c80101ea01084b6174686c65656eb00201ba021d010203040506090a0c0d0f101112141516171b181a1c1d1e1f21222324da022c7a5a425a4d765930375830385354792d7561375878524a67397a72647137306c3857655977544e70494e713df002038004019204020801"
+    const result = decodeRoster(hexToBytes(hex))
+    expect(result).toHaveLength(1)
+    expect(result[0].deviceId).toBe("spaces/79VHwNt6OuyY/devices/244")
+    expect(result[0].deviceName).toBe("Kathleen Booth")
+    expect(result[0].state).toBe(6)
   })
 })
 

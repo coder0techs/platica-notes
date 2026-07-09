@@ -187,7 +187,12 @@ async function main(): Promise<void> {
       return
     }
     if (parsed.type === "device-leave") {
-      if (typeof parsed.deviceId === "string" && parsed.deviceId) recordLeave?.(parsed.deviceId)
+      if (typeof parsed.deviceId === "string" && parsed.deviceId) {
+        // Keep the name mapping (the state-6 leaf carries it) so recordLeave can
+        // resolve the name even if this device was never seen present before.
+        if (typeof parsed.deviceName === "string" && parsed.deviceName) roster.set(parsed.deviceId, parsed.deviceName)
+        recordLeave?.(parsed.deviceId)
+      }
       return
     }
     if (parsed.type === "self") {

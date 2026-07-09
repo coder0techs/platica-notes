@@ -54,6 +54,9 @@ export interface RtcDeviceEvent {
 export interface RtcDeviceLeaveEvent {
   type: "device-leave"
   deviceId: string
+  // Present when the leave came from a roster state-6 leaf (which still carries the
+  // name); lets the adapter resolve the name even if it wasn't rostered before.
+  deviceName?: string
 }
 
 // The local user's own display name, parsed from the GetUser RPC; the adapter

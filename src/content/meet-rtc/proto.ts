@@ -30,7 +30,19 @@ export interface ChatPayload {
 export interface RosterEntry {
   deviceId: string
   deviceName: string
+  /**
+   * Presence state (leaf field 4). 1 = present. 6 = the participant just LEFT —
+   * Meet sends this on the collections channel within ~1s of departure (the signal
+   * the People panel reacts to), long before the late device-removal tombstone.
+   * Undefined when the field is absent.
+   */
+  state?: number
 }
+
+// Leaf presence state (RosterEntry.state) meaning the participant has left. Ground-
+// verified: every device stamped with this value had said goodbye ~1s earlier and
+// never spoke again; present devices carry state 1.
+export const ROSTER_STATE_LEFT = 6
 
 // ---------- protobuf cursor helpers ----------
 
@@ -310,21 +322,24 @@ export function decodeOutgoingChat(buf: Uint8Array): { text: string; sentAt?: nu
 
 // ---------- roster decoder ----------
 
-// Leaf: field 1 = deviceId(string), field 2 = deviceName(string)
+// Leaf: field 1 = deviceId(string), field 2 = deviceName(string),
+// field 4 = presence state (varint; 1 = present, 6 = left — see RosterEntry.state).
 function decodeLeaf(buf: Uint8Array, start: number, end: number): RosterEntry | null {
   // Clamp end so a caller passing an oversized bound cannot walk past the buffer.
   const safeEnd = Math.min(end, buf.length)
   const c: Cursor = { buf, i: start }
   let deviceId: string | undefined
   let deviceName: string | undefined
+  let state: number | undefined
   while (c.i < safeEnd) {
     const { field, wire } = readTag(c)
     if (field === 1 && wire === 2) deviceId = readString(c)
     else if (field === 2 && wire === 2) deviceName = readString(c)
+    else if (field === 4 && wire === 0) state = readVarint(c)
     else skip(c, wire)
   }
   if (deviceId === undefined || deviceName === undefined) return null
-  return { deviceId, deviceName }
+  return state === undefined ? { deviceId, deviceName } : { deviceId, deviceName, state }
 }
 
 // Collection form: outer.f2 → l1.f2 → l2.REPEATED f2 = leaf

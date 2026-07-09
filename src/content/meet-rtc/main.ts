@@ -13,6 +13,7 @@ import {
   decodeOutgoingChat,
   decodeRoster,
   decodeRosterLeave,
+  ROSTER_STATE_LEFT,
   decodeTranscriptWrapper,
   readNestedOp,
   readNestedSeq,
@@ -395,16 +396,28 @@ function handleRoster(bytes: Uint8Array): void {
     /* diagnostics must never affect capture */
   }
   let dispatched = 0
+  let leftFromState = 0
   for (const entry of entries) {
     // The adapter dedupes by deviceId; here we only skip empties.
     if (!entry.deviceId || !entry.deviceName) continue
+    // state 6 = the participant LEFT. Meet sends this within ~1s of departure —
+    // the instant signal the People panel reacts to — so route it as a leave
+    // rather than re-asserting presence. Everything else is a present/updated
+    // device. (The late device-removal tombstone below is now just a fallback.)
+    if (entry.state === ROSTER_STATE_LEFT) {
+      dispatch({ type: "device-leave", deviceId: entry.deviceId, deviceName: entry.deviceName })
+      leftFromState++
+      continue
+    }
     dispatch({ type: "device", deviceId: entry.deviceId, deviceName: entry.deviceName })
     dispatched++
   }
   if (dispatched > 0) record({ phase: "roster", count: dispatched })
+  if (leftFromState > 0) record({ phase: "roster-left-state", count: leftFromState })
 
-  // Removals ride the same packet as a nameless deviceId (decodeRoster drops them
-  // for lack of a name). Emit a device-leave so the adapter can mark a "left".
+  // Fallback: some departures also arrive later as a bare-deviceId removal
+  // tombstone (decodeRoster drops those for lack of a name). Emit device-leave for
+  // them too; the adapter dedupes, so this is harmless when state 6 already fired.
   const left = decodeRosterLeave(bytes)
   for (const deviceId of left) {
     if (!deviceId) continue
