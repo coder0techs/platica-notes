@@ -8,10 +8,10 @@ import {
 } from "../src/content/chatgoogle/parse"
 
 describe("chatSpaceLink", () => {
-  it("derives a clean room link from the embed URL, dropping the rpctoken shell", () => {
+  it("derives the openable chat app link from the embed URL, dropping the rpctoken shell", () => {
     const embed =
       "https://chat.google.com/embed/space/AAQAllDeLzQ?shell=12&oi=1&rpctoken=36387733&parent=https%3A%2F%2Fmeet.google.com"
-    expect(chatSpaceLink(embed)).toBe("https://chat.google.com/room/AAQAllDeLzQ")
+    expect(chatSpaceLink(embed)).toBe("https://chat.google.com/u/0/app/chat/AAQAllDeLzQ")
   })
   it("returns null when there is no space id", () => {
     expect(chatSpaceLink("https://chat.google.com/embed?shell=12")).toBeNull()

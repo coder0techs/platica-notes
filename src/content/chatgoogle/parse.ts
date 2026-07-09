@@ -55,12 +55,13 @@ export function parseCreateTopicResponse(text: string): string | null {
 // The in-meeting chat frame loads an EMBED URL — a gapi shell like
 // `https://chat.google.com/embed/space/<spaceId>?shell=…&rpctoken=…` — which carries
 // a per-load rpctoken and is not a shareable link. Extract just the space id and
-// return the canonical room URL `https://chat.google.com/room/<spaceId>`, so the
-// saved header holds a clean, token-free, openable link (and a usable space id for
-// the Google Chat API / MCP). Returns null when no space id is present.
+// return the canonical, openable Google Chat URL
+// `https://chat.google.com/u/0/app/chat/<spaceId>`, so the saved header holds a
+// clean, token-free link (and a usable space id for the Google Chat API / MCP).
+// Returns null when no space id is present.
 export function chatSpaceLink(url: string): string | null {
   const m = /\/space\/([A-Za-z0-9_-]+)/.exec(url)
-  return m ? `https://chat.google.com/room/${m[1]}` : null
+  return m ? `https://chat.google.com/u/0/app/chat/${m[1]}` : null
 }
 
 // Validate and normalize a cross-frame postMessage payload dispatched by the
