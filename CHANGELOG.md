@@ -2,6 +2,16 @@
 
 All notable changes to Plática Notes, newest first.
 
+## 1.13.1 - 2026-07-09
+
+- **"Left" markers are now immediate and complete.** They previously lagged by a
+  minute or more, or were missed entirely, because they keyed off Meet's delayed
+  device-removal signal. They now fire within about a second of someone leaving,
+  matching Meet's own People panel.
+- **The Google Chat link in the saved file now opens the conversation.** The
+  `chat_url` in the front matter was a non-working embed URL; it is now the proper
+  `chat.google.com` link to the meeting's chat.
+
 ## 1.13.0 - 2026-07-09
 
 - **In-meeting chat capture, fixed for Google Meet's new chat.** Meet moved its
