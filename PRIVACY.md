@@ -1,6 +1,6 @@
 # Privacy Policy — Plática Notes
 
-**Effective date:** 2026-06-18
+**Effective date:** 2026-07-09
 
 Plática Notes is a browser extension that records Google Meet meeting transcripts
 and in-meeting chat **locally on your own device**. This policy explains exactly
@@ -12,7 +12,9 @@ developer, sends nothing over the network, and stores everything on your machine
 While you are in a Google Meet call, the extension processes, on your device only:
 
 - **Transcript text** — Google Meet's own live captions for the meeting.
-- **In-meeting chat** — messages sent in the Meet chat panel.
+- **In-meeting chat** — messages in the Meet chat, including the ones you send
+  yourself (read locally from Meet's embedded Google Chat frame; see the technical
+  disclosure below).
 - **Participant names and the meeting title** — to label the transcript.
 - **Your settings** — caption language, the private-by-default toggle, the debug
   toggle, and the download folder names.
@@ -43,6 +45,14 @@ page: it attaches to Meet's caption/chat data channels and reads the responses o
 a few of Meet's own internal requests (for participant names) **as they happen in
 your browser**. This reading is entirely local — none of it is transmitted, logged
 remotely, or shared. It is only used to build the transcript file you asked for.
+
+Google Meet renders the in-meeting chat inside an embedded Google Chat
+(`chat.google.com`) frame, and a message you send yourself is not repeated back
+over the meeting page. So that your own chat still appears in the transcript, a
+small script runs in that frame and reads **only your own outgoing message text**
+as you send it, then passes it to the meeting tab inside the browser. It reads
+nothing else in Google Chat and, like everything else here, makes no network
+request and transmits nothing off your device.
 
 ## Optional diagnostic log
 

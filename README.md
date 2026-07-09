@@ -38,7 +38,11 @@ Everything is decoded in the page and kept on your machine.
   raw versions Google streamed before the final caption, so words the final
   caption dropped can still be recovered later. Turn it off for a cleaner file.
 - Speaker-attributed lines (others and yourself), with the closing sentence
-  captured in full on leave.
+  captured in full on leave. Chat is captured too — both what others send and
+  the messages you send yourself.
+- **Participant join/leave markers** — when someone joins or leaves during the
+  meeting it is marked inline on the timeline with a timestamp (in the speaker's
+  colour), not just as the final participant list in the header.
 - **Default caption language** (Settings) — every new meeting starts in this
   language; the in-meeting language pill overrides just the current meeting and is
   not saved. A first-run welcome page lets you pick it; fresh installs default to
