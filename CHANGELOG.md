@@ -2,6 +2,25 @@
 
 All notable changes to Plática Notes, newest first.
 
+## 1.13.0 - 2026-07-09
+
+- **In-meeting chat capture, fixed for Google Meet's new chat.** Meet moved its
+  chat onto a Google Chat-backed channel, which had quietly broken capture. The
+  extension now records messages from other participants again, and also the
+  messages you send yourself (read locally from Meet's embedded chat frame — never
+  transmitted), with duplicates filtered out across the two paths.
+- **Participant join/leave markers.** The transcript now notes when someone joins
+  or leaves during the meeting — inline on the timeline with a timestamp and in the
+  speaker's colour — instead of only the final participant list in the header.
+- **Notice when the extension is updated mid-meeting.** If the extension is
+  reloaded or updated while you are in a call, an on-screen notice now tells you to
+  rejoin so the meeting is saved, instead of failing silently.
+- **Truer transcript order.** When a speaker is interrupted and keeps talking,
+  their later words no longer sort back into their earlier paragraph; and the live
+  panel starts a fresh paragraph after a long pause, matching the saved file.
+- **Panel polish.** The live panel keeps its place when you have scrolled up, and
+  the "jump to latest" pill no longer overlaps the note input.
+
 ## 1.12.0 - 2026-06-30
 
 - **Merging rejoined visits is now on by default.** An accidental leave/rejoin of
