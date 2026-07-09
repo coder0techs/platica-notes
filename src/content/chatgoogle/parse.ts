@@ -52,6 +52,17 @@ export function parseCreateTopicResponse(text: string): string | null {
   return null
 }
 
+// The in-meeting chat frame loads an EMBED URL — a gapi shell like
+// `https://chat.google.com/embed/space/<spaceId>?shell=…&rpctoken=…` — which carries
+// a per-load rpctoken and is not a shareable link. Extract just the space id and
+// return the canonical room URL `https://chat.google.com/room/<spaceId>`, so the
+// saved header holds a clean, token-free, openable link (and a usable space id for
+// the Google Chat API / MCP). Returns null when no space id is present.
+export function chatSpaceLink(url: string): string | null {
+  const m = /\/space\/([A-Za-z0-9_-]+)/.exec(url)
+  return m ? `https://chat.google.com/room/${m[1]}` : null
+}
+
 // Validate and normalize a cross-frame postMessage payload dispatched by the
 // chat-frame hook (see main.ts). The window "message" listener still checks the
 // event ORIGIN (only the chat frame may send these); this covers the payload

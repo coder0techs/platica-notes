@@ -10,27 +10,35 @@
 //
 // Clean reimplementation against the observable request/response shape.
 
-import { isCreateTopicUrl, parseCreateTopicBody, parseCreateTopicResponse } from "./parse"
+import { chatSpaceLink, isCreateTopicUrl, parseCreateTopicBody, parseCreateTopicResponse } from "./parse"
 
 // The meeting page (chat.google.com's parent) that consumes captured messages.
 const MEET_ORIGIN = "https://meet.google.com"
 
-// Forward one captured outgoing message to the meeting page. Carries this frame's
-// own URL (the Google Chat conversation link) so the meeting page can record it.
-// Best-effort: a postMessage failure must never affect the chat frame.
+// The clean, token-free chat room link derived from this frame's embed URL (or
+// null before the space id is in the URL). Never forward the raw embed URL — it
+// carries a per-load rpctoken we must not persist.
+function chatLink(): string | undefined {
+  return chatSpaceLink(location.href) ?? undefined
+}
+
+// Forward one captured outgoing message to the meeting page, tagged with the chat
+// room link so the meeting page can record it. Best-effort: a postMessage failure
+// must never affect the chat frame.
 function forward(text: string, messageId?: string): void {
   try {
-    window.parent.postMessage({ source: "platica-chatgoogle", text, messageId, url: location.href }, MEET_ORIGIN)
+    window.parent.postMessage({ source: "platica-chatgoogle", text, messageId, url: chatLink() }, MEET_ORIGIN)
   } catch {
     /* forwarding must never affect the page */
   }
 }
 
-// Announce this frame's URL to the meeting page even before any message is sent,
-// so the chat link is captured for meetings where the local user never chats.
+// Announce the chat room link to the meeting page even before any message is sent,
+// so the link is captured for meetings where the local user never chats.
 function forwardUrl(): void {
   try {
-    window.parent.postMessage({ source: "platica-chatgoogle", url: location.href }, MEET_ORIGIN)
+    const url = chatLink()
+    if (url) window.parent.postMessage({ source: "platica-chatgoogle", url }, MEET_ORIGIN)
   } catch {
     /* forwarding must never affect the page */
   }
