@@ -134,9 +134,12 @@ const PILL_BG_HOVER = "rgba(60,64,67,.95)"
 export function mountMeetingControls(opts: {
   initialLanguage: string
   initialPrivate: boolean
+  initialRecording: boolean
   onLanguageChange: (language: string) => void
   onPrivateChange: (isPrivate: boolean) => void
+  onRecordingChange: (recording: boolean) => void
   onToggleTranscript: () => void
+  onPurge: () => void
 }): { unmount: () => void; setTranscriptActive: (active: boolean) => void; setLanguage: (language: string) => void } {
   const container = document.createElement("div")
   container.style.cssText =
@@ -244,7 +247,67 @@ export function mountMeetingControls(opts: {
   })
   renderPrivacy()
 
-  container.append(langPill, transcriptPill, privacyPill)
+  // --- recording pill: On shows a red dot on the default dark pill; Off fills the
+  // pill amber and reads "Rec off", so a stopped recording is impossible to miss
+  // (a silent Off is worse than no feature). Toggling flips the flag via onRecordingChange. ---
+  const RECORDING_BG_OFF = "rgba(249,171,0,.95)" // amber fill when NOT recording
+  let recording = opts.initialRecording
+  const recordingPill = document.createElement("button")
+  recordingPill.type = "button"
+  recordingPill.style.cssText = PILL_BASE
+  recordingPill.title = "Plática Notes: pause/resume capturing this meeting"
+  const renderRecording = () => {
+    recordingPill.textContent = recording ? "● Rec" : "⏸ Rec off"
+    recordingPill.style.background = recording ? PILL_BG : RECORDING_BG_OFF
+  }
+  recordingPill.addEventListener("mouseenter", () => {
+    if (recording) recordingPill.style.background = PILL_BG_HOVER
+  })
+  recordingPill.addEventListener("mouseleave", renderRecording)
+  recordingPill.addEventListener("click", () => {
+    recording = !recording
+    renderRecording()
+    opts.onRecordingChange(recording)
+  })
+  renderRecording()
+
+  // --- wipe pill: destructive clean-slate for the current meeting. Two-click
+  // confirm inline (no native dialog): first click arms for 4s, second click within
+  // the window fires onPurge. Reverts on timeout. ---
+  const WIPE_BG_ARMED = "rgba(217,48,37,.95)" // red while armed
+  let wipeArmed = false
+  let wipeTimer: ReturnType<typeof setTimeout> | undefined
+  const wipePill = document.createElement("button")
+  wipePill.type = "button"
+  wipePill.style.cssText = PILL_BASE
+  wipePill.title = "Plática Notes: wipe everything captured in this meeting so far"
+  const disarmWipe = () => {
+    wipeArmed = false
+    if (wipeTimer) clearTimeout(wipeTimer)
+    wipeTimer = undefined
+    wipePill.textContent = "🗑 Wipe"
+    wipePill.style.background = PILL_BG
+  }
+  wipePill.addEventListener("mouseenter", () => {
+    if (!wipeArmed) wipePill.style.background = PILL_BG_HOVER
+  })
+  wipePill.addEventListener("mouseleave", () => {
+    if (!wipeArmed) wipePill.style.background = PILL_BG
+  })
+  wipePill.addEventListener("click", () => {
+    if (!wipeArmed) {
+      wipeArmed = true
+      wipePill.textContent = "🗑 Wipe? confirm"
+      wipePill.style.background = WIPE_BG_ARMED
+      wipeTimer = setTimeout(disarmWipe, 4000)
+      return
+    }
+    disarmWipe()
+    opts.onPurge()
+  })
+  wipePill.textContent = "🗑 Wipe"
+
+  container.append(langPill, transcriptPill, recordingPill, wipePill, privacyPill)
   document.documentElement.appendChild(container)
   return {
     unmount: () => container.remove(),
