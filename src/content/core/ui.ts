@@ -247,10 +247,12 @@ export function mountMeetingControls(opts: {
   })
   renderPrivacy()
 
-  // --- recording pill: On shows a red dot on the default dark pill; Off fills the
-  // pill amber and reads "Rec off", so a stopped recording is impossible to miss
-  // (a silent Off is worse than no feature). Toggling flips the flag via onRecordingChange. ---
-  const RECORDING_BG_OFF = "rgba(249,171,0,.95)" // amber fill when NOT recording
+  // --- recording pill: On FILLS the pill red — the universal "recording live"
+  // indicator, same active-by-background idiom as the privacy pill; Off fills it
+  // grey (muted/stopped). A stopped recording is impossible to miss. Toggling flips
+  // the flag via onRecordingChange. ---
+  const RECORDING_BG_ON = "rgba(217,48,37,.95)" // red fill while recording (Meet-native red)
+  const RECORDING_BG_OFF = "rgba(95,99,104,.95)" // grey fill while stopped
   let recording = opts.initialRecording
   const recordingPill = document.createElement("button")
   recordingPill.type = "button"
@@ -258,10 +260,10 @@ export function mountMeetingControls(opts: {
   recordingPill.title = "Plática Notes: pause/resume capturing this meeting"
   const renderRecording = () => {
     recordingPill.textContent = recording ? "● Rec" : "⏸ Rec off"
-    recordingPill.style.background = recording ? PILL_BG : RECORDING_BG_OFF
+    recordingPill.style.background = recording ? RECORDING_BG_ON : RECORDING_BG_OFF
   }
   recordingPill.addEventListener("mouseenter", () => {
-    if (recording) recordingPill.style.background = PILL_BG_HOVER
+    if (!recording) recordingPill.style.background = PILL_BG_HOVER
   })
   recordingPill.addEventListener("mouseleave", renderRecording)
   recordingPill.addEventListener("click", () => {
@@ -274,7 +276,7 @@ export function mountMeetingControls(opts: {
   // --- wipe pill: destructive clean-slate for the current meeting. Two-click
   // confirm inline (no native dialog): first click arms for 4s, second click within
   // the window fires onPurge. Reverts on timeout. ---
-  const WIPE_BG_ARMED = "rgba(217,48,37,.95)" // red while armed
+  const WIPE_BG_ARMED = "rgba(249,171,0,.95)" // yellow while armed (caution before confirm)
   let wipeArmed = false
   let wipeTimer: ReturnType<typeof setTimeout> | undefined
   const wipePill = document.createElement("button")
