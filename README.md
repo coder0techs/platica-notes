@@ -47,6 +47,13 @@ Everything is decoded in the page and kept on your machine.
   language; the in-meeting language pill overrides just the current meeting and is
   not saved. A first-run welcome page lets you pick it; fresh installs default to
   English.
+- **Recording toggle** (● Rec / ⏸ Rec off): pause and resume capture without
+  leaving the call. Off stops everything new — transcript, chat, join/leave
+  markers, and notes — while whatever was captured before you turned it off is
+  still saved when the meeting ends. The state survives a page reload.
+- **Wipe recording** (🗑): clears everything captured in the current meeting so
+  far (transcript, chat, notes, presence markers). Click once to arm, once more
+  to confirm. If nothing remains afterwards, no file is written.
 - **Per-meeting privacy pill** (🔒 / ☁️): private meetings download to a separate
   folder you can keep out of cloud sync.
 - Local **history** of the last 30 meetings, with re-download / delete.

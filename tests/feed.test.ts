@@ -402,3 +402,39 @@ describe("RtcFeed own-chat cross-transport dedup", () => {
     expect(feed.chatSnapshot()).toHaveLength(2)
   })
 })
+
+describe("RtcFeed.reset", () => {
+  const AT = "2026-07-29T10:00:00.000Z"
+  const AT2 = "2026-07-29T10:00:05.000Z"
+
+  it("clears captured transcript, chat and versions but keeps the roster", () => {
+    const roster = new Map<string, string>([["dev-1", "Grace Hopper"]])
+    const feed = new RtcFeed(roster)
+
+    feed.handleCaption(
+      { type: "transcript", deviceId: "dev-1", messageId: 1, messageVersion: 1, text: "hello world" },
+      AT,
+    )
+    feed.handleChat({ type: "chat", deviceId: "dev-1", text: "hi in chat", sender: "Grace Hopper" }, AT)
+
+    expect(feed.transcriptSnapshot().length).toBeGreaterThan(0)
+    expect(feed.chatSnapshot().length).toBeGreaterThan(0)
+    expect(feed.versionsSnapshot().length).toBeGreaterThan(0)
+
+    feed.reset()
+
+    expect(feed.transcriptSnapshot()).toEqual([])
+    expect(feed.chatSnapshot()).toEqual([])
+    expect(feed.versionsSnapshot()).toEqual([])
+
+    // Roster retained: a fresh caption from the same device still resolves its name.
+    feed.handleCaption(
+      { type: "transcript", deviceId: "dev-1", messageId: 2, messageVersion: 1, text: "after reset" },
+      AT2,
+    )
+    const after = feed.transcriptSnapshot()
+    expect(after).toHaveLength(1)
+    expect(after[0].speaker).toBe("Grace Hopper")
+    expect(after[0].text).toBe("after reset")
+  })
+})

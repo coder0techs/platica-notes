@@ -363,7 +363,11 @@ async function runMeeting(tabId: number): Promise<void> {
     rawVersions: [...prefixRawVersions],
     notes: [...prefixNotes],
     participantEvents: [...prefixParticipantEvents],
+    recording: resumed?.recording ?? true,
   }
+  // Live capture gate. Persisted on the session so a reload-resume restores an Off
+  // meeting instead of silently recording again.
+  let recording = session.recording ?? true
   // A new meeting always starts in the default language; a resumed one keeps the
   // language it was captured with. Reset the live subscription so a previous
   // meeting's pill override (which is never persisted) does not carry over.
@@ -459,10 +463,17 @@ async function runMeeting(tabId: number): Promise<void> {
   const controls = mountMeetingControls({
     initialLanguage: session.captionLanguage ?? settings.captionLanguage,
     initialPrivate: session.isPrivate,
+    initialRecording: recording,
     onPrivateChange: (isPrivate) => {
       session.isPrivate = isPrivate
       writer.requestWrite()
     },
+    onRecordingChange: (on) => {
+      recording = on
+      session.recording = on
+      writer.requestWrite()
+    },
+    onPurge: () => purge(),
     // This-meeting-only override (see applyLanguage): resubscribe + snapshot into
     // the session, never persist to Settings — the next meeting starts from default.
     onLanguageChange: (language) => applyLanguage(language),
@@ -497,6 +508,7 @@ async function runMeeting(tabId: number): Promise<void> {
   }
 
   const pushPresence = (name: string, kind: "join" | "leave"): void => {
+    if (!recording) return
     participantEvents.push({ at: new Date().toISOString(), name: name.trim(), kind })
     session.participantEvents = [...participantEvents]
     panel.update(session.transcript, session.chat, session.notes ?? [], session.participantEvents)
@@ -540,6 +552,10 @@ async function runMeeting(tabId: number): Promise<void> {
   // Append a timestamped note (empty text = a bare bookmark) to this meeting.
   // Reached from the panel's note input and the global Alt+Shift+B bookmark chord.
   function addNote(text: string): void {
+    if (!recording) {
+      showToast("Recording is off")
+      return
+    }
     notes.push({ at: new Date().toISOString(), text: text.trim() })
     session.notes = [...notes]
     panel.update(session.transcript, session.chat, session.notes, session.participantEvents ?? [])
@@ -547,6 +563,26 @@ async function runMeeting(tabId: number): Promise<void> {
     pulseActivity()
   }
   addNoteToActive = addNote
+
+  // Wipe everything captured in THIS meeting so far: the feed, the resumed prefixes,
+  // and the notes/presence arrays. Persists the emptied session so a crash-resume or
+  // the eventual finalize sees empty -> no file. activeByName (presence bookkeeping)
+  // is left intact: it is live identity state, not saved content.
+  function purge(): void {
+    feed.reset()
+    prefixTranscript.length = 0
+    prefixChat.length = 0
+    prefixRawVersions.length = 0
+    notes.length = 0
+    participantEvents.length = 0
+    session.transcript = []
+    session.chat = []
+    session.rawVersions = []
+    session.notes = []
+    session.participantEvents = []
+    panel.update(session.transcript, session.chat, session.notes, session.participantEvents)
+    writer.requestWrite()
+  }
 
   // Meet fills the real meeting name in with a delay. Cleared in endMeeting so a
   // short meeting (<7s) leaves no stray timer firing after teardown.
@@ -558,6 +594,7 @@ async function runMeeting(tabId: number): Promise<void> {
 
   let firstCaptionLogged = false
   activeMeetingHandler = (event) => {
+    if (!recording && (event.type === "transcript" || event.type === "chat")) return
     if (event.type === "transcript") {
       if (!feed.handleCaption(event, new Date().toISOString())) return
       if (!firstCaptionLogged) {

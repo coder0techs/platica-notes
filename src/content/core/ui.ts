@@ -134,9 +134,12 @@ const PILL_BG_HOVER = "rgba(60,64,67,.95)"
 export function mountMeetingControls(opts: {
   initialLanguage: string
   initialPrivate: boolean
+  initialRecording: boolean
   onLanguageChange: (language: string) => void
   onPrivateChange: (isPrivate: boolean) => void
+  onRecordingChange: (recording: boolean) => void
   onToggleTranscript: () => void
+  onPurge: () => void
 }): { unmount: () => void; setTranscriptActive: (active: boolean) => void; setLanguage: (language: string) => void } {
   const container = document.createElement("div")
   container.style.cssText =
@@ -244,7 +247,69 @@ export function mountMeetingControls(opts: {
   })
   renderPrivacy()
 
-  container.append(langPill, transcriptPill, privacyPill)
+  // --- recording pill: On FILLS the pill red — the universal "recording live"
+  // indicator, same active-by-background idiom as the privacy pill; Off fills it
+  // grey (muted/stopped). A stopped recording is impossible to miss. Toggling flips
+  // the flag via onRecordingChange. ---
+  const RECORDING_BG_ON = "rgba(217,48,37,.95)" // red fill while recording (Meet-native red)
+  const RECORDING_BG_OFF = "rgba(95,99,104,.95)" // grey fill while stopped
+  let recording = opts.initialRecording
+  const recordingPill = document.createElement("button")
+  recordingPill.type = "button"
+  recordingPill.style.cssText = PILL_BASE
+  recordingPill.title = "Plática Notes: pause/resume capturing this meeting"
+  const renderRecording = () => {
+    recordingPill.textContent = recording ? "● Rec" : "⏸ Rec off"
+    recordingPill.style.background = recording ? RECORDING_BG_ON : RECORDING_BG_OFF
+  }
+  recordingPill.addEventListener("mouseenter", () => {
+    if (!recording) recordingPill.style.background = PILL_BG_HOVER
+  })
+  recordingPill.addEventListener("mouseleave", renderRecording)
+  recordingPill.addEventListener("click", () => {
+    recording = !recording
+    renderRecording()
+    opts.onRecordingChange(recording)
+  })
+  renderRecording()
+
+  // --- wipe pill: destructive clean-slate for the current meeting. Two-click
+  // confirm inline (no native dialog): first click arms for 4s, second click within
+  // the window fires onPurge. Reverts on timeout. ---
+  const WIPE_BG_ARMED = "rgba(249,171,0,.95)" // yellow while armed (caution before confirm)
+  let wipeArmed = false
+  let wipeTimer: ReturnType<typeof setTimeout> | undefined
+  const wipePill = document.createElement("button")
+  wipePill.type = "button"
+  wipePill.style.cssText = PILL_BASE
+  wipePill.title = "Plática Notes: wipe everything captured in this meeting so far"
+  const disarmWipe = () => {
+    wipeArmed = false
+    if (wipeTimer) clearTimeout(wipeTimer)
+    wipeTimer = undefined
+    wipePill.textContent = "🗑 Wipe"
+    wipePill.style.background = PILL_BG
+  }
+  wipePill.addEventListener("mouseenter", () => {
+    if (!wipeArmed) wipePill.style.background = PILL_BG_HOVER
+  })
+  wipePill.addEventListener("mouseleave", () => {
+    if (!wipeArmed) wipePill.style.background = PILL_BG
+  })
+  wipePill.addEventListener("click", () => {
+    if (!wipeArmed) {
+      wipeArmed = true
+      wipePill.textContent = "🗑 Wipe? confirm"
+      wipePill.style.background = WIPE_BG_ARMED
+      wipeTimer = setTimeout(disarmWipe, 4000)
+      return
+    }
+    disarmWipe()
+    opts.onPurge()
+  })
+  wipePill.textContent = "🗑 Wipe"
+
+  container.append(langPill, transcriptPill, recordingPill, wipePill, privacyPill)
   document.documentElement.appendChild(container)
   return {
     unmount: () => container.remove(),

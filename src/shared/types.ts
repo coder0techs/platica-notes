@@ -79,6 +79,13 @@ export interface ActiveSession {
   chatUrl?: string
   /** BCP 47 caption language active for this session; tracks mid-meeting changes. */
   captionLanguage?: string
+  /**
+   * Whether capture is currently recording. Absent/undefined means recording
+   * (default true) so existing and legacy sessions are unaffected. Persisted so a
+   * mid-meeting page reload (reload-resume) restores an Off state instead of
+   * silently starting to record again.
+   */
+  recording?: boolean
   debug?: DebugEvent[]
 }
 

@@ -104,6 +104,20 @@ export class RtcFeed {
     this.roster = roster
   }
 
+  /**
+   * Wipe all captured content (transcript, chat, and their dedup/order state) so
+   * capture restarts from an empty base. The roster (deviceId -> name) is KEPT: it
+   * is identity, not content, and turns captured after a wipe still need it to
+   * resolve speaker names.
+   */
+  reset(): void {
+    this.captions.clear()
+    this.nextOrder = 0
+    this.lastEventDeviceId = ""
+    this.chat = new ChatLog()
+    this.lastSelfChatAt.clear()
+  }
+
   /** Returns true if the revision was accepted (not stale). */
   handleCaption(ev: RtcCaptionEvent, at: string): boolean {
     const key = `${ev.deviceId}/${ev.messageId}`

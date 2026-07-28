@@ -2,6 +2,18 @@
 
 All notable changes to Plática Notes, newest first.
 
+## 1.14.0 - 2026-07-29
+
+- **Recording on/off toggle.** A new in-meeting pill (● Rec / ⏸ Rec off) pauses
+  and resumes capture without leaving the call. Turning it off stops everything
+  new — transcript, chat, join/leave markers, and notes — and the state survives
+  a page reload. Whatever was captured before you turned it off is still saved
+  when the meeting ends.
+- **Wipe recording.** A new in-meeting pill (🗑) clears everything captured in the
+  current meeting so far — transcript, chat, notes, and presence markers. Click
+  once to arm it, once more to confirm. A meeting left with nothing captured
+  writes no file.
+
 ## 1.13.1 - 2026-07-09
 
 - **Leave markers are now immediate and reliable.** They previously lagged by a
