@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "release": "node scripts/release.mjs",
     "screenshots": "node scripts/screenshots.mjs",
+    "promo-tiles": "node scripts/promo-tiles.mjs",
     "package": "npm run typecheck && npm test && npm run build && node scripts/package.mjs"
   },
   "keywords": [],

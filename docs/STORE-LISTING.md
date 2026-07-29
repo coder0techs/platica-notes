@@ -90,7 +90,19 @@ meeting's transcript and chat to the user's own computer.
 - [x] **Store icon 128×128** — the dashboard requires this separately; upload
       `public/icons/icon128.png`.
 - [x] **Screenshots** — five 1280×800 PNGs in `docs/store/screenshots/`.
-- [ ] Optional: small promo tile 440×280.
+- [x] Optional promo tiles — `docs/store/promo/` (`npm run promo-tiles`): small
+      440×280 and marquee 1400×560. Both only affect eligibility for the store's
+      browse/featured surfaces; publishing does not need them.
+
+All of these must be opaque (24-bit PNG, no alpha), which both generators satisfy.
+
+## Package tab: leave "Verified CRX uploads" off
+
+The dashboard offers opting in to verified CRX uploads — you sign the CRX with your
+own key and the store then accepts only uploads carrying that signature. It buys
+nothing for a single-maintainer project that uploads the zip by hand, and it is
+effectively irreversible: lose the key (or want to opt out) and the item can only be
+updated through Chrome Web Store support. Keep uploading `platica-notes-<version>.zip`.
 
 ## Screenshots
 
