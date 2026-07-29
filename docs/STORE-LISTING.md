@@ -94,11 +94,18 @@ before each submission.
 
 ## Privacy practices tab (data disclosures)
 
-- **Data usage — check exactly two boxes:** "Personal communications" (the meeting
-  transcript and chat text) and "Personally identifiable information" (participant
-  display names, used to label turns). Leave the rest unchecked. The store's
-  definition of collection covers obtaining the data at all, not only transmitting
-  it, so both are disclosed even though **nothing is transmitted off the device**.
+- **Data usage — check exactly three boxes:** "Personal communications" (transcript
+  and chat text), "Personally identifiable information" (participant display names,
+  used to label turns), and "Website content" (the meeting title, read from the page
+  and used for the file name and front matter). The store counts obtaining data as
+  collection, not only transmitting it, so all three are disclosed even though
+  **nothing is transmitted off the device**.
+- **Deliberately NOT checked:** "Web history" — the saved meeting URL and time are
+  part of the artefact the user asked to record, not a record of pages visited;
+  checking it would misdescribe the extension. "User activity" — their examples are
+  clicks, mouse position and keystroke logging; notes the user types into our own
+  panel are not that. Authentication, financial, health and location: never touched.
+  Keep this list consistent with `PRIVACY.md`, which the reviewer cross-checks.
 - **Not collected by the developer:** the developer receives no data of any kind.
 - **Sold to third parties?** No.
 - **Used or transferred for purposes unrelated to the single purpose?** No.
