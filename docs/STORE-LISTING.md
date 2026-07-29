@@ -23,7 +23,13 @@ works with Google Meet.
 • Reads Google Meet's own live captions, so the on-screen caption band never
   has to be turned on and capture keeps working in background tabs.
 • Speaker-attributed transcript plus in-meeting chat, interleaved chronologically.
-• A floating, scrollable transcript panel inside the meeting window.
+• Inline join and leave markers, so you can see who was in the room when.
+• A floating, scrollable transcript panel inside the meeting window, with notes you
+  can type as the call happens.
+• Recording on/off without leaving the call: pause capture, then resume where you
+  left off. Whatever was captured before the pause is still saved.
+• Wipe what was captured in the current meeting, in two clicks. A meeting left with
+  nothing captured writes no file at all.
 • Per-meeting privacy toggle: private meetings save to a separate folder you can
   keep out of cloud sync.
 • Local history of your recent meetings, with re-download and delete.

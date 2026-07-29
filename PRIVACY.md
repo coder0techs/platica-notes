@@ -1,6 +1,6 @@
 # Privacy Policy — Plática Notes
 
-**Effective date:** 2026-07-09
+**Effective date:** 2026-07-29
 
 Plática Notes is a browser extension that records Google Meet meeting transcripts
 and in-meeting chat **locally on your own device**. This policy explains exactly
@@ -65,6 +65,12 @@ the setting off when you no longer need it.
 
 ## Your control
 
+- **Pause capture at any time.** An in-meeting control turns recording off and back
+  on without leaving the call. While it is off, nothing new is captured — no
+  transcript, chat, presence markers, or notes.
+- **Wipe what was captured.** A second in-meeting control clears everything
+  captured in the current meeting so far. A meeting left with nothing captured
+  writes no file at all.
 - Everything is on your device: delete the `.md`/`.jsonl` files from Downloads, and
   use the extension's history page to delete stored meetings, at any time.
 - Uninstalling the extension removes its stored data.
