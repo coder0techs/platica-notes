@@ -30,8 +30,12 @@ then "Load unpacked"). Reload it after each build.
 3. `npm run package` runs typecheck + tests + build, then writes
    `platica-notes-<version>.zip`, the Chrome Web Store upload artifact.
 4. `git push --follow-tags` to publish the release commit and its tag.
-5. Upload the zip in the Web Store Developer Dashboard. Listing copy is in
-   `docs/STORE-LISTING.md`; the privacy policy is `PRIVACY.md`.
+5. If the in-meeting UI, the saved-file format, or a settings/history page changed,
+   `npm run screenshots` regenerates the five 1280×800 listing shots in
+   `docs/store/screenshots/` from the freshly built `dist/`.
+6. Upload the zip in the Web Store Developer Dashboard. Listing copy, screenshot
+   order and captions are in `docs/STORE-LISTING.md`; the privacy policy is
+   `PRIVACY.md`.
 
 Do not commit the zip; it is git-ignored and fully regenerable. To share a
 downloadable build, attach it to a GitLab release for the tag instead.

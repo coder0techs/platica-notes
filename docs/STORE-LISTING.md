@@ -87,11 +87,33 @@ meeting's transcript and chat to the user's own computer.
 ## Required assets checklist
 
 - [x] Icon set 16/32/48/128 (in `public/icons/`, shipped via the manifest).
-- [ ] **Store icon 128×128** — the dashboard requires this separately; the packaged
-      `icon128.png` can be reused.
-- [ ] **At least one screenshot** 1280×800 or 640×400 (e.g. the in-meeting
-      transcript panel, and the popup settings). Required to publish.
+- [x] **Store icon 128×128** — the dashboard requires this separately; upload
+      `public/icons/icon128.png`.
+- [x] **Screenshots** — five 1280×800 PNGs in `docs/store/screenshots/`.
 - [ ] Optional: small promo tile 440×280.
+
+## Screenshots
+
+`npm run screenshots` regenerates all five (after `npm run build`). The harness
+(`scripts/screenshots.mjs`) loads the real `dist/` build into a real Chromium and
+drives the actual capture pipeline — the fixture transcript, chat and roster events
+travel over the same MAIN-world bridge Meet's data channels feed, so the panel, the
+pills and the timeline are the genuine UI, and the saved-file shot is real output
+from `src/background/format.ts`. Only the meeting *stage* is a local stub page (no
+real meeting, no real participants' data, and no imitation of Meet's interface).
+
+Upload in this order, with these captions:
+
+1. `01-in-meeting-panel.png` — "The live transcript panel: speakers, chat, join and
+   leave markers, and your own notes, as the call happens."
+2. `02-recording-controls.png` — "Pause capture or wipe everything recorded so far,
+   without leaving the call."
+3. `03-saved-file.png` — "Every meeting is saved as a Markdown file on your own
+   computer. No servers, no accounts."
+4. `04-history.png` — "A local history of recent meetings; re-download or delete any
+   of them."
+5. `05-settings.png` — "Caption language, a private-by-default toggle, and the
+   folders your meetings are written to."
 
 ## Hosting the privacy policy
 
