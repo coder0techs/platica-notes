@@ -116,18 +116,18 @@ before each submission.
 
 ## Test instructions (Access tab)
 
-The reviewer needs to know that no login exists to give them, and how to see capture
-work. Paste-ready:
+Leave **Credentials** empty — there is no login to give. "Additional instructions" is
+capped at **500 characters**, so this is written to fit (494) and every sentence earns
+its place: the reviewer must know that Meet's on-screen caption band does not need to
+be on (otherwise they conclude capture is broken) and where the file lands.
 
 ```
-The extension has no account, no login and no backend, so there are no test credentials to provide. It only activates on a Google Meet meeting page.
+No account, login or backend, so there are no credentials. The extension runs only on a Google Meet meeting page.
 
-1. Open https://meet.google.com and start a meeting (a Google account is needed for Meet itself, not for the extension).
-2. The extension's controls appear at the top of the meeting: caption language, Transcript, Rec, Wipe, Private. Click "Transcript" to open the live panel.
-3. Speak, or have a second participant speak. Captured turns appear in the panel attributed to the speaker; messages sent in the meeting chat appear there too. Meet's on-screen caption band does not need to be turned on - capture reads the meeting's own caption data channel.
-4. Leave the meeting. The transcript is saved as a Markdown file in Downloads/meetings/platica-notes/.
-
-"Rec" pauses and resumes capture; "Wipe" (click once to arm, again to confirm) clears what was captured; "Private" routes the file to a separate folder. Settings and a local history of recent meetings are on the extension's own pages. The extension makes no network requests of its own.
+1. Open meet.google.com and start a meeting (the account is for Meet, not for us).
+2. Our controls appear at the top: language, Transcript, Rec (pause), Wipe, Private. Click Transcript for the live panel.
+3. Speak, or send a chat message: attributed turns appear in the panel. Meet's caption band need not be on.
+4. Leave. The .md file lands in Downloads/meetings/platica-notes/.
 ```
 
 ## Required assets checklist
