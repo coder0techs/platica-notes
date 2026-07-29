@@ -33,7 +33,12 @@ then "Load unpacked"). Reload it after each build.
 5. If the in-meeting UI, the saved-file format, or a settings/history page changed,
    `npm run screenshots` regenerates the five 1280×800 listing shots in
    `docs/store/screenshots/` from the freshly built `dist/`.
-6. Upload the zip in the Web Store Developer Dashboard. Listing copy, screenshot
+6. **If `PRIVACY.md` changed, paste it into the published privacy-policy Google Doc
+   and re-publish it.** The store's policy URL serves that doc, not this file, so
+   editing only the repo silently leaves the public policy stale — which is exactly
+   what happened between 1.13.0 (the `chat.google.com` disclosure) and 1.14.0. Check
+   the live URL's effective date against `PRIVACY.md` before submitting.
+7. Upload the zip in the Web Store Developer Dashboard. Listing copy, screenshot
    order and captions are in `docs/STORE-LISTING.md`; the privacy policy is
    `PRIVACY.md`.
 
