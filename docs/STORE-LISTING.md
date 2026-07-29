@@ -51,31 +51,54 @@ meeting's transcript and chat to the user's own computer.
 
 ## Permission justifications (required, per item)
 
-- **storage** — Persist the user's settings, a rolling local history of recent
-  meetings, and per-meeting crash-recovery snapshots, all in the browser's local
-  extension storage.
-- **unlimitedStorage** — A long meeting's transcript plus its full per-caption
-  revision history, multiplied across the retained recent meetings, can exceed the
-  default ~10 MB local-storage quota before the files are exported; this removes
-  that ceiling so a long call is never truncated mid-capture.
-- **downloads** — Write the transcript (`.md`) and the optional diagnostic log
-  (`.jsonl`) files the user explicitly asked to save, into their Downloads folder.
-- **Host permission `https://meet.google.com/*`** — The extension only operates on
-  Google Meet; it must run its content scripts there to read the meeting's live
-  captions and chat. No other site is requested (no `<all_urls>`).
-- **Host permission `https://chat.google.com/*`** — Google Meet renders the
-  in-meeting chat inside an embedded Google Chat (`chat.google.com`) frame. To
-  capture the messages the user sends themselves (which never come back over the
-  meeting page), a content script must run in that frame to read the outgoing
-  message text locally. It reads only the user's own outgoing chat and never makes
-  a network request; the text is passed to the meeting tab in-browser.
+One field per permission in the dashboard's Privacy tab; each is ≤1000 characters
+and paste-ready as-is.
+
+**storage**
+
+```
+Stores the user's own settings (caption language, private-by-default toggle, download folder names), a rolling local history of their recent meetings, and a per-meeting crash-recovery snapshot so that a tab or browser crash mid-call does not lose the transcript. All of it stays in the browser's local extension storage on the user's device; none of it is transmitted anywhere.
+```
+
+**unlimitedStorage**
+
+```
+One long meeting's transcript, plus the per-caption revision history that lets the user recover words Google's final caption dropped, can exceed the default ~10 MB local-storage quota before the file is exported - multiplied across the retained recent meetings. Without this permission a long call would be truncated mid-capture. This only lifts the local quota ceiling; no data leaves the device.
+```
+
+**downloads**
+
+```
+Writes the files the user explicitly asked for: the meeting transcript as a .md file in the user's Downloads folder and, only if the user turns on the optional debug setting, a diagnostic .jsonl log. The extension writes nothing else and never reads or modifies other downloads.
+```
+
+**Host permission** (one field covers both hosts)
+
+```
+https://meet.google.com/* - the extension only operates inside Google Meet. Its content scripts must run there to read the meeting's own live caption and chat data locally, and to render the in-meeting controls and transcript panel.
+
+https://chat.google.com/* - Meet renders the in-meeting chat inside an embedded Google Chat frame, and a message the user sends themselves is never repeated back over the meeting page. So that the user's own chat still appears in the transcript, a content script runs in that frame and reads only the user's own outgoing message text, passing it to the meeting tab in-browser.
+
+No other site is requested (no <all_urls>). The extension makes no network requests of its own; it only reads the responses of Meet's own in-page requests.
+```
+
+## Remote code: answer "No"
+
+Select **"No, I am not using remote code."** Everything executable ships inside the
+package: no `eval`, no `new Function`, no dynamic `import()`, no external `<script>`
+or stylesheet, and `content_security_policy.extension_pages` is `script-src 'self'`.
+The `fetch`/`XHR` wrappers in `meet-rtc/main.ts` only read the responses of Meet's
+own in-page requests (to resolve participant names); they never fetch or execute
+anything. Re-verify with a grep for `eval(`/`new Function`/`import(`/`src="http`
+before each submission.
 
 ## Privacy practices tab (data disclosures)
 
-- **What user data is collected/used:** "Personal communications" (the meeting
-  transcript and chat are processed locally to build the saved file). Optionally
-  "Personally identifiable information" in the form of participant display names
-  used to label the transcript. **Nothing is transmitted off the device.**
+- **Data usage — check exactly two boxes:** "Personal communications" (the meeting
+  transcript and chat text) and "Personally identifiable information" (participant
+  display names, used to label turns). Leave the rest unchecked. The store's
+  definition of collection covers obtaining the data at all, not only transmitting
+  it, so both are disclosed even though **nothing is transmitted off the device**.
 - **Not collected by the developer:** the developer receives no data of any kind.
 - **Sold to third parties?** No.
 - **Used or transferred for purposes unrelated to the single purpose?** No.
@@ -83,6 +106,22 @@ meeting's transcript and chat to the user's own computer.
 - **Privacy policy URL:** `https://docs.google.com/document/d/e/2PACX-1vRC_V6otNoK1nCt_2Up6aJ9ZfEFtaW-1scov-Tyj5FscnreqYB-shdXYw5Xo-gyAOJpzbNhWkgcFjSm/pub`
 - **Limited Use:** certify compliance — all data stays on-device and is used only
   for the single purpose above.
+
+## Test instructions (Access tab)
+
+The reviewer needs to know that no login exists to give them, and how to see capture
+work. Paste-ready:
+
+```
+The extension has no account, no login and no backend, so there are no test credentials to provide. It only activates on a Google Meet meeting page.
+
+1. Open https://meet.google.com and start a meeting (a Google account is needed for Meet itself, not for the extension).
+2. The extension's controls appear at the top of the meeting: caption language, Transcript, Rec, Wipe, Private. Click "Transcript" to open the live panel.
+3. Speak, or have a second participant speak. Captured turns appear in the panel attributed to the speaker; messages sent in the meeting chat appear there too. Meet's on-screen caption band does not need to be turned on - capture reads the meeting's own caption data channel.
+4. Leave the meeting. The transcript is saved as a Markdown file in Downloads/meetings/platica-notes/.
+
+"Rec" pauses and resumes capture; "Wipe" (click once to arm, again to confirm) clears what was captured; "Private" routes the file to a separate folder. Settings and a local history of recent meetings are on the extension's own pages. The extension makes no network requests of its own.
+```
 
 ## Required assets checklist
 
