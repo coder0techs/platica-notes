@@ -115,7 +115,11 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  document.body.innerHTML = ""
+  // The extension mounts its UI on documentElement (Meet re-renders body), so clean
+  // up anything that is not head/body.
+  for (const el of [...document.documentElement.children]) {
+    if (el !== document.head && el !== document.body) el.remove()
+  }
   delete (globalThis as unknown as { chrome?: unknown }).chrome
 })
 
@@ -232,6 +236,44 @@ describe("runSession", () => {
     expect(sent.filter((kind) => kind === "meetingEnded")).toHaveLength(2)
     expect(stored()!.title).toBe("Fixture meeting")
     expect(stored()!.transcript.map((u) => u.text)).toEqual(["fresh call"])
+  })
+
+  it("records a platform-reported capture problem on the session", async () => {
+    const fake = fakeAdapter()
+    const run = runSession(deps(fake.adapter))
+    await new Promise((r) => setTimeout(r, 0))
+    fake.emit({ type: "health", code: "captions-off" })
+    // The reason is shown to the user while the meeting runs, not just filed away.
+    expect(document.documentElement.textContent).toContain("Captions are turned off")
+    fake.end()
+    await run
+
+    expect(stored()!.captureHealth).toBe("captions-off")
+    // ...and the notice goes away with the rest of the session UI.
+    expect(document.documentElement.textContent).not.toContain("Captions are turned off")
+  })
+
+  it("leaves captureHealth unset once captions actually flowed", async () => {
+    const fake = fakeAdapter()
+    const run = runSession(deps(fake.adapter))
+    await new Promise((r) => setTimeout(r, 0))
+    fake.emit({ type: "health", code: "channel-open" })
+    fake.emit(utterance("u1", "m1", 1, "hello"))
+    fake.end()
+    await run
+
+    expect(stored()!.captureHealth).toBeUndefined()
+  })
+
+  it("mounts no language pill on a platform that cannot switch captions", async () => {
+    const fake = fakeAdapter({ languageSwitch: "none" })
+    const run = runSession(deps(fake.adapter))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(document.querySelector("select")).toBeNull()
+    // The rest of the controls are still there.
+    expect(document.documentElement.textContent).toContain("Transcript")
+    fake.end()
+    await run
   })
 
   it("marks a mid-meeting arrival as a join once the settle window has passed", async () => {

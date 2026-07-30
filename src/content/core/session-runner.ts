@@ -13,9 +13,10 @@ import type { ActiveSession, DebugEvent, Note, ParticipantEvent } from "../../sh
 import type { CaptureEvent } from "../capture/protocol"
 import type { PlatformAdapter } from "../platforms/adapter"
 import { CaptureFeed } from "./feed"
+import { healthMessage, isAlarming, nextHealth, type Health, type HealthInput } from "./health"
 import { SessionWriter } from "./persistence"
 import { isMidMeetingJoin, seedAttendees, shouldAskLanguage, shouldFinalizeStaleSession } from "./session-lifecycle"
-import { isUiHidden, mountLanguagePrompt, mountMeetingControls, pulseActivity, showToast } from "./ui"
+import { isUiHidden, mountLanguagePrompt, mountMeetingControls, pulseActivity, showPersistentNotice, showToast } from "./ui"
 import { mountTranscriptPanel } from "./transcript-panel"
 
 // Bounds per-flush serialization cost on long debug sessions; oldest events drop
@@ -25,6 +26,10 @@ const DEBUG_EVENTS_MAX = 5000
 
 // Poll interval while waiting out the post-call flush window.
 const FLUSH_POLL_MS = 150
+
+// Cadence for the health fold's clock input. Only the initial "did the capture
+// channel ever come up" wait needs it, so it can be lazy.
+const HEALTH_TICK_MS = 2000
 
 // Meet fills the real meeting name in with a delay, so the title is re-read once
 // after this long. Cleared on finalize, so a short meeting leaves no stray timer.
@@ -118,6 +123,30 @@ export async function runSession(deps: RunnerDeps): Promise<void> {
   // when the adapter declares livenessEnd; it short-circuits the flush wait, because
   // once the path is down no further captions can arrive.
   let livenessDown = false
+
+  // Capture health. Seeded from whatever the platform already knows: the capture
+  // channel can come up before this session exists, and a session that missed the
+  // signal would otherwise sit in "opening" and cry wolf.
+  const seen = adapter.initialHealth?.()
+  let health: Health = {
+    code: seen === undefined || seen === null ? "opening" : seen === "channel-open" ? "armed" : seen,
+    since: new Date().toISOString(),
+  }
+  let healthNotice: { dismiss: () => void } | null = null
+  const applyHealth = (input: HealthInput): void => {
+    const before = health.code
+    health = nextHealth(health, input)
+    if (health.code === before) return
+    debug.log("capture health", { code: health.code, detail: health.detail })
+    if (isAlarming(health.code)) {
+      // One notice at a time; a new alarming code replaces the previous message.
+      healthNotice?.dismiss()
+      healthNotice = showPersistentNotice(healthMessage(health.code))
+    } else {
+      healthNotice?.dismiss()
+      healthNotice = null
+    }
+  }
 
   // This meeting's debug window starts here. Earlier events (e.g. the MAIN-world
   // "installed") fall into the first meeting — acceptable.
@@ -258,6 +287,9 @@ export async function runSession(deps: RunnerDeps): Promise<void> {
   }
 
   const controls = mountMeetingControls({
+    // A platform we cannot switch captions on gets no language pill at all, rather
+    // than a control that silently does nothing.
+    languageSwitch: adapter.capabilities.languageSwitch,
     initialLanguage: session.captionLanguage ?? settings.captionLanguage,
     initialPrivate: session.isPrivate,
     initialRecording: recording,
@@ -287,7 +319,10 @@ export async function runSession(deps: RunnerDeps): Promise<void> {
   // start of a fresh meeting (capture is already running in the default). Skipped on
   // a reload-resume and while all UI is hidden. Routes a switch through applyLanguage
   // (same ephemeral path as the pill) and keeps the pill in sync via setLanguage.
-  if (shouldAskLanguage(settings.askLanguageEachMeeting, !!resumed, isUiHidden())) {
+  if (
+    adapter.capabilities.languageSwitch !== "none" &&
+    shouldAskLanguage(settings.askLanguageEachMeeting, !!resumed, isUiHidden())
+  ) {
     languagePrompt = mountLanguagePrompt({
       initialLanguage: session.captionLanguage ?? settings.captionLanguage,
       onPick: (language) => {
@@ -415,7 +450,16 @@ export async function runSession(deps: RunnerDeps): Promise<void> {
       case "liveness":
         livenessDown = event.openSessions === 0
         return
+      case "health":
+        applyHealth(
+          event.code === "channel-open"
+            ? { kind: "channel-open", now: new Date().toISOString() }
+            : { kind: "reported", code: event.code, detail: event.detail, now: new Date().toISOString() },
+        )
+        return
       case "utterance": {
+        // Text on the wire proves the path works, whether or not we are recording it.
+        applyHealth({ kind: "utterance", now: new Date().toISOString() })
         if (!recording) return
         if (!feed.handleCaption(event, new Date().toISOString())) return
         if (!firstCaptionLogged) {
@@ -456,6 +500,10 @@ export async function runSession(deps: RunnerDeps): Promise<void> {
   const stopWatchingEnd = adapter.watchEnd((reason) => void endMeeting(reason))
   // -----------------------------------------------------------------------------
 
+  // Clock input for the health fold: promotes the initial wait to an alarm if the
+  // capture channel never comes up. Silence in an armed channel never trips it.
+  const healthTicker = setInterval(() => applyHealth({ kind: "tick", now: new Date().toISOString() }), HEALTH_TICK_MS)
+
   // The language prompt already says "recording in X" — skip the generic toast when
   // it is up, so the two do not stack on the same spot.
   if (!languagePrompt) showToast("Plática Notes is recording this meeting")
@@ -476,6 +524,7 @@ export async function runSession(deps: RunnerDeps): Promise<void> {
     // leave click can re-enter during the flush wait below.
     stopWatchingEnd()
     clearTimeout(titleTimer)
+    clearInterval(healthTicker)
     // Leave the event subscription attached and wait: a platform can keep streaming
     // the final caption revision for a couple of seconds after the call ends (same
     // utterance id, higher revision), so the feed completes the closing sentence
@@ -509,6 +558,7 @@ export async function runSession(deps: RunnerDeps): Promise<void> {
     controls.unmount()
     panel.unmount()
     languagePrompt?.unmount()
+    healthNotice?.dismiss()
     // Final snapshot resolves speaker names from the roster as it stands now, and
     // includes anything the flush wait above let land.
     session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
@@ -517,6 +567,10 @@ export async function runSession(deps: RunnerDeps): Promise<void> {
     session.participants = [...attendees]
     session.notes = [...notes]
     session.participantEvents = [...participantEvents]
+    // Record WHY nothing (or little) was captured, but only when the answer is not
+    // "it worked": an empty transcript otherwise reads as our bug rather than as
+    // captions never having started.
+    if (health.code !== "capturing") session.captureHealth = health.code
     // Capture the complete debug trail (including this "meeting ended") into the
     // final snapshot. Stays undefined when disabled — no behavioural change.
     if (debug.enabled()) session.debug = [...prefixDebug, ...debug.events().slice(debugStart)]

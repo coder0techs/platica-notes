@@ -79,6 +79,7 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
       participantEvents: session.participantEvents ?? [],
       recorder: session.selfName,
       language: session.captionLanguage ?? settings.captionLanguage,
+      captureHealth: session.captureHealth,
       meetingUrl:
         session.platform === "meet" && session.path ? `https://meet.google.com${session.path}` : undefined,
       chatUrl: session.chatUrl,

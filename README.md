@@ -72,6 +72,11 @@ Files land in your Downloads folder:
 | `Downloads/Platica Notes private/` | transcripts of meetings marked private |
 | `Downloads/Platica Logs/` | debug logs (`.jsonl`), only when debug is on |
 
+If a meeting could not be captured properly — captions never started, or the stream
+dropped and could not be restored — the file says so in its header (`capture:`) and
+the extension tells you in the call while it is happening. A thin transcript is never
+left looking like it is all that was said.
+
 ### Cloud sync (optional)
 
 Sync `Downloads/Platica Notes/` with your own tooling (e.g. Google Drive for

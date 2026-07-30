@@ -4,7 +4,7 @@
 // wire format, its internal APIs) stays behind this interface.
 
 import type { ActiveSession, PlatformId } from "../../shared/types"
-import type { CaptureEvent } from "../capture/protocol"
+import type { CaptureEvent, HealthEvent } from "../capture/protocol"
 import type { CaptionRules } from "../core/feed"
 
 /**
@@ -78,6 +78,13 @@ export interface PlatformAdapter {
 
   /** Switch the caption language. Absent when capabilities.languageSwitch is "none". */
   setLanguage?(tag: string): void
+  /**
+   * Capture-path state already observed before this session started, if any. The
+   * capture script can open its channel before the runner exists (both happen at
+   * join), and without this the runner would sit in "opening" and raise a false
+   * "never started" alarm. Return null when nothing is known yet.
+   */
+  initialHealth?(): HealthEvent["code"] | null
   /**
    * Extra platform-owned fields to stamp into every persisted snapshot (Meet: the
    * chat.google.com conversation URL). Called on every write, so it must be cheap

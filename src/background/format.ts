@@ -101,6 +101,9 @@ export function formatMeetingText(meeting: Meeting, opts: FormatOptions = {}): s
   if (meeting.meetingUrl) fm.push(`url: ${yamlScalar(meeting.meetingUrl)}`)
   if (meeting.chatUrl) fm.push(`chat_url: ${yamlScalar(meeting.chatUrl)}`)
   if (meeting.language) fm.push(`language: ${yamlScalar(meeting.language)}`)
+  // Present ONLY when capture did not end up healthy (see core/health.ts), so a thin
+  // or empty transcript carries its reason instead of looking like a bug in here.
+  if (meeting.captureHealth) fm.push(`capture: ${yamlScalar(meeting.captureHealth)}`)
   fm.push(`timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`)
   fm.push(`started: ${isoLocal(meeting.startedAt)}`)
   fm.push(`ended: ${isoLocal(meeting.endedAt)}`)

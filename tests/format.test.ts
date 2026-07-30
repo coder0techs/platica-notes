@@ -36,6 +36,23 @@ describe("formatMeetingText (v3)", () => {
     expect(fm).toMatch(/ended: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}/)
   })
 
+  it("records why capture was unhealthy, and stays silent when it was fine", () => {
+    const healthy = frontMatter(formatMeetingText(makeMeeting()))
+    expect(healthy).not.toContain("capture:")
+
+    const unhealthy = frontMatter(formatMeetingText(makeMeeting({ captureHealth: "host-disabled" })))
+    expect(unhealthy).toContain('capture: "host-disabled"')
+    // Exactly one line, so a reader (or a re-import) cannot see two verdicts.
+    expect(unhealthy.match(/^capture:/gm)).toHaveLength(1)
+  })
+
+  it("escapes the capture reason like every other scalar", () => {
+    const fm = frontMatter(formatMeetingText(makeMeeting({ captureHealth: 'odd" code\nwith break' })))
+    expect(fm).toContain('capture: "odd\\" code\\nwith break"')
+    // The escaped value cannot open a second front-matter line.
+    expect(fm.match(/^capture:/gm)).toHaveLength(1)
+  })
+
   it("moves schema, source and generator out of the human block into a comment", () => {
     const text = formatMeetingText(makeMeeting())
     const fm = frontMatter(text)

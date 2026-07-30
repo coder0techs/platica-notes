@@ -80,6 +80,12 @@ export interface ActiveSession {
   /** BCP 47 caption language active for this session; tracks mid-meeting changes. */
   captionLanguage?: string
   /**
+   * Why capture was not healthy at finalize (a core/health.ts code, e.g.
+   * "no-channel", "host-disabled"). Absent when capture worked — the common case —
+   * and a plain string so a future code needs no migration.
+   */
+  captureHealth?: string
+  /**
    * Whether capture is currently recording. Absent/undefined means recording
    * (default true) so existing and legacy sessions are unaffected. Persisted so a
    * mid-meeting page reload (reload-resume) restores an Off state instead of
@@ -116,6 +122,11 @@ export interface Meeting {
   recorder?: string
   /** BCP 47 caption language the stream was captured with, snapshot at finalize. */
   language?: string
+  /**
+   * Why capture was not healthy at finalize (a core/health.ts code). Absent when
+   * capture worked; reaches the saved file as the front-matter `capture:` line.
+   */
+  captureHealth?: string
   /** Join link of the recorded meeting, e.g. https://meet.google.com/abc-defg-hij. */
   meetingUrl?: string
   /** URL of the embedded Google Chat conversation frame, if captured (best-effort). */

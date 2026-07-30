@@ -95,6 +95,17 @@ export interface LivenessEvent {
   pcState: RTCPeerConnectionState
 }
 
+// State of the capture data path itself, dispatched by the MAIN-world script: the
+// channel we read captions from coming up, dying unrecoverably, or the platform
+// telling us captions are unavailable. The isolated runner folds these into its
+// Health state (core/health.ts) and surfaces the reason to the user. Carries no
+// meeting content.
+export interface HealthEvent {
+  type: "health"
+  code: "channel-open" | "channel-lost" | "captions-off" | "unsupported-client"
+  detail?: string
+}
+
 export type CaptureEvent =
   | UtteranceEvent
   | ChatEvent
@@ -102,6 +113,7 @@ export type CaptureEvent =
   | RosterLeaveEvent
   | SelfEvent
   | LivenessEvent
+  | HealthEvent
 
 export interface CaptureConfig {
   captionLanguage: string

@@ -132,6 +132,13 @@ const PILL_BG_HOVER = "rgba(60,64,67,.95)"
  * panel's open/closed state on the toggle pill.
  */
 export function mountMeetingControls(opts: {
+  /**
+   * Whether the platform lets us change the caption language at all. "none" mounts
+   * no language pill: an inert control that silently does nothing is worse than an
+   * absent one. "host-only" still mounts it — a switch can fail there, but only
+   * because of a role we cannot see from here.
+   */
+  languageSwitch: "self" | "host-only" | "none"
   initialLanguage: string
   initialPrivate: boolean
   initialRecording: boolean
@@ -309,7 +316,13 @@ export function mountMeetingControls(opts: {
   })
   wipePill.textContent = "🗑 Wipe"
 
-  container.append(langPill, transcriptPill, recordingPill, wipePill, privacyPill)
+  container.append(
+    ...(opts.languageSwitch === "none" ? [] : [langPill]),
+    transcriptPill,
+    recordingPill,
+    wipePill,
+    privacyPill,
+  )
   document.documentElement.appendChild(container)
   return {
     unmount: () => container.remove(),

@@ -15,7 +15,7 @@ import { isBookmarkChord, isHideUiChord } from "../core/hotkeys"
 import { isUiHidden, setUiHidden, showPersistentNotice } from "../core/ui"
 import { runSession } from "../core/session-runner"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../capture/protocol"
-import type { CaptureEvent } from "../capture/protocol"
+import type { CaptureEvent, HealthEvent } from "../capture/protocol"
 import type { PlatformAdapter } from "./adapter"
 import { parseOwnChatMessage } from "../chatgoogle/parse"
 import {
@@ -89,6 +89,11 @@ let noteSink: ((text: string) => void) | null = null
 // the running meeting can detect an authoritative end (count sustained at zero).
 // Null between meetings — a stray media event then has no meeting to end.
 let onMediaState: ((openSessions: number) => void) | null = null
+// Latest capture-path state seen from the MAIN-world script. Page-level because the
+// captions channel can come up BEFORE a session exists (both happen at join), and a
+// session that missed the signal would otherwise raise a false "never started"
+// alarm; the runner seeds itself from this through meetAdapter.initialHealth.
+let lastChannelHealth: HealthEvent["code"] | null = null
 // Tail-grace bookkeeping for the soft-nav loop: which meeting ended and when, so a
 // same-code re-entry inside the grace drains the caption tail with no live session
 // to catch it as a phantom duplicate. Set through meetAdapter.afterFinalize.
@@ -179,7 +184,11 @@ async function main(): Promise<void> {
     // meetings (onMediaState is null) — there is nothing to finalize.
     if (event.type === "liveness" && typeof event.openSessions === "number") {
       onMediaState?.(event.openSessions)
+      return
     }
+    // Remember the capture path's state so a session starting after the channel
+    // opened does not think it never came up.
+    if (event.type === "health") lastChannelHealth = event.code
   })
 
   // The MAIN-world script must know the caption language before its first
@@ -468,6 +477,7 @@ export const meetAdapter: PlatformAdapter = {
     activeLanguage = tag
     pushRtcConfig(tag, debugEnabled)
   },
+  initialHealth: () => lastChannelHealth,
   snapshotFields: () => ({ chatUrl: chatUrl ?? undefined }),
   // Arm the caption-tail grace: a same-code re-entry inside the window drains
   // Meet's trailing revisions with no live session to catch them as phantoms.

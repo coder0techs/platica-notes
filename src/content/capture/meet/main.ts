@@ -245,6 +245,10 @@ function sendSubscribe(s: MediaSession): void {
     s.subscribed = true
     log("subscribe-sent", { op, lang: s.lang })
     record({ phase: "subscribe-sent", op, lang: s.lang })
+    // A subscribe sent on an open channel is the honest "capture is armed" signal:
+    // the adapter can stop waiting for the channel, and silence from here on is a
+    // quiet meeting rather than a fault.
+    dispatch({ type: "health", code: "channel-open" })
   } catch (err) {
     s.subscribed = false
     log("subscribe-error", String(err))
@@ -275,6 +279,9 @@ function watchCaptionsChannel(pc: RTCPeerConnection, ch: RTCDataChannel): void {
       const s = sessions.find((x) => x.pc === pc && x.channel.readyState === "open")
       record({ phase: "captions-recreate", id: ch.id, pc: pc.connectionState, haveSession: !!s })
       if (s) sendSubscribe(s)
+      // The channel dropped while the connection is still up, and there is no open
+      // session left to re-subscribe on: capture is down and cannot recover itself.
+      else dispatch({ type: "health", code: "channel-lost" })
       return
     }
     setTimeout(tick, CAPTIONS_WATCH_MS)
