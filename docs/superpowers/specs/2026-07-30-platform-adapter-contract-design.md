@@ -178,8 +178,8 @@ interface Capabilities {
   `rawVersions: true`, `participantEvents: true`.
 
 Gating: the language pill does not mount at `"none"`; the transcript panel omits its
-chat section when `chat: false`; `src/background/format.ts` gains
-`zoom: "zoom-live-transcript"` alongside the existing `meet:` source tag.
+chat section when `chat: false`. `src/background/format.ts` needs no change here — its
+`PLATFORM_SOURCES` map already carries `zoom` and `teams` entries.
 
 `"host-only"` is defined now but used by no adapter yet: it is what Zoom becomes once
 language switching is implemented (Zoom's live transcription is enabled server-side by
@@ -273,8 +273,11 @@ and a live Zoom web-client meeting for the skeleton.
    `scripts/screenshots.mjs` update. Mechanical; suite green.
 2. `feed.ts` move into core and `CaptionRules` extraction.
 3. `session-lifecycle.ts` split out of `meet-lifecycle.ts`.
-4. `session-runner.ts` extraction from `runMeeting()`; Meet is still the only platform.
-5. `adapter.ts` and Meet implementing it; `meet.ts` shrinks to platform specifics.
+4. `adapter.ts` and a Meet adapter object assembled from the existing code, still
+   driven by today's `main()`/`runMeeting()`. The interface must exist before the
+   runner can take it, otherwise step 5 needs a throwaway intermediate type.
+5. `session-runner.ts` extraction from `runMeeting()` against that interface;
+   `meet.ts` shrinks to platform specifics. Meet is still the only platform.
 6. Capabilities gating plus `health.ts` and the front-matter line.
 7. Optional permissions, runtime registration, the options toggle, and the Zoom
    skeleton (`capture/zoom/`, `platforms/zoom.ts`).
