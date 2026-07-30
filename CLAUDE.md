@@ -47,24 +47,44 @@ downloadable build, attach it to a GitLab release for the tag instead.
 
 ## Architecture
 
-Capture reads Meet's own WebRTC data channels, not the on-screen caption DOM.
-Three contexts, split by responsibility:
+Capture reads each platform's own data path, never the on-screen caption DOM: on
+Meet the WebRTC data channels, on Zoom the web client's Redux actions. Four layers,
+split so that everything fragile about a platform stays in a thin slice:
 
-1. **MAIN-world capture** (`src/content/meet-rtc/`). A `document_start` script
-   wraps `RTCPeerConnection`, attaches to Meet's data channels, and decodes the
-   transcript/chat/roster protobuf (`proto.ts`). Typed events cross into the
-   isolated world via `CustomEvent` (`bridge.ts`, JSON-string payloads). `feed.ts`
-   is the pure accumulator (dedupe by message version, speaker-name resolution).
-2. **Isolated adapter** (`src/content/platforms/meet.ts`). Owns the meeting
-   lifecycle: join/leave detection, soft-nav loop, reload-resume, the privacy
-   pill, and the caption-tail flush on leave. Pure decision logic is extracted
-   into `meet-lifecycle.ts` so it can be unit-tested.
-3. **Background service worker** (`src/background/`). Session store with
-   retention, finalize on meeting end or tab close (crash-resumable), and `.md`
-   export via `chrome.downloads`.
+1. **MAIN-world capture** (`src/content/capture/<platform>/`). A `document_start`
+   script per platform. Meet's wraps `RTCPeerConnection`, attaches to the data
+   channels and decodes the transcript/chat/roster protobuf (`proto.ts`); Zoom's
+   claims `window.Redux` with an accessor and observes store actions (`map.ts` is
+   the pure action → event mapper). Each normalises its platform's wire data into
+   ONE canonical event shape and dispatches it into the isolated world via
+   `CustomEvent` (`capture/protocol.ts`, JSON-string payloads).
+2. **Platform-neutral core** (`src/content/core/`). `session-runner.ts` runs one
+   meeting end to end (start and reload-resume, UI, attendee and presence
+   bookkeeping, notes, debug trail, finalize) and knows nothing about any platform.
+   `feed.ts` is the pure accumulator (revision dedupe, speaker resolution,
+   interruption split) driven by per-platform `CaptionRules`. `health.ts` folds the
+   capture-path state into a reason the user can act on. `session-lifecycle.ts`
+   holds the pure decisions any platform's session makes.
+3. **Isolated adapters** (`src/content/platforms/`). `adapter.ts` is the contract:
+   meeting detection, join/end, title, meeting url, the event stream, declared
+   `Capabilities` and measured timings. `meet.ts` and `zoom.ts` implement it; their
+   pure decision logic is extracted (`meet-lifecycle.ts`) so it can be unit-tested.
+4. **Background service worker** (`src/background/`). Session store with retention,
+   finalize on meeting end or tab close (crash-resumable), `.md` export via
+   `chrome.downloads`, and `platforms.ts` — the runtime registration of the opt-in
+   Zoom scripts, gated on the host permission the user granted.
 
-`src/shared/` holds the domain types, storage helpers, and the
-content-to-background message contract.
+`src/shared/` holds the domain types, storage helpers, the content-to-background
+message contract, and the optional-platform permission constants.
+
+**Adding a platform** means: a `capture/<platform>/` script that emits canonical
+events, a `platforms/<platform>.ts` implementing `PlatformAdapter`, entry points in
+`build.mjs`, and (if it is opt-in) matches in `background/platforms.ts`. Nothing in
+`core/` should need to change; if it does, the contract is wrong.
+
+The canonical event's two invariants are load-bearing and documented in
+`capture/protocol.ts`: `text` is CUMULATIVE, and `revision` strictly increases per
+`utteranceId`. Break either and the core loses text silently.
 
 ## Invariants (do not regress)
 
@@ -87,9 +107,18 @@ content-to-background message contract.
   - `MEETING_TITLE` (`.u6vdEc`) — still resolves the human title; if it breaks,
     capture still works but the file is named from `document.title` (the code).
   - `MEETING_PATH` regex still matches a real meeting URL.
-  - Channel labels in `meet-rtc/main.ts` (`media-session`, `captions`,
+  - Channel labels in `capture/meet/main.ts` (`media-session`, `captions`,
     `collections`, `meet_messages`) still route; the debug log's `channel` phases
     list what Meet actually opened, and `meet-build` records the Meet build tested.
+- **The Zoom contract is fragile in a different way.** `platforms/zoom.ts` keys off
+  the web client's URL shape (`/wc/<id>/join`), and `capture/zoom/main.ts` depends on
+  `window.Redux` existing and on the action names `SET_NEW_L_T_MESSAGE`,
+  `UPDATE_MESSAGE`, `SET_MEETING_TOPIC`, `JOIN_MEETING_SUCCESS`. If the global goes
+  away the capture script reports `unsupported-client` rather than recording an empty
+  file — but re-verify on a live web-client call before any release that ships Zoom.
+- **The session runner's ordering is not stylistic.** The seven invariants listed at
+  the top of `core/session-runner.ts` each exist because a meeting was lost once. Read
+  them before touching finalize, the flush wait or the teardown order.
 - **The saved-file format is structured.** `src/background/format.ts` emits the
   v2 format (YAML front matter plus a turn grid). Body text is newline-collapsed
   via `inlineText`, and front-matter scalars go through `yamlScalar`, to prevent
@@ -97,15 +126,21 @@ content-to-background message contract.
 
 ## Testing
 
-`vitest`. Pure logic is deliberately extracted into testable modules
-(`proto.ts`, `feed.ts`, `identity.ts`, `meet-lifecycle.ts`, `format.ts`), with
-hostile-input coverage for the byte parsers. The background worker is tested
-against an in-memory `chrome.*` fake (`tests/helpers/chrome-mock.ts`). Prefer
-keeping new decision logic pure and covered over embedding it in DOM glue.
+`vitest`. Pure logic is deliberately extracted into testable modules (`proto.ts`,
+`feed.ts`, `identity.ts`, `meet-lifecycle.ts`, `session-lifecycle.ts`, `health.ts`,
+`capture/zoom/map.ts`, `format.ts`), with hostile-input coverage for anything that
+parses page or wire data. The background worker and the session runner are tested
+against an in-memory `chrome.*` fake (`tests/helpers/chrome-mock.ts`);
+`tests/session-runner.test.ts` also needs a DOM, so it opts into jsdom with a
+`// @vitest-environment jsdom` docblock. `tests/capture-protocol.test.ts` drives the
+shared core through a deliberately non-Meet platform profile — if it fails while the
+Meet suite passes, something Meet-specific leaked into `core/`. Prefer keeping new
+decision logic pure and covered over embedding it in DOM glue.
 
 ## Conventions
 
-- TypeScript, bundled with esbuild (`build.mjs`). No runtime dependencies ship.
+- TypeScript, bundled with esbuild (`build.mjs`). No runtime dependencies ship
+  (`jsdom` is a dev dependency, for the runner tests only).
 - Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`).
 - Use fictional names in test fixtures (e.g. Grace Hopper, Ada), never real
   people, and no real meeting links or ticket ids.

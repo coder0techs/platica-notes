@@ -66,7 +66,7 @@ tests/
 
 This task is atomic: the rename cannot be half-applied and stay green.
 
-- [ ] **Step 1: Move the directory**
+- [x] **Step 1: Move the directory**
 
 ```bash
 mkdir -p src/content/capture
@@ -74,7 +74,7 @@ git mv src/content/meet-rtc src/content/capture/meet
 git mv src/content/capture/meet/bridge.ts src/content/capture/protocol.ts
 ```
 
-- [ ] **Step 2: Rewrite `src/content/capture/protocol.ts`**
+- [x] **Step 2: Rewrite `src/content/capture/protocol.ts`**
 
 Keep the three `CustomEvent` names byte-identical (`scripts/screenshots.mjs` and the
 MAIN-world bundle both depend on them). Replace the `Rtc*` types with the canonical
@@ -186,7 +186,7 @@ export interface CaptureConfig {
 }
 ```
 
-- [ ] **Step 3: Map Meet's vocabulary to the canonical events in `capture/meet/main.ts`**
+- [x] **Step 3: Map Meet's vocabulary to the canonical events in `capture/meet/main.ts`**
 
 Meet's own words (`deviceId`, `messageId`, `messageVersion`) stay inside
 `capture/meet/*` — that is the vocabulary of Meet's wire and its protobuf decoder.
@@ -210,7 +210,7 @@ Also rename the imported config type: `RtcConfig` → `CaptureConfig` at its use
 Leave every `record({ phase: … })` diagnostic exactly as it is — the debug log's field
 names are an operational contract with the logs already collected.
 
-- [ ] **Step 4: Update the feed to the canonical fields**
+- [x] **Step 4: Update the feed to the canonical fields**
 
 In `src/content/capture/meet/feed.ts` (it moves to core in Task 2 — do not move it
 here): change the import to `../protocol`, the parameter types to
@@ -226,7 +226,7 @@ field `lastEventDeviceId` → `lastEventSpeakerId` and `speakerFor(deviceId)` �
 `speakerFor(speakerId)`; keep the `spaces/<id>/devices/<n>` tail fallback as-is for now
 (Task 2 turns it into a rule).
 
-- [ ] **Step 5: Update the isolated adapter**
+- [x] **Step 5: Update the isolated adapter**
 
 In `src/content/platforms/meet.ts`: imports move from `../meet-rtc/bridge` to
 `../capture/protocol` and from `../meet-rtc/feed` to `../capture/meet/feed`. Rename in
@@ -238,7 +238,7 @@ and read `parsed.speakerId` / `parsed.name` instead of `parsed.deviceId` /
 becomes `"utterance"`. In the `chat.google.com` postMessage handler (line 233) the
 synthesised event becomes `{ type: "chat", speakerId: "self", … }`.
 
-- [ ] **Step 6: Update the tests**
+- [x] **Step 6: Update the tests**
 
 ```bash
 grep -rln "meet-rtc" tests/
@@ -249,7 +249,7 @@ In `tests/feed.test.ts` rename the event fields in every fixture: `deviceId:` �
 now strings), `messageVersion:` → `revision:`, `type: "transcript"` → `type: "utterance"`.
 Chat fixtures keep `messageId` (that field survives) but rename `deviceId` → `speakerId`.
 
-- [ ] **Step 7: Update the build, the manifest and the screenshot harness**
+- [x] **Step 7: Update the build, the manifest and the screenshot harness**
 
 `build.mjs` entry points:
 
@@ -276,7 +276,7 @@ transcript `{ type: "utterance", speakerId, utteranceId: String(id), revision: v
 Rename the loop locals from `deviceId`/`deviceName` to `speakerId`/`name` so the file
 reads consistently.
 
-- [ ] **Step 8: Verify**
+- [x] **Step 8: Verify**
 
 ```bash
 npm run typecheck && npm test
@@ -290,7 +290,7 @@ Expected: `dist/` builds, five PNGs regenerate in `docs/store/screenshots/`. If 
 screenshot comes out empty, the fixture shapes in step 7 do not match the protocol —
 fix there, not in the extension.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add -A
@@ -316,7 +316,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 `MEET_CAPTION_RULES` lives in `meet-lifecycle.ts` rather than `meet.ts` because
 `meet.ts` calls `main()` at import time and cannot be imported from a test.
 
-- [ ] **Step 1: Move the file and rename the class**
+- [x] **Step 1: Move the file and rename the class**
 
 ```bash
 git mv src/content/capture/meet/feed.ts src/content/core/feed.ts
@@ -325,7 +325,7 @@ Rename `RtcFeed` → `CaptureFeed` in `src/content/core/feed.ts`,
 `src/content/platforms/meet.ts` and `tests/feed.test.ts`. Fix the import of `ChatLog`
 (now `./collector`) and of the protocol (`../capture/protocol`).
 
-- [ ] **Step 2: Write the failing tests for the rules**
+- [x] **Step 2: Write the failing tests for the rules**
 
 Append to `tests/feed.test.ts`:
 
@@ -364,14 +364,14 @@ describe("caption rules", () => {
 })
 ```
 
-- [ ] **Step 3: Run them and watch them fail**
+- [x] **Step 3: Run them and watch them fail**
 
 ```bash
 npx vitest run tests/feed.test.ts
 ```
 Expected: FAIL — `CaptureFeed` takes one argument, `CaptionRules` is not exported.
 
-- [ ] **Step 4: Implement the rules in `src/content/core/feed.ts`**
+- [x] **Step 4: Implement the rules in `src/content/core/feed.ts`**
 
 Replace the two module constants with a rules object. Delete
 `const INTERRUPTION_GAP_MS = 1000` and `const SELF_CHAT_DEDUP_MS = 5000`, keeping their
@@ -433,7 +433,7 @@ In `handleChat`, guard the self dedup:
 
 In `speakerFor`, the fallback becomes `return this.rules.speakerLabel(speakerId)`.
 
-- [ ] **Step 5: Add the Meet rules**
+- [x] **Step 5: Add the Meet rules**
 
 Append to `src/content/platforms/meet-lifecycle.ts`:
 
@@ -454,7 +454,7 @@ export const MEET_CAPTION_RULES: CaptionRules = {
 
 In `src/content/platforms/meet.ts` line ~379: `const feed = new CaptureFeed(roster, MEET_CAPTION_RULES)`.
 
-- [ ] **Step 6: Point the existing feed tests at the Meet rules**
+- [x] **Step 6: Point the existing feed tests at the Meet rules**
 
 The suite's existing expectations (`Speaker 3`, the interruption split, the self-chat
 collapse) encode Meet behaviour, so they must construct the feed with
@@ -466,14 +466,14 @@ import { MEET_CAPTION_RULES } from "../src/content/platforms/meet-lifecycle"
 and replace every `new CaptureFeed(` that passed only a roster (or nothing) with
 `new CaptureFeed(roster ?? new Map(), MEET_CAPTION_RULES)`.
 
-- [ ] **Step 7: Verify**
+- [x] **Step 7: Verify**
 
 ```bash
 npm run typecheck && npm test
 ```
 Expected: typecheck clean, 401 tests passing (398 + the three new rules cases).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add -A
@@ -506,7 +506,7 @@ Neutral (move): `seedAttendees`, `isMidMeetingJoin`, `shouldAskLanguage`,
 the adapter that declares `livenessEnd`, and a platform without a media signal must not
 inherit a helper implying it has one.
 
-- [ ] **Step 1: Create the core module**
+- [x] **Step 1: Create the core module**
 
 Move the four functions with their full comment blocks verbatim into
 `src/content/core/session-lifecycle.ts`, prefixed with:
@@ -518,12 +518,12 @@ Move the four functions with their full comment blocks verbatim into
 Delete them from `meet-lifecycle.ts` and update its header comment to say it holds the
 Meet-specific decisions only.
 
-- [ ] **Step 2: Update the importers**
+- [x] **Step 2: Update the importers**
 
 `src/content/platforms/meet.ts` splits its `./meet-lifecycle` import: the four moved
 names come from `../core/session-lifecycle`.
 
-- [ ] **Step 3: Split the tests**
+- [x] **Step 3: Split the tests**
 
 Create `tests/session-lifecycle.test.ts` and move the `describe` blocks for
 `seedAttendees`, `isMidMeetingJoin`, `shouldAskLanguage` and
@@ -531,14 +531,14 @@ Create `tests/session-lifecycle.test.ts` and move the `describe` blocks for
 `../src/content/core/session-lifecycle`. Leave the rest in
 `tests/meet-lifecycle.test.ts`.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 ```bash
 npm run typecheck && npm test
 ```
 Expected: typecheck clean, 401 tests passing (the same tests, in two files).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
@@ -560,7 +560,7 @@ The interface must exist before the runner can take it. In this task Meet **asse
 the adapter object out of code it already has; `main()`/`runMeeting()` still drive
 everything. No behaviour change.
 
-- [ ] **Step 1: Write `src/content/platforms/adapter.ts`**
+- [x] **Step 1: Write `src/content/platforms/adapter.ts`**
 
 ```ts
 import type { PlatformId } from "../../shared/types"
@@ -635,7 +635,7 @@ export interface PlatformAdapter {
 }
 ```
 
-- [ ] **Step 2: Write the conformance test**
+- [x] **Step 2: Write the conformance test**
 
 `tests/capture-protocol.test.ts` — this is the test that makes the contract real: a
 non-Meet fake adapter drives the shared feed and the invariants are asserted.
@@ -701,7 +701,7 @@ describe("capture protocol conformance", () => {
 })
 ```
 
-- [ ] **Step 3: Run it**
+- [x] **Step 3: Run it**
 
 ```bash
 npx vitest run tests/capture-protocol.test.ts
@@ -710,7 +710,7 @@ Expected: FAIL on the import of `adapter.ts` only if step 1 was skipped; otherwi
 These assertions describe the feed's existing behaviour, exercised through a non-Meet
 rules profile — a failure here means Task 2 changed Meet semantics by accident.
 
-- [ ] **Step 4: Assemble the Meet adapter**
+- [x] **Step 4: Assemble the Meet adapter**
 
 In `src/content/platforms/meet.ts`, below the existing helpers, add:
 
@@ -756,14 +756,14 @@ moving the code verbatim:
 additional surface, not yet the driver. `pushRtcConfig` becomes the single place the
 language reaches the MAIN world (it already is).
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 ```bash
 npm run typecheck && npm test
 ```
 Expected: typecheck clean, 405 tests passing (401 + four conformance cases).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A
@@ -804,7 +804,7 @@ once):
 7. The join-settle window is measured from **this run's** start, not `session.startedAt`
    (a resumed session's start is far in the past).
 
-- [ ] **Step 1: Create the runner with the platform-neutral body**
+- [x] **Step 1: Create the runner with the platform-neutral body**
 
 `src/content/core/session-runner.ts` exports:
 
@@ -861,7 +861,7 @@ page-level listener moves **into the runner's** subscribe handler: on `roster`, 
 (`watchEnd` already makes the decision — the runner only needs the boolean for the
 flush early-break).
 
-- [ ] **Step 2: Shrink `meet.ts` to the platform**
+- [x] **Step 2: Shrink `meet.ts` to the platform**
 
 What remains in `src/content/platforms/meet.ts`: the DOM-contract block, `MEETING_PATH`,
 the Meet constants, the debug ring buffer + `dlog`, `contextInvalidated` handling,
@@ -921,7 +921,7 @@ async function main(): Promise<void> {
 }
 ```
 
-- [ ] **Step 3: Write the runner test**
+- [x] **Step 3: Write the runner test**
 
 `tests/session-runner.test.ts`, using the existing in-memory chrome fake
 (`tests/helpers/chrome-mock.ts`) and a fake adapter whose `subscribe` keeps the emitter
@@ -963,21 +963,21 @@ Cover, at minimum:
 4. A `roster` event followed by an utterance from that speaker resolves the real name.
 5. With `capabilities.chat: false`, a chat event does not reach the persisted session.
 
-- [ ] **Step 4: Run the whole suite**
+- [x] **Step 4: Run the whole suite**
 
 ```bash
 npm run typecheck && npm test
 ```
 Expected: typecheck clean, all previous tests plus the new runner cases passing.
 
-- [ ] **Step 5: Verify on a live Meet call before committing anything further**
+- [x] **Step 5: Verify on a live Meet call before committing anything further**
 
 Build, load `dist/` unpacked, join a real meeting and confirm: the pill appears,
 captions land in the panel, a note lands, leaving the call writes the `.md`, and a
 mid-meeting reload resumes the same session. This is the only gate that covers the
 seven ordering invariants; the unit suite cannot.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A
@@ -1001,7 +1001,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Modify: `src/content/capture/protocol.ts` (add the health event), `src/content/capture/meet/main.ts` (emit it), `src/content/core/session-runner.ts`, `src/content/core/ui.ts`, `src/content/core/transcript-panel.ts`, `src/shared/types.ts`, `src/background/format.ts`, `src/background/sessions.ts`
 - Test: `tests/health.test.ts` (new), `tests/format.test.ts`
 
-- [ ] **Step 1: Write the health state machine test first**
+- [x] **Step 1: Write the health state machine test first**
 
 `tests/health.test.ts`:
 
@@ -1041,14 +1041,14 @@ describe("capture health", () => {
 })
 ```
 
-- [ ] **Step 2: Run it, watch it fail**
+- [x] **Step 2: Run it, watch it fail**
 
 ```bash
 npx vitest run tests/health.test.ts
 ```
 Expected: FAIL — `src/content/core/health.ts` does not exist.
 
-- [ ] **Step 3: Implement `src/content/core/health.ts`**
+- [x] **Step 3: Implement `src/content/core/health.ts`**
 
 ```ts
 /**
@@ -1110,14 +1110,14 @@ export function nextHealth(current: Health, input: HealthInput): Health {
 }
 ```
 
-- [ ] **Step 4: Run the test again**
+- [x] **Step 4: Run the test again**
 
 ```bash
 npx vitest run tests/health.test.ts
 ```
 Expected: PASS (5 tests).
 
-- [ ] **Step 5: Add the health event to the protocol and emit it from Meet**
+- [x] **Step 5: Add the health event to the protocol and emit it from Meet**
 
 In `src/content/capture/protocol.ts` add and include in the union:
 
@@ -1137,7 +1137,7 @@ where the captions channel first reaches `readyState === "open"`, and
 `{ type: "health", code: "channel-lost" }` in the watchdog path that gives up on
 recreating it. Keep the existing `record({ phase: … })` diagnostics untouched.
 
-- [ ] **Step 6: Fold health into the runner and the UI**
+- [x] **Step 6: Fold health into the runner and the UI**
 
 In `src/content/core/session-runner.ts`: hold `let health: Health = { code: "opening", since: <join time> }`,
 feed `nextHealth` from the subscribe handler (`utterance` and `health` events) and from
@@ -1151,7 +1151,7 @@ Capability gating in the same pass:
 - `mountTranscriptPanel` gets `chat: boolean` and omits chat rows when false.
 - The runner skips `mountLanguagePrompt` entirely when `languageSwitch === "none"`.
 
-- [ ] **Step 7: Persist the reason when capture produced nothing**
+- [x] **Step 7: Persist the reason when capture produced nothing**
 
 `src/shared/types.ts`: add `captureHealth?: string` to `ActiveSession` and `Meeting`
 (a plain string, so a future code needs no migration).
@@ -1165,21 +1165,21 @@ finalized `Meeting` (next to `language`).
 `src/background/format.ts`: emit `capture: <yamlScalar(code)>` in the front matter when
 `meeting.captureHealth` is set, immediately after the `source:` line.
 
-- [ ] **Step 8: Extend the format test**
+- [x] **Step 8: Extend the format test**
 
 In `tests/format.test.ts` add two cases: a meeting with `captureHealth: "host-disabled"`
 emits exactly one `capture: "host-disabled"` line in the front matter; a meeting without
 it emits no `capture:` line at all. Assert the value goes through `yamlScalar` by
 passing a code-like string containing a quote and checking it is escaped.
 
-- [ ] **Step 9: Verify**
+- [x] **Step 9: Verify**
 
 ```bash
 npm run typecheck && npm test && npm run build
 ```
 Expected: all green, `dist/` builds.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add -A
@@ -1206,7 +1206,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 Scope discipline: transcript, title, roster and join/leave only. No chat, no language
 control, no store-listing changes.
 
-- [ ] **Step 1: Write the mapper test first**
+- [x] **Step 1: Write the mapper test first**
 
 `tests/zoom-map.test.ts`:
 
@@ -1266,14 +1266,14 @@ describe("zoom action mapper", () => {
 })
 ```
 
-- [ ] **Step 2: Run it, watch it fail**
+- [x] **Step 2: Run it, watch it fail**
 
 ```bash
 npx vitest run tests/zoom-map.test.ts
 ```
 Expected: FAIL — the module does not exist.
 
-- [ ] **Step 3: Implement `src/content/capture/zoom/map.ts`**
+- [x] **Step 3: Implement `src/content/capture/zoom/map.ts`**
 
 A class (it holds the per-id revision counters) with `map(action: unknown): CaptureEvent[]`,
 a `title` getter, and a `joined` flag set by `JOIN_MEETING_SUCCESS`. Handle exactly:
@@ -1284,14 +1284,14 @@ and U+FFFD, drop empty-after-trim, refuse anything over 65_535 characters. Every
 read must be defensive — this is untrusted page data, and the whole file is pure so the
 hostile cases above are cheap to cover.
 
-- [ ] **Step 4: Run the test again**
+- [x] **Step 4: Run the test again**
 
 ```bash
 npx vitest run tests/zoom-map.test.ts
 ```
 Expected: PASS.
 
-- [ ] **Step 5: Implement the MAIN-world hook `src/content/capture/zoom/main.ts`**
+- [x] **Step 5: Implement the MAIN-world hook `src/content/capture/zoom/main.ts`**
 
 Runs at `document_start` in the MAIN world with `allFrames: true`. Install an accessor on
 `window.Redux` so the hook lands the moment the client's bundle assigns it — no
@@ -1314,7 +1314,7 @@ never appears within 15 seconds of a meeting path.
 Never read anything but the actions listed in step 3, and never touch the page's own
 state. No `fetch`, no listeners on user input.
 
-- [ ] **Step 6: Implement `src/content/platforms/zoom.ts`**
+- [x] **Step 6: Implement `src/content/platforms/zoom.ts`**
 
 The isolated-world adapter: the same shape as `meetAdapter`, with
 `capabilities: { chat: false, languageSwitch: "none", rawVersions: true, participantEvents: true, livenessEnd: false }`,
@@ -1327,7 +1327,7 @@ the meeting path, `readTitle()` from the last `SET_MEETING_TOPIC`, and
 `meetingUrl(key)` rebuilding `https://<host>/wc/<key>/join`. Its `main()` is the same
 soft-nav loop as Meet's, calling `runSession` with this adapter.
 
-- [ ] **Step 7: Wire the build, the manifest and the runtime registration**
+- [x] **Step 7: Wire the build, the manifest and the runtime registration**
 
 `build.mjs`: add `"content-zoom": "src/content/platforms/zoom.ts"` and
 `"capture-zoom": "src/content/capture/zoom/main.ts"`.
@@ -1353,7 +1353,7 @@ returns true; unregister on `chrome.permissions.onRemoved`.
 (experimental)" that calls `chrome.permissions.request` and states plainly that it only
 works when you join the meeting in this browser, not in the Zoom desktop app.
 
-- [ ] **Step 8: Verify**
+- [x] **Step 8: Verify**
 
 ```bash
 npm run typecheck && npm test && npm run build
@@ -1367,13 +1367,13 @@ If `window.Redux` never appears, fall back to Tactiq's approach — inject after
 `redux.min.js` / `externals.min.js` script's `onload` — and record what the live client
 actually exposes in `.claude/session-log.md`.
 
-- [ ] **Step 9: Note the limitation in the README**
+- [x] **Step 9: Note the limitation in the README**
 
 One short paragraph: Zoom and Teams desktop apps are invisible to any browser
 extension, so recording those platforms requires joining in the browser. No store copy
 changes in this task.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add -A
@@ -1401,3 +1401,40 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - **Known risk not solved by this plan.** Task 5 is a large behaviour-preserving move
   whose real gate is a live Meet call, not the unit suite. Do not merge to `main` on a
   green suite alone.
+
+---
+
+## Execution notes (2026-07-30)
+
+All seven tasks executed on `feat/platform-adapter-contract`; 441 tests green,
+typecheck clean, `dist/` builds. Where the work departed from the plan:
+
+- **Task 1.** The `deviceId`/`messageId`/`messageVersion` rename was confined to the
+  protocol boundary and the feed. Inside `capture/meet/` those are Meet's own wire
+  vocabulary (its protobuf, its `spaces/<id>/devices/<n>` ids, its RPC names), so
+  renaming them there would have made the decoder read *less* truthfully for a
+  ~250-occurrence diff. The listing screenshots were regenerated as the end-to-end
+  proof and are part of that commit.
+- **Task 4.** The three extracted functions (`subscribeMeetEvents`, `watchMeetEnd`,
+  `armTailGrace`) were wired into the existing paths immediately instead of sitting
+  next to a duplicate copy for one commit. Same end state, no duplicated logic.
+  `AdapterTimings` was added to the contract: `captionFlushMs` and `joinSettleMs` are
+  measured platform facts, not core constants.
+- **Task 5.** The page keeps ONE subscription for identity that outlives a meeting and
+  the runner takes its own for the session; the plan's `deps.subscribeSession` slot was
+  not needed. `chatUrl` reaches the snapshot through `adapter.snapshotFields()`.
+- **Task 6.** No chat flag on the transcript panel: the runner already drops chat
+  events on a platform declaring `chat: false`, so nothing reaches the panel to hide.
+  `adapter.initialHealth()` was added — the capture channel can open before the runner
+  exists, and without it a session raises a false "captions never started" alarm.
+  Writing the health tests first caught a real bug: a repeated `channel-open` restamped
+  `since`, and Meet re-subscribes on every language change.
+- **Task 7.** Two protocol events were needed for state only the page world can see:
+  `joined` and `meeting-title`. The permission constants live in `shared/platforms.ts`
+  so the settings page does not import from `background/`. Known skeleton gap, recorded
+  in the README: a Zoom leave that keeps the same URL is not detected — the session ends
+  when the meeting page goes away or the tab closes.
+- **Still open.** A live Meet call has NOT been run against this branch (the seven
+  ordering invariants in `core/session-runner.ts` are only covered by unit tests and the
+  screenshot harness), and no live Zoom web-client call has been tried at all. Both are
+  release gates. The new `scripting` permission needs a store justification.

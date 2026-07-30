@@ -290,8 +290,11 @@ RTC-fallback backlog item.
 
 ## Out of scope (deliberately, for now)
 
-- Other platforms (Zoom / Teams). The adapter layer is pluggable so they *could*
-  follow, but this roadmap is Google-Meet-only by request.
+- ~~Other platforms (Zoom / Teams).~~ **Superseded 2026-07-30**: the adapter layer
+  was extracted for real and an experimental Zoom skeleton landed behind an optional
+  permission — see `docs/superpowers/specs/2026-07-30-platform-adapter-contract-design.md`.
+  MS Teams is still out of scope (no chat path is known, and its capture depends on
+  the client's internal calling object).
 - Any feature that introduces network egress from the extension itself. If
   derived intelligence is wanted, it goes through prompt-handoff or a local LLM,
   per the guiding principle above.
