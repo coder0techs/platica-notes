@@ -10,6 +10,7 @@ import { mountTranscriptPanel } from "../core/transcript-panel"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../capture/protocol"
 import type { CaptureEvent, ChatEvent, UtteranceEvent } from "../capture/protocol"
 import { CaptureFeed } from "../core/feed"
+import type { PlatformAdapter } from "./adapter"
 import { parseOwnChatMessage } from "../chatgoogle/parse"
 import {
   isMidMeetingJoin,
@@ -80,10 +81,20 @@ let selfName: string | null = null
 // avoid clobbering an active pill choice when an unrelated setting changes.
 let activeLanguage = DEFAULT_SETTINGS.captionLanguage
 let activeMeetingHandler: ((event: UtteranceEvent | ChatEvent) => void) | null = null
-// Set by runMeeting; receives the open media-session count from the RTC layer so
+// Set by watchMeetEnd; receives the open media-session count from the RTC layer so
 // the running meeting can detect an authoritative end (count sustained at zero).
 // Null between meetings — a stray media event then has no meeting to end.
 let onMediaState: ((openSessions: number) => void) | null = null
+// Is the media path down as of the latest liveness event? Distinct from the graced
+// end decision in watchMeetEnd: this plain flag is what the caption-flush wait
+// checks, because once the path is down no further captions can arrive. Reset at
+// every meeting start so a previous meeting's teardown never shortens this one's flush.
+let livenessZero = false
+// Tail-grace bookkeeping for the soft-nav loop: which meeting ended and when, so a
+// same-code re-entry inside the grace drains the caption tail with no live session.
+// Set through meetAdapter.afterFinalize.
+let lastMeetingPath = ""
+let lastMeetingEndedAt = 0
 // Set by runMeeting; appends a note/bookmark to the active meeting. Page-level so
 // the global bookmark hotkey can reach the running meeting. Null between meetings.
 let addNoteToActive: ((text: string) => void) | null = null
@@ -171,15 +182,10 @@ async function main(): Promise<void> {
     }
   })
 
-  document.addEventListener(RTC_EVENT, (event) => {
-    const detail = (event as CustomEvent).detail
-    if (typeof detail !== "string") return
-    let parsed: CaptureEvent
-    try {
-      parsed = JSON.parse(detail) as CaptureEvent
-    } catch {
-      return
-    }
+  // Routing of canonical events into the page-level state and the running meeting.
+  // The listeners themselves live in subscribeMeetEvents (the adapter's `subscribe`),
+  // so the platform owns the transports and this owns the bookkeeping.
+  subscribeMeetEvents((parsed) => {
     if (parsed.type === "roster") {
       if (typeof parsed.speakerId === "string" && parsed.speakerId && typeof parsed.name === "string" && parsed.name) {
         roster.set(parsed.speakerId, parsed.name)
@@ -209,37 +215,15 @@ async function main(): Promise<void> {
     }
     if (parsed.type === "liveness") {
       // Route media-path liveness to the running meeting's end detector. Ignored
-      // between meetings (onMediaState is null) — nothing to finalize.
-      if (typeof parsed.openSessions === "number") onMediaState?.(parsed.openSessions)
+      // between meetings (onMediaState is null) — nothing to finalize. The plain
+      // "is the media path down right now" flag drives the caption-flush wait.
+      if (typeof parsed.openSessions === "number") {
+        livenessZero = parsed.openSessions === 0
+        onMediaState?.(parsed.openSessions)
+      }
       return
     }
     activeMeetingHandler?.(parsed)
-  })
-
-  // The local user's OWN outgoing chat never returns over the meeting page's
-  // WebRTC channels — Google routes the in-meeting chat through an embedded
-  // Google Chat frame (chat.google.com). Our MAIN-world hook in that frame
-  // (chatgoogle/main.ts) reads the outgoing message text and postMessages it up
-  // here. Validate the sender ORIGIN (only the chat frame may send these), then
-  // feed it as a chat event attributed to self. Deduped on the topic id so a
-  // retransmit of the same send counts once.
-  window.addEventListener("message", (event) => {
-    if (event.origin !== "https://chat.google.com") return
-    // The frame carries its own URL (the chat conversation link); keep the first
-    // chat.google.com URL we see for the saved file's header.
-    const data = event.data as { url?: unknown } | null
-    if (data && typeof data.url === "string" && data.url.startsWith("https://chat.google.com") && !chatUrl) {
-      chatUrl = data.url
-    }
-    const own = parseOwnChatMessage(event.data)
-    if (!own) return
-    activeMeetingHandler?.({
-      type: "chat",
-      speakerId: "self",
-      text: own.text,
-      sender: selfName ?? "You",
-      messageId: `self-topic/${own.messageId ?? own.text}`,
-    })
   })
 
   // The MAIN-world script must know the caption language before its first
@@ -255,11 +239,10 @@ async function main(): Promise<void> {
   // Meet soft-navigates without page loads (landing -> meeting, /new -> meeting,
   // leave screen -> rejoin), so one meeting per page lifetime is not enough:
   // keep watching this tab for meeting pages forever.
-  let lastMeetingPath = ""
-  let lastMeetingEndedAt = 0
   for (;;) {
-    await waitFor(() => MEETING_PATH.test(location.pathname))
-    const meetingPath = location.pathname
+    await waitFor(() => meetAdapter.isMeetingPage())
+    const meetingPath = meetAdapter.meetingKey()
+    if (!meetingPath) continue
     // Refuse to start a NEW session on the just-ended code while Meet is still
     // streaming the final caption tail (see CAPTION_TAIL_GRACE_MS). Drain it with
     // no active session, then re-check from the top: after the grace the check is
@@ -269,8 +252,7 @@ async function main(): Promise<void> {
       continue
     }
     await runMeeting(tabId)
-    lastMeetingPath = meetingPath
-    lastMeetingEndedAt = Date.now()
+    meetAdapter.afterFinalize?.(meetingPath)
     // The Leave click fires endMeeting while Meet's toolbar (and the call_end
     // icon) is still on screen. Wait for the icon to actually disappear before
     // re-arming, otherwise the residual icon triggers an instant phantom re-join
@@ -324,6 +306,9 @@ async function runMeeting(tabId: number): Promise<void> {
 
   const settings = await getSettings()
   let ending = false
+  // A previous meeting ended with the media path down; clear the flag so this
+  // meeting's caption flush waits for its own trailing revisions.
+  livenessZero = false
 
   // This meeting's debug window starts here. Earlier events (e.g. MAIN-world
   // "installed") fall into the first meeting — acceptable.
@@ -622,46 +607,12 @@ async function runMeeting(tabId: number): Promise<void> {
   }
 
   // --- meeting end detection -------------------------------------------------
-  // Meet re-renders its toolbar (mute toggles, layout changes), replacing the
-  // leave button node, so a listener bound to one node silently dies. Delegate
-  // from the document instead, and back it up with a poller that catches ends
-  // we never see a click for (keyboard shortcut, kicked, host ended call).
+  // Owned by the adapter (watchMeetEnd): a click delegation for the Leave button
+  // plus a poller for the ends we never see a click for. Returns its teardown.
   let meetingDone!: () => void
   const done = new Promise<void>((resolve) => { meetingDone = resolve })
 
-  const onDocumentClick = (event: Event) => {
-    const target = event.target as Element | null
-    const control = target?.closest('button, [role="button"]')
-    const icon = control?.querySelector(ICON_FONT)
-    if (icon?.textContent === LEAVE_ICON_TEXT) void endMeeting("leave click")
-  }
-  document.addEventListener("click", onDocumentClick, true)
-
-  // Authoritative RTC end: the MAIN-world script reports the open media-session
-  // count; when it stays at zero past the grace, the call's media path is down.
-  // The page-level routing feeds it here; the endWatcher below makes the decision
-  // on its existing cadence (no second timer). A reconnect that reopens a session
-  // resets this to null, cancelling the pending end.
-  let mediaZeroSince: number | null = null
-  onMediaState = (openSessions) => {
-    mediaZeroSince = nextMediaZeroSince(mediaZeroSince, openSessions, Date.now())
-  }
-
-  let leaveGoneCount = 0
-  const endWatcher = setInterval(() => {
-    if (shouldEndFromMedia(mediaZeroSince, Date.now(), MEDIA_END_GRACE_MS)) {
-      void endMeeting("rtc: all media sessions closed")
-      return
-    }
-    const decision = nextLeaveState(
-      location.pathname !== meetingPath,
-      !!findIcon(LEAVE_ICON_TEXT),
-      leaveGoneCount,
-      LEAVE_GONE_CHECKS,
-    )
-    leaveGoneCount = decision.goneCount
-    if (decision.end) void endMeeting(decision.reason)
-  }, END_WATCH_INTERVAL_MS)
+  const stopWatchingEnd = meetAdapter.watchEnd((reason) => void endMeeting(reason))
   // ---------------------------------------------------------------------------
 
   // The language prompt already says "recording in X" — skip the generic toast
@@ -678,9 +629,8 @@ async function runMeeting(tabId: number): Promise<void> {
     dlog("meeting ended", { reason })
     // Stop the end-detection machinery first so neither the poller nor a
     // residual leave click can re-enter during the flush wait below.
-    clearInterval(endWatcher)
+    stopWatchingEnd()
     clearTimeout(titleTimer)
-    document.removeEventListener("click", onDocumentClick, true)
     // Leave the page-level RTC routing attached and wait: Meet keeps streaming
     // the final caption revision for a couple of seconds after Leave (same
     // messageId, higher version), so the feed completes the closing sentence
@@ -702,7 +652,7 @@ async function runMeeting(tabId: number): Promise<void> {
     // where a post-Leave reload can kill the finalize before it saves the file.
     const flushStart = Date.now()
     while (Date.now() - flushStart < CAPTION_FLUSH_MS) {
-      if (mediaZeroSince !== null) break
+      if (livenessZero) break
       await delay(150)
     }
     // Now stop routing: a caption event arriving after finalization would
@@ -834,4 +784,133 @@ function readMeetingTitle(): string {
   // (so rejoins and same-tab soft-nav meetings would otherwise be saved as
   // "Meet - <code>"). Strip it so the title is the bare meeting name/code.
   return (titled || document.title).replace(/^Meet - /, "")
+}
+
+// ---------- the Meet platform adapter ----------
+
+// Attach to Meet's two event transports and hand every canonical event to `on`.
+// The caller owns what happens with them (page-level bookkeeping today, the session
+// runner later); this owns only the transports.
+function subscribeMeetEvents(on: (event: CaptureEvent) => void): () => void {
+  const onRtcEvent = (event: Event): void => {
+    const detail = (event as CustomEvent).detail
+    if (typeof detail !== "string") return
+    let parsed: CaptureEvent
+    try {
+      parsed = JSON.parse(detail) as CaptureEvent
+    } catch {
+      return
+    }
+    on(parsed)
+  }
+  document.addEventListener(RTC_EVENT, onRtcEvent)
+
+  // The local user's OWN outgoing chat never returns over the meeting page's
+  // WebRTC channels — Google routes the in-meeting chat through an embedded
+  // Google Chat frame (chat.google.com). Our MAIN-world hook in that frame
+  // (chatgoogle/main.ts) reads the outgoing message text and postMessages it up
+  // here. Validate the sender ORIGIN (only the chat frame may send these), then
+  // feed it as a chat event attributed to self. Deduped on the topic id so a
+  // retransmit of the same send counts once.
+  const onFrameMessage = (event: MessageEvent): void => {
+    if (event.origin !== "https://chat.google.com") return
+    // The frame carries its own URL (the chat conversation link); keep the first
+    // chat.google.com URL we see for the saved file's header.
+    const data = event.data as { url?: unknown } | null
+    if (data && typeof data.url === "string" && data.url.startsWith("https://chat.google.com") && !chatUrl) {
+      chatUrl = data.url
+    }
+    const own = parseOwnChatMessage(event.data)
+    if (!own) return
+    on({
+      type: "chat",
+      speakerId: "self",
+      text: own.text,
+      sender: selfName ?? "You",
+      messageId: `self-topic/${own.messageId ?? own.text}`,
+    })
+  }
+  window.addEventListener("message", onFrameMessage)
+
+  return () => {
+    document.removeEventListener(RTC_EVENT, onRtcEvent)
+    window.removeEventListener("message", onFrameMessage)
+  }
+}
+
+// Meeting-end detection. Meet re-renders its toolbar (mute toggles, layout
+// changes), replacing the leave button node, so a listener bound to one node
+// silently dies: delegate from the document instead, and back it up with a poller
+// that catches the ends we never see a click for (keyboard shortcut, kicked, host
+// ended the call) plus the authoritative media-path signal.
+function watchMeetEnd(onEnd: (reason: string) => void): () => void {
+  const meetingPath = location.pathname
+
+  const onDocumentClick = (event: Event): void => {
+    const target = event.target as Element | null
+    const control = target?.closest('button, [role="button"]')
+    const icon = control?.querySelector(ICON_FONT)
+    if (icon?.textContent === LEAVE_ICON_TEXT) onEnd("leave click")
+  }
+  document.addEventListener("click", onDocumentClick, true)
+
+  // Authoritative RTC end: the MAIN-world script reports the open media-session
+  // count; when it stays at zero past the grace, the call's media path is down.
+  // The page-level routing feeds it here; the poller below makes the decision on
+  // its existing cadence (no second timer). A reconnect that reopens a session
+  // resets this to null, cancelling the pending end.
+  let mediaZeroSince: number | null = null
+  onMediaState = (openSessions) => {
+    mediaZeroSince = nextMediaZeroSince(mediaZeroSince, openSessions, Date.now())
+  }
+
+  let leaveGoneCount = 0
+  const endWatcher = setInterval(() => {
+    if (shouldEndFromMedia(mediaZeroSince, Date.now(), MEDIA_END_GRACE_MS)) {
+      onEnd("rtc: all media sessions closed")
+      return
+    }
+    const decision = nextLeaveState(
+      location.pathname !== meetingPath,
+      !!findIcon(LEAVE_ICON_TEXT),
+      leaveGoneCount,
+      LEAVE_GONE_CHECKS,
+    )
+    leaveGoneCount = decision.goneCount
+    if (decision.end) onEnd(decision.reason)
+  }, END_WATCH_INTERVAL_MS)
+
+  return () => {
+    clearInterval(endWatcher)
+    document.removeEventListener("click", onDocumentClick, true)
+  }
+}
+
+export const meetAdapter: PlatformAdapter = {
+  id: "meet",
+  capabilities: {
+    chat: true,
+    languageSwitch: "self",
+    rawVersions: true,
+    participantEvents: true,
+    livenessEnd: true,
+  },
+  captionRules: MEET_CAPTION_RULES,
+  isMeetingPage: () => MEETING_PATH.test(location.pathname),
+  meetingKey: () => (MEETING_PATH.test(location.pathname) ? location.pathname : null),
+  // The leave icon appearing is what "in the call" means on Meet; abort fires when
+  // the user backs out of the lobby.
+  waitForJoin: async (abort) => !!(await waitForIcon(LEAVE_ICON_TEXT, abort)),
+  watchEnd: (onEnd) => watchMeetEnd(onEnd),
+  readTitle: () => readMeetingTitle(),
+  meetingUrl: (key) => `https://meet.google.com${key}`,
+  subscribe: (on) => subscribeMeetEvents(on),
+  setLanguage: (tag) => pushRtcConfig(tag, debugEnabled),
+  snapshotFields: () => ({ chatUrl: chatUrl ?? undefined }),
+  // Arm the caption-tail grace: a same-code re-entry inside the window drains
+  // Meet's trailing revisions with no live session to catch them as phantoms.
+  afterFinalize: (key) => {
+    lastMeetingPath = key
+    lastMeetingEndedAt = Date.now()
+  },
 }
