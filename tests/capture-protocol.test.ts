@@ -28,6 +28,8 @@ const fake: PlatformAdapter = {
     livenessEnd: false,
   },
   captionRules: FAKE_RULES,
+  // No trailing captions after the call ends on this platform, so no flush window.
+  timings: { captionFlushMs: 0, joinSettleMs: 10_000 },
   isMeetingPage: () => true,
   meetingKey: () => "123456789",
   waitForJoin: async () => true,

@@ -1,23 +1,23 @@
+// The Google Meet adapter: everything platform-specific about recording a Meet call.
+// The session itself is run by core/session-runner.ts, which knows nothing about Meet.
+//
+// What lives here: Meet's DOM contract, the soft-nav loop, join/end detection, the
+// two event transports (the MAIN-world RTC bridge and the embedded chat.google.com
+// frame), the caption language push, and the page-level identity state that has to
+// survive across meetings in one tab.
+
 import { sendToBackground } from "../../shared/messages"
 import type { BackgroundResponse } from "../../shared/messages"
-import { getLocal, getSettings, saveSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
+import { getSettings, saveSettings, withDefaults } from "../../shared/storage"
 import { DEFAULT_SETTINGS } from "../../shared/types"
-import type { ActiveSession, DebugEvent, Note, ParticipantEvent, Settings } from "../../shared/types"
-import { SessionWriter } from "../core/persistence"
+import type { DebugEvent, Settings } from "../../shared/types"
 import { isBookmarkChord, isHideUiChord } from "../core/hotkeys"
-import { isUiHidden, mountLanguagePrompt, mountMeetingControls, pulseActivity, setUiHidden, showPersistentNotice, showToast } from "../core/ui"
-import { mountTranscriptPanel } from "../core/transcript-panel"
+import { isUiHidden, setUiHidden, showPersistentNotice } from "../core/ui"
+import { runSession } from "../core/session-runner"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../capture/protocol"
-import type { CaptureEvent, ChatEvent, UtteranceEvent } from "../capture/protocol"
-import { CaptureFeed } from "../core/feed"
+import type { CaptureEvent } from "../capture/protocol"
 import type { PlatformAdapter } from "./adapter"
 import { parseOwnChatMessage } from "../chatgoogle/parse"
-import {
-  isMidMeetingJoin,
-  seedAttendees,
-  shouldAskLanguage,
-  shouldFinalizeStaleSession,
-} from "../core/session-lifecycle"
 import {
   MEET_CAPTION_RULES,
   nextLeaveState,
@@ -54,77 +54,52 @@ const CAPTION_FLUSH_MS = 2500
 // make-before-break and never reached zero. Evaluated on the END_WATCH_INTERVAL_MS
 // cadence, so effective latency is ~grace + one tick — well inside the tail budget.
 const MEDIA_END_GRACE_MS = 5000
-// A roster device seen within this window of a meeting's start is treated as the
+// A roster device seen within this window of a session's start is treated as the
 // initial roster (or a reload re-sync), not a mid-meeting join — so those already
-// present get no "joined" marker. Measured from THIS runMeeting's start.
+// present get no "joined" marker.
 const JOIN_SETTLE_MS = 10000
 
 // Roster events stream from join time — often before our leave-icon detection
 // lands — so the deviceId → name map lives at page level and survives across
-// meetings in the same tab. Transcript/chat events without an active meeting
-// are dropped (nothing to attribute them to yet).
+// meetings in the same tab. The running session borrows it (see runSession).
 const roster = new Map<string, string>()
 // URL of the embedded Google Chat frame (chat.google.com), forwarded up from the
 // frame hook (chatgoogle/main.ts). Page-level so it survives across meetings in the
-// tab; stamped into each session snapshot so it reaches the saved file's header.
+// tab; stamped into each session snapshot (snapshotFields) so it reaches the file.
 let chatUrl: string | null = null
 // The local user's own name (from the GetUser RPC). Kept at page level (it can
 // arrive before a meeting's feed exists) for the attendee list and reload
 // persistence. Speaker resolution does not use it: self's deviceId → name arrives
-// as an ordinary roster device event (from UpdateMeetingDevice), so self resolves
-// through the roster like any participant.
+// as an ordinary roster event (from UpdateMeetingDevice), so self resolves through
+// the roster like any participant.
 let selfName: string | null = null
 // Caption language the live stream is currently subscribed to. Seeded from the
-// default setting, reset to the default at every new meeting, and overridden
-// (in memory only) by the in-meeting language pill — never persisted, so a
-// manual switch does not leak into the next meeting. watchSettings reads this to
-// avoid clobbering an active pill choice when an unrelated setting changes.
+// default setting, re-pushed at every new meeting, and overridden (in memory only)
+// by the in-meeting language pill — never persisted, so a manual switch does not
+// leak into the next meeting. watchSettings reads this to avoid clobbering an active
+// pill choice when an unrelated setting changes.
 let activeLanguage = DEFAULT_SETTINGS.captionLanguage
-let activeMeetingHandler: ((event: UtteranceEvent | ChatEvent) => void) | null = null
+// Is a session running right now? Only watchSettings needs to know (so a default
+// language change mid-meeting does not retarget the running call).
+let sessionActive = false
+// The running session's note sink, published by the runner so the page-level
+// bookmark chord can reach it. Null between meetings.
+let noteSink: ((text: string) => void) | null = null
 // Set by watchMeetEnd; receives the open media-session count from the RTC layer so
 // the running meeting can detect an authoritative end (count sustained at zero).
 // Null between meetings — a stray media event then has no meeting to end.
 let onMediaState: ((openSessions: number) => void) | null = null
-// Is the media path down as of the latest liveness event? Distinct from the graced
-// end decision in watchMeetEnd: this plain flag is what the caption-flush wait
-// checks, because once the path is down no further captions can arrive. Reset at
-// every meeting start so a previous meeting's teardown never shortens this one's flush.
-let livenessZero = false
 // Tail-grace bookkeeping for the soft-nav loop: which meeting ended and when, so a
-// same-code re-entry inside the grace drains the caption tail with no live session.
-// Set through meetAdapter.afterFinalize.
+// same-code re-entry inside the grace drains the caption tail with no live session
+// to catch it as a phantom duplicate. Set through meetAdapter.afterFinalize.
 let lastMeetingPath = ""
 let lastMeetingEndedAt = 0
-// Set by runMeeting; appends a note/bookmark to the active meeting. Page-level so
-// the global bookmark hotkey can reach the running meeting. Null between meetings.
-let addNoteToActive: ((text: string) => void) | null = null
-// Set by runMeeting; records a name into the active meeting's attendee set. Fed by
-// roster device events and the self name. Meeting-scoped (not the page-level roster
-// map) so names never bleed from a previous meeting in the same tab.
-let recordAttendee: ((name: string) => void) | null = null
-// Set by runMeeting; classifies a roster device event as a mid-meeting JOIN and,
-// when it is one, appends a timestamped marker to the active meeting. Meeting-scoped
-// (own known-device set + settle window) so the initial roster and reload re-sync do
-// not produce markers. Null between meetings.
-let recordDevice: ((deviceId: string, name: string) => void) | null = null
-// Set by runMeeting; on a device removal (RtcDeviceLeaveEvent) appends a "leave"
-// marker for a known participant. Meeting-scoped. Null between meetings.
-let recordLeave: ((deviceId: string) => void) | null = null
-// Set by runMeeting; re-resolves the live transcript (speaker names resolve from
-// the roster at snapshot time) and pushes it to the panel. Called when a roster
-// device event arrives so a name learned mid-meeting shows up in the panel without
-// waiting for the next caption.
-let refreshTranscript: (() => void) | null = null
 
 // Optional debug trail. Like roster, the buffer lives for the whole tab; the
-// active meeting slices its own window out of it and flushes via onDebugEvent.
+// active session slices its own window out of it and flushes via onDebugEvent.
 let debugEnabled = false
 const debugEvents: DebugEvent[] = []
 let onDebugEvent: (() => void) | null = null
-// Bounds per-flush serialization cost on long debug sessions; oldest events
-// drop first. Cap applied to the final slice, not the source buffer, so
-// debugStart indices never drift (chosen approach for Fix 2).
-const DEBUG_EVENTS_MAX = 5000
 
 // Adapter's own lifecycle events: to the console and the debug buffer only when
 // debug is enabled (quiet by default; genuine errors use console.error directly).
@@ -182,48 +157,29 @@ async function main(): Promise<void> {
     }
   })
 
-  // Routing of canonical events into the page-level state and the running meeting.
-  // The listeners themselves live in subscribeMeetEvents (the adapter's `subscribe`),
-  // so the platform owns the transports and this owns the bookkeeping.
-  subscribeMeetEvents((parsed) => {
-    if (parsed.type === "roster") {
-      if (typeof parsed.speakerId === "string" && parsed.speakerId && typeof parsed.name === "string" && parsed.name) {
-        roster.set(parsed.speakerId, parsed.name)
-        recordAttendee?.(parsed.name)
-        recordDevice?.(parsed.speakerId, parsed.name)
-        refreshTranscript?.()
+  // Page-level identity bookkeeping, for the whole tab lifetime: roster entries and
+  // the self name arrive from join time onward, including before a session exists and
+  // between meetings, and speaker names resolve out of this map at snapshot time.
+  // Registered BEFORE the running session subscribes to the same events, so the map
+  // is already current when the session's handler re-resolves the transcript.
+  subscribeMeetEvents((event) => {
+    if (event.type === "roster" || event.type === "roster-leave") {
+      // Keep the name mapping even on a leave (Meet's roster state-6 leaf carries it)
+      // so a departure can be attributed to a participant we never saw arrive.
+      if (typeof event.speakerId === "string" && event.speakerId && typeof event.name === "string" && event.name) {
+        roster.set(event.speakerId, event.name)
       }
       return
     }
-    if (parsed.type === "roster-leave") {
-      if (typeof parsed.speakerId === "string" && parsed.speakerId) {
-        // Keep the name mapping (the state-6 leaf carries it) so recordLeave can
-        // resolve the name even if this device was never seen present before.
-        if (typeof parsed.name === "string" && parsed.name) roster.set(parsed.speakerId, parsed.name)
-        recordLeave?.(parsed.speakerId)
-      }
+    if (event.type === "self" && typeof event.name === "string" && event.name) {
+      selfName = event.name
       return
     }
-    if (parsed.type === "self") {
-      // Store at page level (it can arrive before any meeting) and push into the
-      // live feed if a meeting is already running.
-      if (typeof parsed.name === "string" && parsed.name) {
-        selfName = parsed.name
-        recordAttendee?.(parsed.name)
-      }
-      return
+    // Media-path liveness reaches whichever end watcher is armed. Ignored between
+    // meetings (onMediaState is null) — there is nothing to finalize.
+    if (event.type === "liveness" && typeof event.openSessions === "number") {
+      onMediaState?.(event.openSessions)
     }
-    if (parsed.type === "liveness") {
-      // Route media-path liveness to the running meeting's end detector. Ignored
-      // between meetings (onMediaState is null) — nothing to finalize. The plain
-      // "is the media path down right now" flag drives the caption-flush wait.
-      if (typeof parsed.openSessions === "number") {
-        livenessZero = parsed.openSessions === 0
-        onMediaState?.(parsed.openSessions)
-      }
-      return
-    }
-    activeMeetingHandler?.(parsed)
   })
 
   // The MAIN-world script must know the caption language before its first
@@ -251,447 +207,46 @@ async function main(): Promise<void> {
       await delay(CAPTION_TAIL_GRACE_MS)
       continue
     }
-    await runMeeting(tabId)
+    sessionActive = true
+    try {
+      await runSession({
+        tabId,
+        adapter: meetAdapter,
+        roster,
+        getSelfName: () => selfName,
+        setSelfName: (name) => {
+          selfName = name
+        },
+        debug: {
+          enabled: () => debugEnabled,
+          events: () => debugEvents,
+          onEvent: (cb) => {
+            onDebugEvent = cb
+          },
+          log: dlog,
+        },
+        bindNoteSink: (sink) => {
+          noteSink = sink
+        },
+        onContextInvalidated,
+        noteIfInvalidated,
+      })
+    } finally {
+      sessionActive = false
+    }
     meetAdapter.afterFinalize?.(meetingPath)
-    // The Leave click fires endMeeting while Meet's toolbar (and the call_end
-    // icon) is still on screen. Wait for the icon to actually disappear before
-    // re-arming, otherwise the residual icon triggers an instant phantom re-join
-    // on Meet's post-leave screen. But a fast rejoin puts the user back in the
-    // call before this wait begins, so the icon is present again and never
-    // clears — an unbounded wait here would block the loop forever and the
-    // rejoined session would never be recorded. Cap it at the tail grace: once it
-    // elapses, the top-of-loop shouldDrainTail paces the restart of the same code.
+    // The Leave click fires the end while Meet's toolbar (and the call_end icon) is
+    // still on screen. Wait for the icon to actually disappear before re-arming,
+    // otherwise the residual icon triggers an instant phantom re-join on Meet's
+    // post-leave screen. But a fast rejoin puts the user back in the call before this
+    // wait begins, so the icon is present again and never clears — an unbounded wait
+    // here would block the loop forever and the rejoined session would never be
+    // recorded. Cap it at the tail grace: once it elapses, the top-of-loop
+    // shouldDrainTail paces the restart of the same code.
     const rearmStart = Date.now()
     await waitFor(() =>
       shouldFinishRearmWait(!findIcon(LEAVE_ICON_TEXT), Date.now() - rearmStart, CAPTION_TAIL_GRACE_MS),
     )
-  }
-}
-
-async function runMeeting(tabId: number): Promise<void> {
-  const meetingPath = location.pathname
-  dlog("waiting to join", { path: meetingPath })
-
-  // The tab key holds at most one session. If it belongs to a DIFFERENT meeting,
-  // that meeting's content script was torn down before it could finalize (left via
-  // Meet's UI, then opened another call in this tab) — its transcript is still
-  // intact under the key, but our first write below would overwrite and lose it.
-  // Finalize it FIRST: the background commits the stored session to history + disk
-  // and clears the key. Done before the join wait, so it is saved even if the user
-  // backs out of this lobby — and before meetingStarted, so finalize's untrackTab
-  // can't drop the tab we are about to re-track. A same-path session is a genuine
-  // reload-resume of this meeting (handled below), not stale.
-  const previous = await getLocal<ActiveSession>(sessionKey(tabId))
-  if (shouldFinalizeStaleSession(previous?.path ?? null, meetingPath)) {
-    dlog("finalizing a previous meeting's session before it is overwritten", {
-      stalePath: previous!.path,
-      path: meetingPath,
-    })
-    const response = await sendToBackground({ kind: "meetingEnded" })
-    if (!response.ok) {
-      console.error("[platica-notes] stale-session finalize failed:", response.error)
-      dlog("stale-session finalize failed", { error: response.error })
-      noteIfInvalidated(response)
-    }
-  }
-
-  // Abort the lobby wait if the user backs out without joining.
-  const joined = await waitForIcon(
-    LEAVE_ICON_TEXT,
-    () => location.pathname !== meetingPath,
-  )
-  if (!joined) return
-  dlog("meeting started", { tab: tabId })
-  noteIfInvalidated(await sendToBackground({ kind: "meetingStarted" }))
-
-  const settings = await getSettings()
-  let ending = false
-  // A previous meeting ended with the media path down; clear the flag so this
-  // meeting's caption flush waits for its own trailing revisions.
-  livenessZero = false
-
-  // This meeting's debug window starts here. Earlier events (e.g. MAIN-world
-  // "installed") fall into the first meeting — acceptable.
-  const debugStart = debugEvents.length
-
-  // A mid-meeting reload of the SAME meeting continues its session (read above),
-  // rather than erasing it. A different-meeting session was already finalized and
-  // its key cleared just above, so it never resumes here.
-  const resumed = previous && previous.path === meetingPath ? previous : null
-  if (resumed) dlog("resuming session after reload")
-  // A full page reload resets the page-level roster/selfName, but Meet only
-  // broadcasts the collections roster and fires GetUser at the initial join — not
-  // after a reload — so neither is re-delivered to the resumed session. Re-seed
-  // both from the snapshot, otherwise every speaker falls back to "Speaker N".
-  if (resumed) {
-    for (const [id, name] of Object.entries(resumed.roster ?? {})) roster.set(id, name)
-    if (!selfName && resumed.selfName) selfName = resumed.selfName
-    if (!chatUrl && resumed.chatUrl) chatUrl = resumed.chatUrl
-  }
-  const prefixTranscript = resumed ? resumed.transcript : []
-  const prefixChat = resumed ? resumed.chat : []
-  // Debug from a resumed snapshot is prepended, mirroring transcript/chat.
-  const prefixDebug = resumed?.debug ?? []
-  // Attendees from a resumed snapshot seed the set (?? [] tolerates pre-feature snapshots).
-  const prefixParticipants = resumed?.participants ?? []
-  const prefixRawVersions = resumed?.rawVersions ?? []
-  const prefixNotes = resumed?.notes ?? []
-  const prefixParticipantEvents = resumed?.participantEvents ?? []
-
-  const session: ActiveSession = {
-    platform: "meet",
-    path: meetingPath,
-    title: resumed ? resumed.title : readMeetingTitle(),
-    startedAt: resumed ? resumed.startedAt : new Date().toISOString(),
-    isPrivate: resumed ? resumed.isPrivate : settings.privateByDefault,
-    captionLanguage: resumed?.captionLanguage ?? settings.captionLanguage,
-    transcript: prefixTranscript,
-    chat: prefixChat,
-    participants: [...prefixParticipants],
-    rawVersions: [...prefixRawVersions],
-    notes: [...prefixNotes],
-    participantEvents: [...prefixParticipantEvents],
-    recording: resumed?.recording ?? true,
-  }
-  // Live capture gate. Persisted on the session so a reload-resume restores an Off
-  // meeting instead of silently recording again.
-  let recording = session.recording ?? true
-  // A new meeting always starts in the default language; a resumed one keeps the
-  // language it was captured with. Reset the live subscription so a previous
-  // meeting's pill override (which is never persisted) does not carry over.
-  activeLanguage = session.captionLanguage ?? settings.captionLanguage
-  pushRtcConfig(activeLanguage, debugEnabled)
-
-  // The page roster is shared in, so names resolve retroactively even for
-  // participants whose roster entries arrived before this meeting's feed existed.
-  const feed = new CaptureFeed(roster, MEET_CAPTION_RULES)
-  const writer = new SessionWriter<ActiveSession>(
-    (snapshot) => setLocal({ [sessionKey(tabId)]: snapshot }),
-    // Stamp the current page-level roster and self name into every persisted
-    // snapshot so a reload can re-seed them (see the resume block above).
-    () => ({ ...session, roster: Object.fromEntries(roster), selfName: selfName ?? undefined, chatUrl: chatUrl ?? undefined }),
-    1000,
-    // A write that fails on an orphaned context surfaces the reload notice; the
-    // writer seals itself so it stops hammering a dead chrome.storage.
-    onContextInvalidated,
-  )
-  writer.requestWrite()
-
-  // Meeting-scoped attendee set. Fed by roster device events and the self name
-  // (both routed through the page-level RTC listener via recordAttendee). Deduped
-  // by exact name, so a participant who reconnects with a new device id — or any
-  // repeated roster broadcast — counts once.
-  const attendees = new Set<string>()
-  recordAttendee = (name) => {
-    const trimmed = name.trim()
-    if (!trimmed || attendees.has(trimmed)) return
-    attendees.add(trimmed)
-    session.participants = [...attendees]
-    writer.requestWrite()
-  }
-  // Seed from the roster known at join time. Roster device events stream from join
-  // time — often before this wiring — so without seeding, participants who arrived
-  // before the meeting's feed existed are missed from the list (they still resolve
-  // as speakers via the page roster). Live arrivals after this are added above.
-  for (const name of seedAttendees(prefixParticipants, [...roster.values()], selfName)) recordAttendee(name)
-
-  // Recorder's notes/bookmarks for this meeting, seeded from a resumed snapshot.
-  const notes: Note[] = [...prefixNotes]
-
-  // Join/leave markers, keyed by NAME not deviceId. Meet churns deviceIds — a
-  // reconnect gives the same person a NEW deviceId while the old one tombstones —
-  // so a deviceId-keyed model emitted a false "joined" (new id) AND a false "left"
-  // (old id) for one person merely reconnecting. Instead we track the set of active
-  // deviceIds PER NAME: a name JOINS when its set goes empty→non-empty (after the
-  // settle window), LEAVES only when its set goes non-empty→empty (all their devices
-  // gone). A reconnect keeps the set non-empty throughout, so it emits neither.
-  // The settle window is measured from THIS run's start (a resumed session's
-  // startedAt is far in the past, which would misclassify the reload re-sync).
-  const joinWatchStart = Date.now()
-  const participantEvents: ParticipantEvent[] = [...prefixParticipantEvents]
-  const activeByName = new Map<string, Set<string>>()
-  // Seed with everyone already present at join (page roster is deviceId→name).
-  for (const [deviceId, name] of roster) {
-    const set = activeByName.get(name) ?? new Set<string>()
-    set.add(deviceId)
-    activeByName.set(name, set)
-  }
-
-  // Always wire up onDebugEvent so an OFF→ON mid-meeting toggle starts flushing
-  // immediately. The closure self-gates on debugEnabled — no cost when debug is
-  // off for the entire meeting (session.debug stays undefined), and ON→OFF
-  // freezes the trail because the guard returns before writing.
-  onDebugEvent = () => {
-    if (!debugEnabled) return
-    // Cap the serialized slice to DEBUG_EVENTS_MAX so chrome.storage write size
-    // stays bounded. Source buffer is uncapped; only the persisted view is trimmed.
-    const slice = debugEvents.slice(debugStart)
-    session.debug = [...prefixDebug, ...slice].slice(-DEBUG_EVENTS_MAX)
-    writer.requestWrite()
-  }
-  onDebugEvent()
-
-  // Set by the start-of-meeting language prompt below (null when not shown / once it
-  // closes). Declared here so applyLanguage can close it on any language change.
-  let languagePrompt: { unmount: () => void } | null = null
-  // The ephemeral, this-meeting-only language switch shared by the pill and the
-  // start-of-meeting prompt: resubscribe + snapshot into the session, never write
-  // the persisted default (so the next meeting still starts from the default). Any
-  // language change also closes the start prompt — once you've chosen (pill OR
-  // prompt) the prompt has done its job, so it never lingers stale.
-  const applyLanguage = (language: string): void => {
-    session.captionLanguage = language
-    activeLanguage = language
-    writer.requestWrite()
-    pushRtcConfig(language, debugEnabled)
-    languagePrompt?.unmount()
-    languagePrompt = null
-  }
-
-  const controls = mountMeetingControls({
-    initialLanguage: session.captionLanguage ?? settings.captionLanguage,
-    initialPrivate: session.isPrivate,
-    initialRecording: recording,
-    onPrivateChange: (isPrivate) => {
-      session.isPrivate = isPrivate
-      writer.requestWrite()
-    },
-    onRecordingChange: (on) => {
-      recording = on
-      session.recording = on
-      writer.requestWrite()
-    },
-    onPurge: () => purge(),
-    // This-meeting-only override (see applyLanguage): resubscribe + snapshot into
-    // the session, never persist to Settings — the next meeting starts from default.
-    onLanguageChange: (language) => applyLanguage(language),
-    onToggleTranscript: () => panel.toggle(),
-  })
-
-  const panel = mountTranscriptPanel({
-    onVisibilityChange: (open) => controls.setTranscriptActive(open),
-    onAddNote: addNote,
-  })
-  panel.update(session.transcript, session.chat, session.notes ?? [], session.participantEvents ?? [])
-
-  // Opt-in, loud, NON-blocking prompt to confirm/switch the caption language at the
-  // start of a fresh meeting (capture is already running in the default). Skipped on
-  // a reload-resume and while all UI is hidden. Routes a switch through applyLanguage
-  // (same ephemeral path as the pill) and keeps the pill in sync via setLanguage.
-  if (shouldAskLanguage(settings.askLanguageEachMeeting, !!resumed, isUiHidden())) {
-    languagePrompt = mountLanguagePrompt({
-      initialLanguage: session.captionLanguage ?? settings.captionLanguage,
-      onPick: (language) => { applyLanguage(language); controls.setLanguage(language) },
-      onDisableAsking: () => void saveSettings({ askLanguageEachMeeting: false }),
-    })
-  }
-
-  // Re-resolve speaker names (they resolve from the roster at snapshot time) and
-  // push the fresh transcript to the panel. Invoked by the page-level roster
-  // handler so a name learned mid-meeting appears without waiting for a caption.
-  refreshTranscript = () => {
-    session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
-    panel.update(session.transcript, session.chat, session.notes ?? [], session.participantEvents ?? [])
-    writer.requestWrite()
-  }
-
-  const pushPresence = (name: string, kind: "join" | "leave"): void => {
-    if (!recording) return
-    participantEvents.push({ at: new Date().toISOString(), name: name.trim(), kind })
-    session.participantEvents = [...participantEvents]
-    panel.update(session.transcript, session.chat, session.notes ?? [], session.participantEvents)
-    writer.requestWrite()
-    pulseActivity()
-  }
-
-  // A roster device appeared. Add it to its name's active set; a name whose set was
-  // EMPTY and goes non-empty after the settle window (and is not self) is a genuine
-  // join. A reconnect (new deviceId while an old one is still active) keeps the set
-  // non-empty → no marker.
-  recordDevice = (deviceId, name) => {
-    if (ending) return
-    const set = activeByName.get(name) ?? new Set<string>()
-    const wasActive = set.size > 0
-    set.add(deviceId)
-    activeByName.set(name, set)
-    // isMidMeetingJoin's `alreadyKnown` is "this name already had an active device".
-    const isJoin = isMidMeetingJoin(name, selfName, wasActive, Date.now() - joinWatchStart, JOIN_SETTLE_MS)
-    dlog("device seen", { deviceId, name, wasActive, isJoin })
-    if (isJoin) pushPresence(name, "join")
-  }
-
-  // A roster device was removed (tombstone). Drop it from its name's active set; a
-  // name whose set goes EMPTY (all devices gone, not self) is a genuine leave. A
-  // reconnect's stale-device tombstone leaves the set non-empty → no marker. The
-  // `ending` guard suppresses the end-of-meeting teardown cascade (Meet drops every
-  // device at once when the call ends). Timing note: Meet can lag the tombstone.
-  recordLeave = (deviceId) => {
-    if (ending) return
-    const name = roster.get(deviceId)
-    const set = name ? activeByName.get(name) : undefined
-    if (!name || !set || !set.has(deviceId)) return
-    set.delete(deviceId)
-    dlog("device left", { deviceId, name, remaining: set.size })
-    if (set.size > 0) return
-    if (selfName && name === selfName) return
-    pushPresence(name, "leave")
-  }
-
-  // Append a timestamped note (empty text = a bare bookmark) to this meeting.
-  // Reached from the panel's note input and the global Alt+Shift+B bookmark chord.
-  function addNote(text: string): void {
-    if (!recording) {
-      showToast("Recording is off")
-      return
-    }
-    notes.push({ at: new Date().toISOString(), text: text.trim() })
-    session.notes = [...notes]
-    panel.update(session.transcript, session.chat, session.notes, session.participantEvents ?? [])
-    writer.requestWrite()
-    pulseActivity()
-  }
-  addNoteToActive = addNote
-
-  // Wipe everything captured in THIS meeting so far: the feed, the resumed prefixes,
-  // and the notes/presence arrays. Persists the emptied session so a crash-resume or
-  // the eventual finalize sees empty -> no file. activeByName (presence bookkeeping)
-  // is left intact: it is live identity state, not saved content.
-  function purge(): void {
-    feed.reset()
-    prefixTranscript.length = 0
-    prefixChat.length = 0
-    prefixRawVersions.length = 0
-    notes.length = 0
-    participantEvents.length = 0
-    session.transcript = []
-    session.chat = []
-    session.rawVersions = []
-    session.notes = []
-    session.participantEvents = []
-    panel.update(session.transcript, session.chat, session.notes, session.participantEvents)
-    writer.requestWrite()
-  }
-
-  // Meet fills the real meeting name in with a delay. Cleared in endMeeting so a
-  // short meeting (<7s) leaves no stray timer firing after teardown.
-  const titleTimer = setTimeout(() => {
-    if (ending) return
-    session.title = readMeetingTitle()
-    writer.requestWrite()
-  }, 7000)
-
-  let firstCaptionLogged = false
-  activeMeetingHandler = (event) => {
-    if (!recording && (event.type === "utterance" || event.type === "chat")) return
-    if (event.type === "utterance") {
-      if (!feed.handleCaption(event, new Date().toISOString())) return
-      if (!firstCaptionLogged) {
-        firstCaptionLogged = true
-        dlog("captions are flowing")
-      }
-      session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
-      session.rawVersions = [...prefixRawVersions, ...feed.versionsSnapshot()]
-      panel.update(session.transcript, session.chat, session.notes ?? [], session.participantEvents ?? [])
-      writer.requestWrite()
-      pulseActivity()
-    } else if (event.type === "chat") {
-      if (!feed.handleChat(event, new Date().toISOString())) return
-      session.chat = [...prefixChat, ...feed.chatSnapshot()]
-      // Chat now shares the live timeline, so reflect it in the panel (and pulse)
-      // exactly like a caption.
-      panel.update(session.transcript, session.chat, session.notes ?? [], session.participantEvents ?? [])
-      writer.requestWrite()
-      pulseActivity()
-    }
-    // Unknown event types from future bridge versions are silently ignored.
-  }
-
-  // --- meeting end detection -------------------------------------------------
-  // Owned by the adapter (watchMeetEnd): a click delegation for the Leave button
-  // plus a poller for the ends we never see a click for. Returns its teardown.
-  let meetingDone!: () => void
-  const done = new Promise<void>((resolve) => { meetingDone = resolve })
-
-  const stopWatchingEnd = meetAdapter.watchEnd((reason) => void endMeeting(reason))
-  // ---------------------------------------------------------------------------
-
-  // The language prompt already says "recording in X" — skip the generic toast
-  // when it's up, so the two don't stack on the same spot.
-  if (!languagePrompt) showToast("Plática Notes is recording this meeting")
-  await done
-  return
-
-  // ---------- closures ----------
-
-  async function endMeeting(reason: string): Promise<void> {
-    if (ending) return
-    ending = true
-    dlog("meeting ended", { reason })
-    // Stop the end-detection machinery first so neither the poller nor a
-    // residual leave click can re-enter during the flush wait below.
-    stopWatchingEnd()
-    clearTimeout(titleTimer)
-    // Leave the page-level RTC routing attached and wait: Meet keeps streaming
-    // the final caption revision for a couple of seconds after Leave (same
-    // messageId, higher version), so the feed completes the closing sentence
-    // before we snapshot. The `ending` guard above makes a concurrent
-    // endMeeting call a no-op during this window.
-    dlog("finalizing after caption flush", { reason })
-    // Persist the current transcript BEFORE the flush wait. Meet can reload the
-    // page right after Leave, tearing down this content script mid-wait before the
-    // finalize below runs (observed: the first Leave produced no file, the session
-    // resumed on the reload and only saved on the next Leave). Writing now means the
-    // stored session is complete-so-far regardless.
-    session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
-    session.chat = [...prefixChat, ...feed.chatSnapshot()]
-    session.participantEvents = [...participantEvents]
-    writer.requestWrite()
-    // Wait for Meet's trailing caption revisions, but ONLY while the media path is
-    // still up. Once it drops (pc closed) no further captions can arrive, so there
-    // is nothing to flush — finalize at once rather than sitting in the wait window
-    // where a post-Leave reload can kill the finalize before it saves the file.
-    const flushStart = Date.now()
-    while (Date.now() - flushStart < CAPTION_FLUSH_MS) {
-      if (livenessZero) break
-      await delay(150)
-    }
-    // Now stop routing: a caption event arriving after finalization would
-    // re-create the session key the background just cleaned up. The page-level
-    // RTC listener stays armed for the next meeting. Null onDebugEvent here too
-    // so a late debug event can't resurrect the session.
-    activeMeetingHandler = null
-    recordAttendee = null
-    recordDevice = null
-    recordLeave = null
-    refreshTranscript = null
-    addNoteToActive = null
-    onMediaState = null
-    onDebugEvent = null
-    controls.unmount()
-    panel.unmount()
-    languagePrompt?.unmount()
-    // Final snapshot resolves speaker names from the roster as it stands now,
-    // and includes anything the flush wait above let land.
-    session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
-    session.rawVersions = [...prefixRawVersions, ...feed.versionsSnapshot()]
-    session.chat = [...prefixChat, ...feed.chatSnapshot()]
-    session.participants = [...attendees]
-    session.notes = [...notes]
-    session.participantEvents = [...participantEvents]
-    // Capture the complete debug trail (including this "meeting ended") into the
-    // final snapshot. Stays undefined when disabled — no behavioural change.
-    if (debugEnabled) session.debug = [...prefixDebug, ...debugEvents.slice(debugStart)]
-    await writer.writeNow()
-    // Seal the writer: any late event/timer must not re-create the session key
-    // the background is about to clean up in meetingEnded.
-    writer.close()
-    const response = await sendToBackground({ kind: "meetingEnded" })
-    if (!response.ok) {
-      console.error("[platica-notes] finalize failed:", response.error)
-      dlog("finalize failed", { error: response.error })
-      noteIfInvalidated(response)
-    }
-    meetingDone()
   }
 }
 
@@ -712,7 +267,7 @@ function watchSettings(): void {
       // active meeting keeps the pill's choice, so changing the default in the
       // popup mid-meeting does not retarget the current call. Always re-push so a
       // debug-flag toggle reaches the MAIN-world script.
-      if (activeMeetingHandler === null) activeLanguage = next.captionLanguage
+      if (!sessionActive) activeLanguage = next.captionLanguage
       pushRtcConfig(activeLanguage, next.debugLog)
       setUiHidden(next.hideUi)
     }
@@ -740,7 +295,7 @@ function watchHotkeys(): void {
     if (isHide) {
       void saveSettings({ hideUi: !isUiHidden() })
     } else {
-      addNoteToActive?.("")
+      noteSink?.("")
     }
   })
 }
@@ -789,8 +344,8 @@ function readMeetingTitle(): string {
 // ---------- the Meet platform adapter ----------
 
 // Attach to Meet's two event transports and hand every canonical event to `on`.
-// The caller owns what happens with them (page-level bookkeeping today, the session
-// runner later); this owns only the transports.
+// The caller owns what happens with them (page-level bookkeeping, or the running
+// session); this owns only the transports.
 function subscribeMeetEvents(on: (event: CaptureEvent) => void): () => void {
   const onRtcEvent = (event: Event): void => {
     const detail = (event as CustomEvent).detail
@@ -882,6 +437,7 @@ function watchMeetEnd(onEnd: (reason: string) => void): () => void {
 
   return () => {
     clearInterval(endWatcher)
+    onMediaState = null
     document.removeEventListener("click", onDocumentClick, true)
   }
 }
@@ -896,6 +452,7 @@ export const meetAdapter: PlatformAdapter = {
     livenessEnd: true,
   },
   captionRules: MEET_CAPTION_RULES,
+  timings: { captionFlushMs: CAPTION_FLUSH_MS, joinSettleMs: JOIN_SETTLE_MS },
   isMeetingPage: () => MEETING_PATH.test(location.pathname),
   meetingKey: () => (MEETING_PATH.test(location.pathname) ? location.pathname : null),
   // The leave icon appearing is what "in the call" means on Meet; abort fires when
@@ -905,7 +462,12 @@ export const meetAdapter: PlatformAdapter = {
   readTitle: () => readMeetingTitle(),
   meetingUrl: (key) => `https://meet.google.com${key}`,
   subscribe: (on) => subscribeMeetEvents(on),
-  setLanguage: (tag) => pushRtcConfig(tag, debugEnabled),
+  // Also updates the page-level language so watchSettings does not clobber a live
+  // pill choice, whoever called this.
+  setLanguage: (tag) => {
+    activeLanguage = tag
+    pushRtcConfig(tag, debugEnabled)
+  },
   snapshotFields: () => ({ chatUrl: chatUrl ?? undefined }),
   // Arm the caption-tail grace: a same-code re-entry inside the window drains
   // Meet's trailing revisions with no live session to catch them as phantoms.

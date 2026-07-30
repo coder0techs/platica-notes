@@ -32,10 +32,27 @@ export interface Capabilities {
   livenessEnd: boolean
 }
 
+/** Platform-observed timings the runner needs. Both are measured, not guessed. */
+export interface AdapterTimings {
+  /**
+   * How long to keep receiving after the call ends before finalizing. Meet streams
+   * the final caption revision for a couple of seconds after Leave, so cutting the
+   * feed at once truncates the closing sentence. 0 for a platform that stops dead.
+   */
+  captionFlushMs: number
+  /**
+   * A roster arrival within this window of a session's start is the initial roster
+   * (or a post-reload re-sync), not someone joining mid-meeting, so it gets no
+   * marker.
+   */
+  joinSettleMs: number
+}
+
 export interface PlatformAdapter {
   readonly id: PlatformId
   readonly capabilities: Capabilities
   readonly captionRules: CaptionRules
+  readonly timings: AdapterTimings
 
   /** Is the current URL a meeting page of this platform? */
   isMeetingPage(): boolean
