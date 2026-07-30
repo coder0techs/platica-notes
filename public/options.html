@@ -69,6 +69,16 @@
     </section>
 
     <section>
+      <p class="label">Platforms</p>
+      <label class="row">
+        <span>Record Zoom meetings (experimental)</span>
+        <input type="checkbox" id="zoom-enabled">
+      </label>
+      <p class="hint">Off by default. Asks for access to zoom.us, then records Zoom the same way it records Meet — locally, no uploads. <strong>Only works when you join the meeting in this browser</strong>: the Zoom desktop app is invisible to any extension. Zoom's live transcription also has to be switched on by the meeting host, otherwise there are no captions to record — the extension tells you in the call when that happens. Chat and the caption-language picker are Meet-only for now.</p>
+      <p class="hint" id="zoom-error" hidden></p>
+    </section>
+
+    <section>
       <p class="label">About</p>
       <nav class="links">
         <a class="link" href="changelog.html" target="_blank">What's new</a>

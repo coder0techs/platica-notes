@@ -95,6 +95,21 @@ export interface LivenessEvent {
   pcState: RTCPeerConnectionState
 }
 
+// The platform reported the local user is now in the call. Only for platforms whose
+// join is knowable from their own state (Zoom's JOIN_MEETING_SUCCESS); Meet detects
+// join from its UI instead and never emits this.
+export interface JoinedEvent {
+  type: "joined"
+}
+
+// The platform reported the meeting's human title. Needed when the title lives in
+// page state the isolated adapter cannot read (Zoom keeps it in its Redux store);
+// Meet reads its title from the DOM and never emits this.
+export interface MeetingTitleEvent {
+  type: "meeting-title"
+  title: string
+}
+
 // State of the capture data path itself, dispatched by the MAIN-world script: the
 // channel we read captions from coming up, dying unrecoverably, or the platform
 // telling us captions are unavailable. The isolated runner folds these into its
@@ -113,6 +128,8 @@ export type CaptureEvent =
   | RosterLeaveEvent
   | SelfEvent
   | LivenessEvent
+  | JoinedEvent
+  | MeetingTitleEvent
   | HealthEvent
 
 export interface CaptureConfig {

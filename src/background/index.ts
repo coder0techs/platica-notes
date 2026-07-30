@@ -2,6 +2,7 @@ import type { BackgroundRequest, BackgroundResponse } from "../shared/messages"
 import { ACTIVE_TABS_KEY } from "../shared/storage"
 import { downloadDebugLog, downloadMeeting } from "./export"
 import { shouldOpenWelcome } from "./install"
+import { syncZoomScripts } from "./platforms"
 import { finalizeSession, recoverOrphanSessions, trackTab, type FinalizeResult } from "./sessions"
 import { clearPendingExport, deleteMeeting, getMeeting, listPendingExports } from "./store"
 
@@ -104,9 +105,17 @@ chrome.runtime.onUpdateAvailable.addListener(() => {
   })
 })
 
+// Optional platforms (Zoom) are registered at runtime, only while their host
+// permission is granted. Re-sync whenever the user grants or revokes it from the
+// settings page, and once per service-worker start in case it changed while we were
+// evicted.
+chrome.permissions.onAdded.addListener(() => void syncZoomScripts())
+chrome.permissions.onRemoved.addListener(() => void syncZoomScripts())
+
 // On every service-worker start: rescue meetings orphaned by a crash, then
 // re-export anything a prior life committed but never finished writing.
 void (async () => {
+  await syncZoomScripts()
   for (const result of await recoverOrphanSessions()) await deliver(result)
   await recoverPendingExports()
 })()

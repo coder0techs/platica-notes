@@ -9,8 +9,9 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["storage", "unlimitedStorage", "downloads"],
+  "permissions": ["storage", "unlimitedStorage", "downloads", "scripting"],
   "host_permissions": ["https://meet.google.com/*", "https://chat.google.com/*"],
+  "optional_host_permissions": ["*://*.zoom.us/*"],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },

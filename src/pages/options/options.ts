@@ -1,5 +1,6 @@
 import { CAPTION_LANGUAGES } from "../../shared/languages"
 import { ACTIVE_TABS_KEY, getLocal, getSettings, hasActiveMeeting, saveSettings } from "../../shared/storage"
+import { ZOOM_PERMISSION } from "../../shared/platforms"
 
 const captionLanguage = document.querySelector<HTMLSelectElement>("#caption-language")!
 const activeMeetingNote = document.querySelector<HTMLParagraphElement>("#active-meeting-note")!
@@ -11,6 +12,8 @@ const askLanguage = document.querySelector<HTMLInputElement>("#ask-language")!
 const folderPublic = document.querySelector<HTMLInputElement>("#folder-public")!
 const folderPrivate = document.querySelector<HTMLInputElement>("#folder-private")!
 const folderDebug = document.querySelector<HTMLInputElement>("#folder-debug")!
+const zoomEnabled = document.querySelector<HTMLInputElement>("#zoom-enabled")!
+const zoomError = document.querySelector<HTMLParagraphElement>("#zoom-error")!
 
 // Build stamp shown at the bottom of the page. typeof-guarded so vitest and any
 // non-build eval fall back to "dev" instead of throwing ReferenceError.
@@ -53,6 +56,7 @@ async function init(): Promise<void> {
   folderPublic.value = settings.folderPublic
   folderPrivate.value = settings.folderPrivate
   folderDebug.value = settings.folderDebug
+  zoomEnabled.checked = await chrome.permissions.contains(ZOOM_PERMISSION)
   await refreshActiveMeetingNote()
 }
 
@@ -104,3 +108,37 @@ folderDebug.addEventListener("change", () => {
 })
 
 void init()
+
+// Zoom is opt-in because it needs a host permission the default install does not
+// have. The permission itself is the state — the background worker registers or
+// unregisters the Zoom scripts from chrome.permissions events — so nothing is stored
+// in Settings here, and a checkbox that fails to gain access is put back honestly.
+zoomEnabled.addEventListener("change", () => {
+  const wanted = zoomEnabled.checked
+  zoomError.hidden = true
+  void (async () => {
+    try {
+      const ok = wanted
+        ? await chrome.permissions.request(ZOOM_PERMISSION)
+        : await chrome.permissions.remove(ZOOM_PERMISSION)
+      if (!ok) {
+        zoomEnabled.checked = !wanted
+        if (wanted) {
+          zoomError.textContent = "Access to zoom.us was not granted, so Zoom meetings will not be recorded."
+          zoomError.hidden = false
+        }
+        return
+      }
+      // Reload an already-open Zoom tab? No: the user is told instead, because
+      // reloading a tab someone might be sitting in a call in is not ours to do.
+      zoomError.textContent = wanted
+        ? "Zoom is on. Reload any Zoom tab you already have open for it to take effect."
+        : ""
+      zoomError.hidden = !wanted
+    } catch (error) {
+      zoomEnabled.checked = !wanted
+      zoomError.textContent = error instanceof Error ? error.message : String(error)
+      zoomError.hidden = false
+    }
+  })()
+})

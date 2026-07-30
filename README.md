@@ -116,9 +116,20 @@ The **Settings page** (open it from the popup) holds everything else:
 
 ## Scope & limitations
 
-- Google Meet only.
+- Google Meet is fully supported. **Zoom is experimental** and off by default: turn
+  it on in Settings, which asks for access to zoom.us. It records the transcript,
+  the meeting title and join/leave markers — not the in-meeting chat, and it has no
+  caption-language picker.
+- **Only meetings you join in this browser can be recorded.** The Zoom and Teams
+  desktop apps are invisible to any browser extension, so a call joined in the app
+  records nothing. On Zoom, use "Join from your browser".
+- On Zoom, live transcription is switched on by the meeting **host**. With it off
+  there are no captions to read; the extension says so in the call and notes the
+  reason in the file rather than saving an empty transcript.
+- Microsoft Teams is not supported yet.
 - The caption language must match what's spoken, or the transcript comes out
-  empty. Set a default in Settings; override one call from the in-meeting pill.
+  empty. Set a default in Settings; override one call from the in-meeting pill
+  (Meet only).
 - A very short meeting may finalize before your name is resolved, falling back to
   a generic "Speaker N" label.
 

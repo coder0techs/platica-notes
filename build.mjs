@@ -60,6 +60,10 @@ const options = {
     background: "src/background/index.ts",
     "content-meet": "src/content/platforms/meet.ts",
     "capture-meet": "src/content/capture/meet/main.ts",
+    // Zoom ships in every build but is only injected once the user grants the
+    // zoom.us host permission (see background/platforms.ts).
+    "content-zoom": "src/content/platforms/zoom.ts",
+    "capture-zoom": "src/content/capture/zoom/main.ts",
     "chatgoogle-main": "src/content/chatgoogle/main.ts",
     popup: "src/pages/popup/popup.ts",
     options: "src/pages/options/options.ts",
