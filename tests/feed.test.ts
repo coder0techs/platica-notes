@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { RtcFeed, suffixAfter } from "../src/content/capture/meet/feed"
+import { CaptureFeed, suffixAfter } from "../src/content/core/feed"
+import type { CaptionRules } from "../src/content/core/feed"
+import { MEET_CAPTION_RULES } from "../src/content/platforms/meet-lifecycle"
 import type { ChatEvent, UtteranceEvent } from "../src/content/capture/protocol"
 
 const at = "2026-06-11T10:00:00.000Z"
@@ -35,15 +37,15 @@ const chatWithId = (speakerId: string, text: string, messageId: string): ChatEve
 const ALICE = "spaces/abc/devices/1"
 const BOB = "spaces/abc/devices/2"
 
-describe("RtcFeed transcript", () => {
+describe("CaptureFeed transcript", () => {
   it("starts with empty snapshots", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     expect(feed.transcriptSnapshot()).toEqual([])
     expect(feed.chatSnapshot()).toEqual([])
   })
 
   it("accepts a higher version and replaces the text", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     expect(feed.handleCaption(caption(ALICE, 1, 1, "Hel"), at)).toBe(true)
     expect(feed.handleCaption(caption(ALICE, 1, 2, "Hello there"), later)).toBe(true)
     expect(feed.transcriptSnapshot()).toEqual([
@@ -52,7 +54,7 @@ describe("RtcFeed transcript", () => {
   })
 
   it("rejects a stale version without changing state", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 3, "Final text"), at)
     expect(feed.handleCaption(caption(ALICE, 1, 2, "Older revision"), later)).toBe(false)
     expect(feed.handleCaption(caption(ALICE, 1, 3, "Same version"), later)).toBe(false)
@@ -62,7 +64,7 @@ describe("RtcFeed transcript", () => {
   })
 
   it("keeps interleaved speakers as separate utterances in first-seen order", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
     feed.handleCaption(caption(BOB, 7, 1, "Hi"), at)
     feed.handleCaption(caption(ALICE, 1, 2, "Hello everyone"), later)
@@ -74,7 +76,7 @@ describe("RtcFeed transcript", () => {
 
   it("resolves names retroactively when the roster arrives after speech", () => {
     const roster = new Map<string, string>()
-    const feed = new RtcFeed(roster)
+    const feed = new CaptureFeed(roster, MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
     expect(feed.transcriptSnapshot()[0].speaker).toBe("Speaker 1")
     roster.set(ALICE, "Alice García")
@@ -82,7 +84,7 @@ describe("RtcFeed transcript", () => {
   })
 
   it("falls back to the deviceId tail, or the whole id without slashes", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption("spaces/abc/devices/42", 1, 1, "Tail"), at)
     feed.handleCaption(caption("opaque-id", 2, 1, "Whole"), at)
     const result = feed.transcriptSnapshot()
@@ -91,7 +93,7 @@ describe("RtcFeed transcript", () => {
   })
 
   it("keeps multiple messages from the same device in order", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "First thought"), at)
     feed.handleCaption(caption(ALICE, 2, 1, "Second thought"), later)
     feed.handleCaption(caption(ALICE, 1, 2, "First thought, revised"), later)
@@ -102,9 +104,9 @@ describe("RtcFeed transcript", () => {
   })
 })
 
-describe("RtcFeed chat", () => {
+describe("CaptureFeed chat", () => {
   it("drops consecutive duplicates and keeps non-consecutive repeats", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     expect(feed.handleChat(chat(ALICE, "+1"), at)).toBe(true)
     expect(feed.handleChat(chat(ALICE, "+1"), later)).toBe(false)
     expect(feed.handleChat(chat(BOB, "hello"), later)).toBe(true)
@@ -115,7 +117,7 @@ describe("RtcFeed chat", () => {
   it("dedupes a re-synced message by id, even non-consecutively", () => {
     // The collections channel replays messages, so the same id can re-arrive
     // after other messages. handleChat must thread messageId to the ChatLog.
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     expect(feed.handleChat(chatWithId(ALICE, "hi", "spaces/abc/messages/m1"), at)).toBe(true)
     expect(feed.handleChat(chatWithId(BOB, "yo", "spaces/abc/messages/m2"), later)).toBe(true)
     expect(feed.handleChat(chatWithId(ALICE, "hi", "spaces/abc/messages/m1"), later)).toBe(false)
@@ -124,27 +126,27 @@ describe("RtcFeed chat", () => {
 
   it("prefers the embedded sender over the roster entry", () => {
     const roster = new Map([[ALICE, "Roster Name"]])
-    const feed = new RtcFeed(roster)
+    const feed = new CaptureFeed(roster, MEET_CAPTION_RULES)
     feed.handleChat(chat(ALICE, "hi", "Embedded Name"), at)
     expect(feed.chatSnapshot()).toEqual([{ sender: "Embedded Name", sentAt: at, text: "hi" }])
   })
 
   it("falls back to the roster when no embedded sender is present", () => {
     const roster = new Map([[ALICE, "Alice García"]])
-    const feed = new RtcFeed(roster)
+    const feed = new CaptureFeed(roster, MEET_CAPTION_RULES)
     feed.handleChat(chat(ALICE, "hi"), at)
     expect(feed.chatSnapshot()).toEqual([{ sender: "Alice García", sentAt: at, text: "hi" }])
   })
 
   it("ignores a blank embedded sender and falls back to the roster", () => {
     const roster = new Map([[ALICE, "Alice García"]])
-    const feed = new RtcFeed(roster)
+    const feed = new CaptureFeed(roster, MEET_CAPTION_RULES)
     feed.handleChat(chat(ALICE, "hi", "   "), at)
     expect(feed.chatSnapshot()[0].sender).toBe("Alice García")
   })
 
   it("falls back to the deviceId tail when neither sender nor roster is known", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleChat(chat(BOB, "hi"), at)
     expect(feed.chatSnapshot()[0].sender).toBe("Speaker 2")
   })
@@ -154,7 +156,7 @@ describe("RtcFeed chat", () => {
     // frozen into the ChatLog entry and will not change even if the roster
     // is populated afterwards. This is deliberate — see handleChat comment.
     const roster = new Map<string, string>()
-    const feed = new RtcFeed(roster)
+    const feed = new CaptureFeed(roster, MEET_CAPTION_RULES)
     feed.handleChat(chat(ALICE, "hello"), at)
     expect(feed.chatSnapshot()[0].sender).toBe("Speaker 1")
     roster.set(ALICE, "Alice García")
@@ -163,34 +165,34 @@ describe("RtcFeed chat", () => {
   })
 })
 
-describe("RtcFeed chat harvests sender into roster", () => {
+describe("CaptureFeed chat harvests sender into roster", () => {
   it("teaches the feed deviceId->name so transcript lines from that device resolve", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleChat(chat(ALICE, "hi", "Alice García"), at)
     feed.handleCaption(caption(ALICE, 1, 1, "Hello"), later)
     expect(feed.transcriptSnapshot()[0].speaker).toBe("Alice García")
   })
 })
 
-describe("RtcFeed local user resolution", () => {
+describe("CaptureFeed local user resolution", () => {
   // The local user's own deviceId -> name is seeded into the roster (from the
   // UpdateMeetingDevice RPC) like any participant, so self resolves through the
   // roster — the feed has no separate self-name path.
   it("resolves the local user's lines via their roster entry", () => {
     const roster = new Map([[ALICE, "Grace Hopper"]])
-    const feed = new RtcFeed(roster)
+    const feed = new CaptureFeed(roster, MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
     expect(feed.transcriptSnapshot()[0].speaker).toBe("Grace Hopper")
   })
 
   it("falls back to a stable per-device Speaker label when the roster has no entry", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
     expect(feed.transcriptSnapshot()[0].speaker).toBe("Speaker 1")
   })
 
   it("does not collapse two unrostered speakers onto one label", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
     feed.handleCaption(caption(BOB, 2, 1, "Hi"), at)
     const speakers = feed.transcriptSnapshot().map((u) => u.speaker)
@@ -199,7 +201,7 @@ describe("RtcFeed local user resolution", () => {
 
   it("resolves retroactively once the local device's name is seeded into the roster", () => {
     const roster = new Map<string, string>()
-    const feed = new RtcFeed(roster)
+    const feed = new CaptureFeed(roster, MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
     expect(feed.transcriptSnapshot()[0].speaker).toBe("Speaker 1")
     roster.set(ALICE, "Grace Hopper")
@@ -207,19 +209,19 @@ describe("RtcFeed local user resolution", () => {
   })
 })
 
-describe("RtcFeed shared roster", () => {
+describe("CaptureFeed shared roster", () => {
   it("uses a caller-provided roster map populated externally", () => {
     const roster = new Map<string, string>()
-    const feed = new RtcFeed(roster)
+    const feed = new CaptureFeed(roster, MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "Hello"), at)
     roster.set(ALICE, "Alice García")
     expect(feed.transcriptSnapshot()[0].speaker).toBe("Alice García")
   })
 })
 
-describe("RtcFeed version history", () => {
+describe("CaptureFeed version history", () => {
   it("accumulates distinct versions per caption in order", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "Hel"), at)
     feed.handleCaption(caption(ALICE, 1, 2, "Hello"), later)
     feed.handleCaption(caption(ALICE, 1, 3, "Hello there"), later)
@@ -229,7 +231,7 @@ describe("RtcFeed version history", () => {
   })
 
   it("dedupes consecutive identical text even when the version bumps", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "Done"), at)
     feed.handleCaption(caption(ALICE, 1, 2, "Done"), later) // identical text, higher version
     feed.handleCaption(caption(ALICE, 1, 3, "Done."), later)
@@ -237,14 +239,14 @@ describe("RtcFeed version history", () => {
   })
 
   it("keeps stale revisions out of the history", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 3, "Final"), at)
     feed.handleCaption(caption(ALICE, 1, 2, "Older"), later)
     expect(feed.versionsSnapshot()[0].versions).toEqual(["Final"])
   })
 
   it("keeps a single-version phrase as a one-element history", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "Hi"), at)
     expect(feed.versionsSnapshot()).toEqual([
       { speaker: "Speaker 1", startedAt: at, versions: ["Hi"] },
@@ -253,7 +255,7 @@ describe("RtcFeed version history", () => {
 
   it("resolves speaker names retroactively like the transcript", () => {
     const roster = new Map<string, string>()
-    const feed = new RtcFeed(roster)
+    const feed = new CaptureFeed(roster, MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "Hi"), at)
     roster.set(ALICE, "Alice García")
     expect(feed.versionsSnapshot()[0].speaker).toBe("Alice García")
@@ -285,9 +287,9 @@ describe("suffixAfter", () => {
   })
 })
 
-describe("RtcFeed interruption split", () => {
+describe("CaptureFeed interruption split", () => {
   it("splits a resumed turn when another speaker interjected after a pause", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "I think we should"), t(0))
     feed.handleCaption(caption(BOB, 7, 1, "wait"), t(1000))
     feed.handleCaption(caption(ALICE, 1, 2, "I think we should go with option two"), t(3000))
@@ -299,7 +301,7 @@ describe("RtcFeed interruption split", () => {
   })
 
   it("does not split fast crosstalk (another speaker but under the interruption gap)", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "one"), t(0))
     feed.handleCaption(caption(BOB, 7, 1, "two"), t(300))
     feed.handleCaption(caption(ALICE, 1, 2, "one three"), t(500))
@@ -311,7 +313,7 @@ describe("RtcFeed interruption split", () => {
     // Only another speaker interrupting splits a turn. A solo pause never does:
     // Meet already starts a fresh messageId after a real pause, so there is
     // nothing to split, and splitting a lone messageId would only fragment it.
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "first thought"), t(0))
     feed.handleCaption(caption(ALICE, 1, 2, "first thought and then some"), t(6000))
     expect(feed.transcriptSnapshot()).toEqual([
@@ -320,7 +322,7 @@ describe("RtcFeed interruption split", () => {
   })
 
   it("keeps a long continuous monologue as a single block", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     let version = 1
     let text = "w0"
     feed.handleCaption(caption(ALICE, 1, version, text), t(0))
@@ -338,7 +340,7 @@ describe("RtcFeed interruption split", () => {
   it("does not treat the same speaker's other message as an interruption", () => {
     // Two messageIds from the SAME device must not split each other, even across a
     // long gap: only ANOTHER device counts as an interruption.
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "first"), t(0))
     feed.handleCaption(caption(ALICE, 2, 1, "second"), t(2000))
     feed.handleCaption(caption(ALICE, 1, 2, "first extended"), t(3000))
@@ -347,7 +349,7 @@ describe("RtcFeed interruption split", () => {
   })
 
   it("carries a per-segment version history so alternatives stay attached after a split", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "hello wor"), t(0))
     feed.handleCaption(caption(ALICE, 1, 2, "hello world"), t(200))
     feed.handleCaption(caption(BOB, 2, 1, "hi"), t(1000))
@@ -360,7 +362,7 @@ describe("RtcFeed interruption split", () => {
   })
 
   it("keeps the whole final text in one block when it is never interrupted", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "keep"), t(0))
     feed.handleCaption(caption(ALICE, 1, 2, "keep it whole"), t(800))
     expect(feed.transcriptSnapshot()).toEqual([
@@ -371,7 +373,7 @@ describe("RtcFeed interruption split", () => {
   it("stamps endedAt at the last growth of the text, not a later no-growth flush", () => {
     // Meet re-sends a messageId's final text at meeting end without adding words;
     // endedAt must stay at the real spoken end, not jump to the flush time.
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     feed.handleCaption(caption(ALICE, 1, 1, "hello"), t(0))
     feed.handleCaption(caption(ALICE, 1, 2, "hello world"), t(2000))
     feed.handleCaption(caption(ALICE, 1, 3, "hello world"), t(30000)) // flush, no growth
@@ -381,38 +383,38 @@ describe("RtcFeed interruption split", () => {
   })
 })
 
-describe("RtcFeed own-chat cross-transport dedup", () => {
+describe("CaptureFeed own-chat cross-transport dedup", () => {
   it("collapses the same self message captured on both transports", () => {
     // meet_messages hook ("self-out/…") and the chat frame ("self-topic/…") both
     // fire for one send; ChatLog cannot collapse them (distinct ids), the feed must.
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     expect(feed.handleChat(chatWithId("self", "Hello team", "self-out/123"), t(0))).toBe(true)
     expect(feed.handleChat(chatWithId("self", "Hello team", "self-topic/456"), t(200))).toBe(false)
     expect(feed.chatSnapshot()).toHaveLength(1)
   })
 
   it("keeps a genuine re-send of the same text outside the window", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     expect(feed.handleChat(chatWithId("self", "ok", "self-topic/1"), t(0))).toBe(true)
     expect(feed.handleChat(chatWithId("self", "ok", "self-topic/2"), t(6000))).toBe(true)
     expect(feed.chatSnapshot()).toHaveLength(2)
   })
 
   it("does not apply the self guard to others' chat with identical text", () => {
-    const feed = new RtcFeed()
+    const feed = new CaptureFeed(new Map(), MEET_CAPTION_RULES)
     expect(feed.handleChat(chatWithId(ALICE, "ok", "spaces/a/messages/1"), t(0))).toBe(true)
     expect(feed.handleChat(chatWithId(BOB, "ok", "spaces/a/messages/2"), t(200))).toBe(true)
     expect(feed.chatSnapshot()).toHaveLength(2)
   })
 })
 
-describe("RtcFeed.reset", () => {
+describe("CaptureFeed.reset", () => {
   const AT = "2026-07-29T10:00:00.000Z"
   const AT2 = "2026-07-29T10:00:05.000Z"
 
   it("clears captured transcript, chat and versions but keeps the roster", () => {
     const roster = new Map<string, string>([["dev-1", "Grace Hopper"]])
-    const feed = new RtcFeed(roster)
+    const feed = new CaptureFeed(roster, MEET_CAPTION_RULES)
 
     feed.handleCaption(
       { type: "utterance", speakerId: "dev-1", utteranceId: "1", revision: 1, text: "hello world" },
@@ -439,5 +441,38 @@ describe("RtcFeed.reset", () => {
     expect(after).toHaveLength(1)
     expect(after[0].speaker).toBe("Grace Hopper")
     expect(after[0].text).toBe("after reset")
+  })
+})
+
+// A second, deliberately un-Meet-like profile: a fresh utterance id per turn (so no
+// interruption split), an opaque speaker id, and a single own-chat transport.
+const NO_SPLIT_RULES: CaptionRules = {
+  interruptionGapMs: null,
+  speakerLabel: (id) => `Guest ${id}`,
+  selfChatDedupMs: null,
+}
+
+describe("caption rules", () => {
+  it("never splits a turn when interruptionGapMs is null", () => {
+    const feed = new CaptureFeed(new Map(), NO_SPLIT_RULES)
+    feed.handleCaption({ type: "utterance", speakerId: "a", utteranceId: "1", revision: 1, text: "hello" }, t(0))
+    feed.handleCaption({ type: "utterance", speakerId: "b", utteranceId: "2", revision: 1, text: "sorry" }, t(1000))
+    feed.handleCaption({ type: "utterance", speakerId: "a", utteranceId: "1", revision: 2, text: "hello there" }, t(5000))
+    const turns = feed.transcriptSnapshot().filter((u) => u.speaker === "Guest a")
+    expect(turns).toHaveLength(1)
+    expect(turns[0].text).toBe("hello there")
+  })
+
+  it("uses the rule's label for a speaker the roster does not know", () => {
+    const feed = new CaptureFeed(new Map(), NO_SPLIT_RULES)
+    feed.handleCaption({ type: "utterance", speakerId: "zz", utteranceId: "1", revision: 1, text: "hi" }, at)
+    expect(feed.transcriptSnapshot()[0].speaker).toBe("Guest zz")
+  })
+
+  it("keeps both self-chat copies when selfChatDedupMs is null", () => {
+    const feed = new CaptureFeed(new Map(), NO_SPLIT_RULES)
+    feed.handleChat({ type: "chat", speakerId: "self", text: "ping", messageId: "self-out/1" }, t(0))
+    feed.handleChat({ type: "chat", speakerId: "self", text: "ping", messageId: "self-topic/1" }, t(500))
+    expect(feed.chatSnapshot()).toHaveLength(2)
   })
 })

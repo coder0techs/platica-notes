@@ -2,28 +2,49 @@
 // session's transcript/chat arrays. No DOM, no chrome.*, no timers — callers stamp
 // timestamps in, so the whole thing is unit-testable.
 
-import type { CaptionHistory, ChatMessage, Utterance } from "../../../shared/types"
-import { ChatLog } from "../../core/collector"
-import type { ChatEvent, UtteranceEvent } from "../protocol"
+import type { CaptionHistory, ChatMessage, Utterance } from "../../shared/types"
+import { ChatLog } from "./collector"
+import type { ChatEvent, UtteranceEvent } from "../capture/protocol"
 
-// Meet keeps one messageId growing even after another speaker interjects, so a
-// single messageId can span an interruption. Anchoring all of its text at the
-// first-seen time sorts the post-interruption words back before the interrupter and
-// breaks chronology. We therefore split such a messageId into segments — each a
-// block with its own start time — when another speaker spoke AND this message had
-// gone quiet for at least INTERRUPTION_GAP_MS. (A solo pause is NOT split: Meet
-// already starts a fresh messageId after a real pause, so there is nothing to fix
-// and splitting a lone messageId would only fragment it.)
-const INTERRUPTION_GAP_MS = 1000
-
-// The local user's own outgoing chat is captured on two independent transports:
-// the meet_messages send hook (id "self-out/…") and the embedded Google Chat frame
-// (id "self-topic/…"). Both can fire for a single send, and because their dedup ids
-// differ, ChatLog's id dedup cannot collapse them. Guard here: a self-authored
-// message (id prefixed "self-") whose exact text was already accepted within this
-// window is the other transport's copy of the same send — drop it. A genuine
-// re-send of the same text arrives well outside the window and is kept.
-const SELF_CHAT_DEDUP_MS = 5000
+/**
+ * The three behaviours that genuinely differ between meeting platforms. Everything
+ * else in this file is platform-neutral, so a new platform supplies data here rather
+ * than branching inside the accumulator.
+ */
+export interface CaptionRules {
+  /**
+   * Meet keeps one utteranceId growing even after another speaker interjects, so a
+   * single id can span an interruption. Anchoring all of its text at the first-seen
+   * time sorts the post-interruption words back before the interrupter and breaks
+   * chronology. When this is set we split such an id into segments — each a block
+   * with its own start time — once another speaker spoke AND this utterance had gone
+   * quiet for at least this long. (A solo pause is NOT split: Meet already starts a
+   * fresh id after a real pause, so there is nothing to fix and splitting a lone id
+   * would only fragment it.)
+   *
+   * `null` for a platform that starts a fresh utterance id per turn — there the
+   * split heuristics could only do harm.
+   */
+  interruptionGapMs: number | null
+  /**
+   * Label for a speaker the roster cannot name (yet). Platform-specific because the
+   * id shape is: Meet's `spaces/<id>/devices/<n>` has a short stable tail worth
+   * showing, an opaque numeric id does not.
+   */
+  speakerLabel: (speakerId: string) => string
+  /**
+   * The local user's own outgoing chat can arrive on two independent transports (on
+   * Meet: the meet_messages send hook, id "self-out/…", and the embedded Google Chat
+   * frame, id "self-topic/…"). Both can fire for a single send, and because their
+   * dedup ids differ, ChatLog's id dedup cannot collapse them. With this set, a
+   * self-authored message (id prefixed "self-") whose exact text was already accepted
+   * inside the window is treated as the other transport's copy and dropped; a genuine
+   * re-send arrives well outside it and is kept.
+   *
+   * `null` for a platform with a single own-chat transport.
+   */
+  selfChatDedupMs: number | null
+}
 
 const isSelfChatId = (id?: string): boolean => id !== undefined && id.startsWith("self-")
 
@@ -81,7 +102,7 @@ interface CaptionState {
   segments: Segment[]
 }
 
-export class RtcFeed {
+export class CaptureFeed {
   // Keyed by speakerId + "/" + utteranceId: an utterance id alone is only unique
   // per speaker.
   private captions = new Map<string, CaptionState>()
@@ -98,10 +119,16 @@ export class RtcFeed {
 
   // The roster map can be shared with the caller (it streams from join time,
   // before a meeting's feed exists) — names then resolve retroactively at
-  // snapshot time without replaying device events into the feed. The local user's
-  // own deviceId → name is added to it like any participant (from the
+  // snapshot time without replaying roster events into the feed. The local user's
+  // own speakerId → name is added to it like any participant (on Meet, from the
   // UpdateMeetingDevice RPC), so self resolves through the roster too.
-  constructor(roster: Map<string, string> = new Map()) {
+  //
+  // `rules` is the platform's caption semantics; it has no default on purpose, so a
+  // new platform has to state them rather than silently inherit Meet's.
+  constructor(
+    roster: Map<string, string> = new Map(),
+    private readonly rules: CaptionRules,
+  ) {
     this.roster = roster
   }
 
@@ -126,9 +153,10 @@ export class RtcFeed {
     if (existing) {
       if (ev.revision <= existing.version) return false
 
+      const gap = this.rules.interruptionGapMs
       const otherSpoke = this.lastEventSpeakerId !== "" && this.lastEventSpeakerId !== ev.speakerId
       const sinceLast = elapsedMs(existing.lastAt, at)
-      const shouldSplit = otherSpoke && sinceLast >= INTERRUPTION_GAP_MS
+      const shouldSplit = gap !== null && otherSpoke && sinceLast >= gap
       if (shouldSplit) {
         // Everything shown so far belongs to the closing segment; the new one carries
         // only the words that follow, timestamped at this revision.
@@ -168,12 +196,13 @@ export class RtcFeed {
   handleChat(ev: ChatEvent, at: string): boolean {
     // Cross-transport dedup for the user's own chat: the same send can arrive on
     // both self transports with different ids, so collapse a self message whose
-    // exact text was just accepted (see SELF_CHAT_DEDUP_MS).
-    if (isSelfChatId(ev.messageId)) {
+    // exact text was just accepted (see CaptionRules.selfChatDedupMs).
+    const selfWindow = this.rules.selfChatDedupMs
+    if (selfWindow !== null && isSelfChatId(ev.messageId)) {
       const textKey = ev.text.trim()
       const atMs = Date.parse(at)
       const prev = this.lastSelfChatAt.get(textKey)
-      if (prev !== undefined && atMs - prev < SELF_CHAT_DEDUP_MS) return false
+      if (prev !== undefined && atMs - prev < selfWindow) return false
       this.lastSelfChatAt.set(textKey, atMs)
     }
     // Sender resolved at append time, not at snapshot time (unlike transcript speakers).
@@ -227,9 +256,6 @@ export class RtcFeed {
     // name retroactively once the roster learns it.
     const name = this.roster.get(speakerId)
     if (name) return name
-    // Meet device ids look like spaces/<id>/devices/<n> — the tail is short and
-    // stable enough to tell speakers apart when the roster has no entry (yet).
-    const tail = speakerId.slice(speakerId.lastIndexOf("/") + 1)
-    return `Speaker ${tail || speakerId}`
+    return this.rules.speakerLabel(speakerId)
   }
 }

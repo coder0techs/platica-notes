@@ -9,10 +9,11 @@ import { isUiHidden, mountLanguagePrompt, mountMeetingControls, pulseActivity, s
 import { mountTranscriptPanel } from "../core/transcript-panel"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../capture/protocol"
 import type { CaptureEvent, ChatEvent, UtteranceEvent } from "../capture/protocol"
-import { RtcFeed } from "../capture/meet/feed"
+import { CaptureFeed } from "../core/feed"
 import { parseOwnChatMessage } from "../chatgoogle/parse"
 import {
   isMidMeetingJoin,
+  MEET_CAPTION_RULES,
   nextLeaveState,
   nextMediaZeroSince,
   seedAttendees,
@@ -376,7 +377,7 @@ async function runMeeting(tabId: number): Promise<void> {
 
   // The page roster is shared in, so names resolve retroactively even for
   // participants whose roster entries arrived before this meeting's feed existed.
-  const feed = new RtcFeed(roster)
+  const feed = new CaptureFeed(roster, MEET_CAPTION_RULES)
   const writer = new SessionWriter<ActiveSession>(
     (snapshot) => setLocal({ [sessionKey(tabId)]: snapshot }),
     // Stamp the current page-level roster and self name into every persisted

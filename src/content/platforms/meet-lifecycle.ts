@@ -1,3 +1,5 @@
+import type { CaptionRules } from "../core/feed"
+
 // Pure lifecycle decisions for the Meet adapter, split out of meet.ts so they can
 // be unit-tested without meet.ts's import-time side effects (it calls main() and
 // touches the DOM/chrome). These encode the two historically-fragile rules: the
@@ -138,4 +140,17 @@ export function nextLeaveState(
 // all extension UI is hidden (a deliberate clean view for screen-share/demo).
 export function shouldAskLanguage(ask: boolean, isResumed: boolean, uiHidden: boolean): boolean {
   return ask && !isResumed && !uiHidden
+}
+
+// Meet's caption semantics, measured on live meetings:
+//   - one messageId survives another speaker's interjection, so the feed has to split
+//     it into blocks (1s of quiet is the threshold that matched real recordings);
+//   - device ids look like spaces/<id>/devices/<n>, and the tail is short and stable
+//     enough to tell speakers apart until the roster names them;
+//   - own chat arrives on TWO transports (the meet_messages send hook and the
+//     embedded chat.google.com frame), so identical self text inside 5s is one send.
+export const MEET_CAPTION_RULES: CaptionRules = {
+  interruptionGapMs: 1000,
+  speakerLabel: (speakerId) => `Speaker ${speakerId.slice(speakerId.lastIndexOf("/") + 1) || speakerId}`,
+  selfChatDedupMs: 5000,
 }
