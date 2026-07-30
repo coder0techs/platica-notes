@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { makeChannelIdAllocator, shouldRecreateCaptions } from "../src/content/meet-rtc/lifecycle"
+import { makeChannelIdAllocator, shouldRecreateCaptions } from "../src/content/capture/meet/lifecycle"
 
 describe("makeChannelIdAllocator", () => {
   it("yields incrementing ids starting one past the seed", () => {

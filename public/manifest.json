@@ -17,7 +17,7 @@
   "content_scripts": [
     {
       "matches": ["https://meet.google.com/*"],
-      "js": ["meet-rtc-main.js"],
+      "js": ["capture-meet.js"],
       "run_at": "document_start",
       "world": "MAIN"
     },

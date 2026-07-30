@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { RtcFeed, suffixAfter } from "../src/content/meet-rtc/feed"
-import type { RtcCaptionEvent, RtcChatEvent } from "../src/content/meet-rtc/bridge"
+import { RtcFeed, suffixAfter } from "../src/content/capture/meet/feed"
+import type { ChatEvent, UtteranceEvent } from "../src/content/capture/protocol"
 
 const at = "2026-06-11T10:00:00.000Z"
 // A sub-second bump: close enough that none of the interruption-split thresholds
@@ -12,19 +12,22 @@ const later = "2026-06-11T10:00:00.500Z"
 // revisions at precise offsets to drive the interruption-split thresholds.
 const t = (ms: number): string => new Date(Date.parse(at) + ms).toISOString()
 
+// The canonical protocol keys utterances by STRING id (a platform id can be opaque),
+// so these factories take Meet-shaped numbers and stringify, keeping every call site
+// below unchanged.
 const caption = (
-  deviceId: string,
-  messageId: number,
-  messageVersion: number,
+  speakerId: string,
+  utteranceId: number,
+  revision: number,
   text: string,
-): RtcCaptionEvent => ({ type: "transcript", deviceId, messageId, messageVersion, text })
+): UtteranceEvent => ({ type: "utterance", speakerId, utteranceId: String(utteranceId), revision, text })
 
-const chat = (deviceId: string, text: string, sender?: string): RtcChatEvent =>
-  sender === undefined ? { type: "chat", deviceId, text } : { type: "chat", deviceId, text, sender }
+const chat = (speakerId: string, text: string, sender?: string): ChatEvent =>
+  sender === undefined ? { type: "chat", speakerId, text } : { type: "chat", speakerId, text, sender }
 
-const chatWithId = (deviceId: string, text: string, messageId: string): RtcChatEvent => ({
+const chatWithId = (speakerId: string, text: string, messageId: string): ChatEvent => ({
   type: "chat",
-  deviceId,
+  speakerId,
   text,
   messageId,
 })
@@ -412,10 +415,10 @@ describe("RtcFeed.reset", () => {
     const feed = new RtcFeed(roster)
 
     feed.handleCaption(
-      { type: "transcript", deviceId: "dev-1", messageId: 1, messageVersion: 1, text: "hello world" },
+      { type: "utterance", speakerId: "dev-1", utteranceId: "1", revision: 1, text: "hello world" },
       AT,
     )
-    feed.handleChat({ type: "chat", deviceId: "dev-1", text: "hi in chat", sender: "Grace Hopper" }, AT)
+    feed.handleChat({ type: "chat", speakerId: "dev-1", text: "hi in chat", sender: "Grace Hopper" }, AT)
 
     expect(feed.transcriptSnapshot().length).toBeGreaterThan(0)
     expect(feed.chatSnapshot().length).toBeGreaterThan(0)
@@ -429,7 +432,7 @@ describe("RtcFeed.reset", () => {
 
     // Roster retained: a fresh caption from the same device still resolves its name.
     feed.handleCaption(
-      { type: "transcript", deviceId: "dev-1", messageId: 2, messageVersion: 1, text: "after reset" },
+      { type: "utterance", speakerId: "dev-1", utteranceId: "2", revision: 1, text: "after reset" },
       AT2,
     )
     const after = feed.transcriptSnapshot()

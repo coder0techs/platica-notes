@@ -12,7 +12,7 @@ import {
   toBytes,
   type Transcript,
   type RosterEntry,
-} from "../src/content/meet-rtc/proto"
+} from "../src/content/capture/meet/proto"
 
 // ---------- test-local protobuf builder ----------
 // Minimal helpers so tests can construct synthetic messages without importing

@@ -7,9 +7,9 @@ import { SessionWriter } from "../core/persistence"
 import { isBookmarkChord, isHideUiChord } from "../core/hotkeys"
 import { isUiHidden, mountLanguagePrompt, mountMeetingControls, pulseActivity, setUiHidden, showPersistentNotice, showToast } from "../core/ui"
 import { mountTranscriptPanel } from "../core/transcript-panel"
-import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
-import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
-import { RtcFeed } from "../meet-rtc/feed"
+import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../capture/protocol"
+import type { CaptureEvent, ChatEvent, UtteranceEvent } from "../capture/protocol"
+import { RtcFeed } from "../capture/meet/feed"
 import { parseOwnChatMessage } from "../chatgoogle/parse"
 import {
   isMidMeetingJoin,
@@ -76,7 +76,7 @@ let selfName: string | null = null
 // manual switch does not leak into the next meeting. watchSettings reads this to
 // avoid clobbering an active pill choice when an unrelated setting changes.
 let activeLanguage = DEFAULT_SETTINGS.captionLanguage
-let activeMeetingHandler: ((event: RtcCaptionEvent | RtcChatEvent) => void) | null = null
+let activeMeetingHandler: ((event: UtteranceEvent | ChatEvent) => void) | null = null
 // Set by runMeeting; receives the open media-session count from the RTC layer so
 // the running meeting can detect an authoritative end (count sustained at zero).
 // Null between meetings — a stray media event then has no meeting to end.
@@ -171,27 +171,27 @@ async function main(): Promise<void> {
   document.addEventListener(RTC_EVENT, (event) => {
     const detail = (event as CustomEvent).detail
     if (typeof detail !== "string") return
-    let parsed: RtcEvent
+    let parsed: CaptureEvent
     try {
-      parsed = JSON.parse(detail) as RtcEvent
+      parsed = JSON.parse(detail) as CaptureEvent
     } catch {
       return
     }
-    if (parsed.type === "device") {
-      if (typeof parsed.deviceId === "string" && parsed.deviceId && typeof parsed.deviceName === "string" && parsed.deviceName) {
-        roster.set(parsed.deviceId, parsed.deviceName)
-        recordAttendee?.(parsed.deviceName)
-        recordDevice?.(parsed.deviceId, parsed.deviceName)
+    if (parsed.type === "roster") {
+      if (typeof parsed.speakerId === "string" && parsed.speakerId && typeof parsed.name === "string" && parsed.name) {
+        roster.set(parsed.speakerId, parsed.name)
+        recordAttendee?.(parsed.name)
+        recordDevice?.(parsed.speakerId, parsed.name)
         refreshTranscript?.()
       }
       return
     }
-    if (parsed.type === "device-leave") {
-      if (typeof parsed.deviceId === "string" && parsed.deviceId) {
+    if (parsed.type === "roster-leave") {
+      if (typeof parsed.speakerId === "string" && parsed.speakerId) {
         // Keep the name mapping (the state-6 leaf carries it) so recordLeave can
         // resolve the name even if this device was never seen present before.
-        if (typeof parsed.deviceName === "string" && parsed.deviceName) roster.set(parsed.deviceId, parsed.deviceName)
-        recordLeave?.(parsed.deviceId)
+        if (typeof parsed.name === "string" && parsed.name) roster.set(parsed.speakerId, parsed.name)
+        recordLeave?.(parsed.speakerId)
       }
       return
     }
@@ -204,7 +204,7 @@ async function main(): Promise<void> {
       }
       return
     }
-    if (parsed.type === "media") {
+    if (parsed.type === "liveness") {
       // Route media-path liveness to the running meeting's end detector. Ignored
       // between meetings (onMediaState is null) — nothing to finalize.
       if (typeof parsed.openSessions === "number") onMediaState?.(parsed.openSessions)
@@ -232,7 +232,7 @@ async function main(): Promise<void> {
     if (!own) return
     activeMeetingHandler?.({
       type: "chat",
-      deviceId: "self",
+      speakerId: "self",
       text: own.text,
       sender: selfName ?? "You",
       messageId: `self-topic/${own.messageId ?? own.text}`,
@@ -594,8 +594,8 @@ async function runMeeting(tabId: number): Promise<void> {
 
   let firstCaptionLogged = false
   activeMeetingHandler = (event) => {
-    if (!recording && (event.type === "transcript" || event.type === "chat")) return
-    if (event.type === "transcript") {
+    if (!recording && (event.type === "utterance" || event.type === "chat")) return
+    if (event.type === "utterance") {
       if (!feed.handleCaption(event, new Date().toISOString())) return
       if (!firstCaptionLogged) {
         firstCaptionLogged = true

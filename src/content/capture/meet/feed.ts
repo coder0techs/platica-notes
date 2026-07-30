@@ -1,10 +1,10 @@
-// Pure accumulator turning bridge events (see bridge.ts) into the session's
-// transcript/chat arrays. No DOM, no chrome.*, no timers — callers stamp
+// Pure accumulator turning capture events (see capture/protocol.ts) into the
+// session's transcript/chat arrays. No DOM, no chrome.*, no timers — callers stamp
 // timestamps in, so the whole thing is unit-testable.
 
-import type { CaptionHistory, ChatMessage, Utterance } from "../../shared/types"
-import { ChatLog } from "../core/collector"
-import type { RtcCaptionEvent, RtcChatEvent } from "./bridge"
+import type { CaptionHistory, ChatMessage, Utterance } from "../../../shared/types"
+import { ChatLog } from "../../core/collector"
+import type { ChatEvent, UtteranceEvent } from "../protocol"
 
 // Meet keeps one messageId growing even after another speaker interjects, so a
 // single messageId can span an interruption. Anchoring all of its text at the
@@ -70,7 +70,7 @@ interface CaptionState {
   // sort is currently a no-op; the field is kept as a defence against future
   // reinsertion of entries (e.g. merge/replay logic).
   order: number
-  deviceId: string
+  speakerId: string
   version: number
   // Latest cumulative full text of the whole messageId (staleness guard + the base
   // handed to the next segment on a split).
@@ -82,14 +82,15 @@ interface CaptionState {
 }
 
 export class RtcFeed {
-  // Keyed by deviceId + "/" + messageId: messageId alone is only unique per device.
+  // Keyed by speakerId + "/" + utteranceId: an utterance id alone is only unique
+  // per speaker.
   private captions = new Map<string, CaptionState>()
   private nextOrder = 0
-  // The deviceId of the most recently accepted caption event. Between two revisions
-  // of the same messageId every event is by definition from another device, so
-  // "the last caption was not from this device" is exactly "someone else spoke since
+  // The speakerId of the most recently accepted caption event. Between two revisions
+  // of the same utteranceId every event is by definition from another speaker, so
+  // "the last caption was not from this speaker" is exactly "someone else spoke since
   // my last revision" — O(1), no scan. Chat does not touch this (it never splits speech).
-  private lastEventDeviceId = ""
+  private lastEventSpeakerId = ""
   private chat = new ChatLog()
   // text → ms of the last accepted self-authored chat, for cross-transport dedup.
   private lastSelfChatAt = new Map<string, number>()
@@ -113,19 +114,19 @@ export class RtcFeed {
   reset(): void {
     this.captions.clear()
     this.nextOrder = 0
-    this.lastEventDeviceId = ""
+    this.lastEventSpeakerId = ""
     this.chat = new ChatLog()
     this.lastSelfChatAt.clear()
   }
 
   /** Returns true if the revision was accepted (not stale). */
-  handleCaption(ev: RtcCaptionEvent, at: string): boolean {
-    const key = `${ev.deviceId}/${ev.messageId}`
+  handleCaption(ev: UtteranceEvent, at: string): boolean {
+    const key = `${ev.speakerId}/${ev.utteranceId}`
     const existing = this.captions.get(key)
     if (existing) {
-      if (ev.messageVersion <= existing.version) return false
+      if (ev.revision <= existing.version) return false
 
-      const otherSpoke = this.lastEventDeviceId !== "" && this.lastEventDeviceId !== ev.deviceId
+      const otherSpoke = this.lastEventSpeakerId !== "" && this.lastEventSpeakerId !== ev.speakerId
       const sinceLast = elapsedMs(existing.lastAt, at)
       const shouldSplit = otherSpoke && sinceLast >= INTERRUPTION_GAP_MS
       if (shouldSplit) {
@@ -134,7 +135,7 @@ export class RtcFeed {
         existing.segments.push({ startedAt: at, endedAt: at, base: existing.fullText, text: "", versions: [] })
       }
 
-      existing.version = ev.messageVersion
+      existing.version = ev.revision
       existing.fullText = ev.text
       existing.lastAt = at
       const segment = existing.segments[existing.segments.length - 1]
@@ -147,24 +148,24 @@ export class RtcFeed {
       if (segment.versions[segment.versions.length - 1] !== segment.text) {
         segment.versions.push(segment.text)
       }
-      this.lastEventDeviceId = ev.deviceId
+      this.lastEventSpeakerId = ev.speakerId
       return true
     }
     const firstText = suffixAfter(ev.text, "")
     this.captions.set(key, {
       order: this.nextOrder++,
-      deviceId: ev.deviceId,
-      version: ev.messageVersion,
+      speakerId: ev.speakerId,
+      version: ev.revision,
       fullText: ev.text,
       lastAt: at,
       segments: [{ startedAt: at, endedAt: at, base: "", text: firstText, versions: [firstText] }],
     })
-    this.lastEventDeviceId = ev.deviceId
+    this.lastEventSpeakerId = ev.speakerId
     return true
   }
 
   /** Returns true if appended (not a consecutive duplicate). */
-  handleChat(ev: RtcChatEvent, at: string): boolean {
+  handleChat(ev: ChatEvent, at: string): boolean {
     // Cross-transport dedup for the user's own chat: the same send can arrive on
     // both self transports with different ids, so collapse a self message whose
     // exact text was just accepted (see SELF_CHAT_DEDUP_MS).
@@ -185,8 +186,8 @@ export class RtcFeed {
     // device — including the local user, who never appears in the collections
     // roster — resolve to the real name at snapshot time (both later and prior,
     // since transcript speakers resolve at snapshot time).
-    if (ev.sender && ev.sender.trim()) this.roster.set(ev.deviceId, ev.sender)
-    const sender = ev.sender && ev.sender.trim() ? ev.sender : this.speakerFor(ev.deviceId)
+    if (ev.sender && ev.sender.trim()) this.roster.set(ev.speakerId, ev.sender)
+    const sender = ev.sender && ev.sender.trim() ? ev.sender : this.speakerFor(ev.speakerId)
     return this.chat.add({ sender, sentAt: at, text: ev.text }, ev.messageId)
   }
 
@@ -198,7 +199,7 @@ export class RtcFeed {
       .flatMap((c) =>
         c.segments
           .filter((s) => s.text.trim() !== "")
-          .map((s) => ({ speaker: this.speakerFor(c.deviceId), startedAt: s.startedAt, endedAt: s.endedAt, text: s.text })),
+          .map((s) => ({ speaker: this.speakerFor(c.speakerId), startedAt: s.startedAt, endedAt: s.endedAt, text: s.text })),
       )
   }
 
@@ -210,7 +211,7 @@ export class RtcFeed {
       .flatMap((c) =>
         c.segments
           .filter((s) => s.text.trim() !== "")
-          .map((s) => ({ speaker: this.speakerFor(c.deviceId), startedAt: s.startedAt, versions: [...s.versions] })),
+          .map((s) => ({ speaker: this.speakerFor(c.speakerId), startedAt: s.startedAt, versions: [...s.versions] })),
       )
   }
 
@@ -218,17 +219,17 @@ export class RtcFeed {
     return this.chat.snapshot()
   }
 
-  private speakerFor(deviceId: string): string {
+  private speakerFor(speakerId: string): string {
     // The roster is the single source of names — for remote participants and for
     // the local user, whose own deviceId → name the caller seeds from the
     // UpdateMeetingDevice RPC. A device with no roster entry yet falls back to a
     // stable per-device label; the snapshot re-resolves, so it picks up the real
     // name retroactively once the roster learns it.
-    const name = this.roster.get(deviceId)
+    const name = this.roster.get(speakerId)
     if (name) return name
     // Meet device ids look like spaces/<id>/devices/<n> — the tail is short and
     // stable enough to tell speakers apart when the roster has no entry (yet).
-    const tail = deviceId.slice(deviceId.lastIndexOf("/") + 1)
-    return `Speaker ${tail || deviceId}`
+    const tail = speakerId.slice(speakerId.lastIndexOf("/") + 1)
+    return `Speaker ${tail || speakerId}`
   }
 }

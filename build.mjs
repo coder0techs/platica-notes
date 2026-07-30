@@ -59,7 +59,7 @@ const options = {
   entryPoints: {
     background: "src/background/index.ts",
     "content-meet": "src/content/platforms/meet.ts",
-    "meet-rtc-main": "src/content/meet-rtc/main.ts",
+    "capture-meet": "src/content/capture/meet/main.ts",
     "chatgoogle-main": "src/content/chatgoogle/main.ts",
     popup: "src/pages/popup/popup.ts",
     options: "src/pages/options/options.ts",

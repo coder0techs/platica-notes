@@ -280,22 +280,22 @@ try {
   await transcriptPill.waitFor({ timeout: 15000 })
   await transcriptPill.click()
 
-  for (const [deviceId, deviceName] of DEVICES) {
-    await feed(page, { type: "device", deviceId, deviceName })
+  for (const [speakerId, name] of DEVICES) {
+    await feed(page, { type: "roster", speakerId, name })
   }
 
   let messageId = 1
   for (const entry of SCRIPT) {
     if (entry[0] === "chat") {
-      const [, [sender, deviceId, text]] = entry
-      await feed(page, { type: "chat", deviceId, sender, text, messageId: `spaces/demo/messages/${messageId++}` })
+      const [, [sender, speakerId, text]] = entry
+      await feed(page, { type: "chat", speakerId, sender, text, messageId: `spaces/demo/messages/${messageId++}` })
       await sleep(2500)
       continue
     }
-    const [deviceId, revisions] = entry
-    const id = messageId++
+    const [speakerId, revisions] = entry
+    const id = String(messageId++)
     for (const [version, text] of revisions.entries()) {
-      await feed(page, { type: "transcript", deviceId, messageId: id, messageVersion: version + 1, text })
+      await feed(page, { type: "utterance", speakerId, utteranceId: id, revision: version + 1, text })
       await sleep(700)
     }
     await sleep(2500)
@@ -309,9 +309,9 @@ try {
   // Past the join-settle window a roster arrival is a genuine mid-meeting join,
   // and a state-6 leaf is a departure — both render as timeline markers.
   await sleep(11000)
-  await feed(page, { type: "device", deviceId: LATE_JOINER[0], deviceName: LATE_JOINER[1] })
+  await feed(page, { type: "roster", speakerId: LATE_JOINER[0], name: LATE_JOINER[1] })
   await sleep(2000)
-  await feed(page, { type: "device-leave", deviceId: LATE_JOINER[0], deviceName: LATE_JOINER[1] })
+  await feed(page, { type: "roster-leave", speakerId: LATE_JOINER[0], name: LATE_JOINER[1] })
   await sleep(1500)
   await page.screenshot({ path: join(OUT, "01-in-meeting-panel.png") })
 

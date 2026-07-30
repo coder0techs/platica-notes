@@ -1,7 +1,7 @@
 // Google Meet capture via WebRTC data channels (captions / chat / roster).
 // Runs in the page MAIN world at document_start so it can wrap RTCPeerConnection
 // before Meet captures the original. Decoded events are dispatched to the
-// isolated-world adapter as CustomEvents on `document` (see bridge.ts).
+// isolated-world adapter as CustomEvents on `document` (see ../protocol.ts).
 //
 // Clean reimplementation against Google Meet's wire format. Not derived from any
 // third-party source code; only the public protocol shape is used.
@@ -19,12 +19,12 @@ import {
   readNestedSeq,
   toBytes,
 } from "./proto"
-import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "./bridge"
-import type { RtcConfig, RtcEvent } from "./bridge"
+import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../protocol"
+import type { CaptureConfig, CaptureEvent } from "../protocol"
 import { makeChannelIdAllocator, shouldRecreateCaptions } from "./lifecycle"
 import { extractMeetBuild } from "./build-probe"
 import { base64ToBytes, extractRosterPairs, extractSelfDevice, extractSelfName } from "./identity"
-import { DEFAULT_SETTINGS } from "../../shared/types"
+import { DEFAULT_SETTINGS } from "../../../shared/types"
 // Meet finishes its own media-session handshake within this window; sending the
 // subscribe earlier gets ignored (observed in the spike).
 const SUBSCRIBE_DELAY_MS = 1500
@@ -126,7 +126,7 @@ function toHex(u: Uint8Array, max = 160): string {
 
 // ---------- cross-world event dispatch ----------
 
-function dispatch(event: RtcEvent): void {
+function dispatch(event: CaptureEvent): void {
   try {
     document.dispatchEvent(new CustomEvent(RTC_EVENT, { detail: JSON.stringify(event) }))
   } catch (err) {
@@ -139,7 +139,7 @@ function dispatch(event: RtcEvent): void {
 // as the authoritative end signal. Always-on (not debug-gated) like the roster
 // and self dispatches; carries a count and a state string, never any content.
 function dispatchMedia(pc: RTCPeerConnection): void {
-  dispatch({ type: "media", openSessions: sessions.length, pcState: pc.connectionState })
+  dispatch({ type: "liveness", openSessions: sessions.length, pcState: pc.connectionState })
 }
 
 // ---------- self-name resolution from the GetUser RPC ----------
@@ -163,7 +163,7 @@ document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
   try {
     const detail = (e as CustomEvent).detail
     if (typeof detail !== "string") return
-    const cfg = JSON.parse(detail) as RtcConfig
+    const cfg = JSON.parse(detail) as CaptureConfig
     if (!cfg || typeof cfg.captionLanguage !== "string" || !cfg.captionLanguage) return
     configSeen = true
     if (cfg.debug) {
@@ -342,10 +342,12 @@ function handleCaptions(bytes: Uint8Array): void {
   }
   record({ phase: "transcript", text: m.text, deviceId: m.deviceId, messageId: m.messageId, langId: m.langId })
   dispatch({
-    type: "transcript",
-    deviceId: m.deviceId,
-    messageId: m.messageId,
-    messageVersion: m.messageVersion,
+    type: "utterance",
+    speakerId: m.deviceId,
+    // Meet's messageId is a wire integer; the canonical protocol keys utterances by
+    // string so a platform with opaque ids (Zoom's msgId) needs no special case.
+    utteranceId: String(m.messageId),
+    revision: m.messageVersion,
     text: m.text,
   })
 }
@@ -371,7 +373,7 @@ function handleChat(bytes: Uint8Array): void {
     // embedded sender over the roster and dedupes on messageId.
     dispatch({
       type: "chat",
-      deviceId: p.deviceId,
+      speakerId: p.deviceId,
       text: p.text,
       ...(p.sender ? { sender: p.sender } : {}),
       ...(p.messageId ? { messageId: p.messageId } : {}),
@@ -405,11 +407,11 @@ function handleRoster(bytes: Uint8Array): void {
     // rather than re-asserting presence. Everything else is a present/updated
     // device. (The late device-removal tombstone below is now just a fallback.)
     if (entry.state === ROSTER_STATE_LEFT) {
-      dispatch({ type: "device-leave", deviceId: entry.deviceId, deviceName: entry.deviceName })
+      dispatch({ type: "roster-leave", speakerId: entry.deviceId, name: entry.deviceName })
       leftFromState++
       continue
     }
-    dispatch({ type: "device", deviceId: entry.deviceId, deviceName: entry.deviceName })
+    dispatch({ type: "roster", speakerId: entry.deviceId, name: entry.deviceName })
     dispatched++
   }
   if (dispatched > 0) record({ phase: "roster", count: dispatched })
@@ -421,7 +423,7 @@ function handleRoster(bytes: Uint8Array): void {
   const left = decodeRosterLeave(bytes)
   for (const deviceId of left) {
     if (!deviceId) continue
-    dispatch({ type: "device-leave", deviceId })
+    dispatch({ type: "roster-leave", speakerId: deviceId })
     record({ phase: "roster-leave", deviceId })
   }
 }
@@ -596,7 +598,7 @@ function install(): boolean {
               record({ phase: "chat", deviceId: lastSelfDeviceId ?? "self", text: own.text })
               dispatch({
                 type: "chat",
-                deviceId: lastSelfDeviceId ?? "self",
+                speakerId: lastSelfDeviceId ?? "self",
                 text: own.text,
                 ...(lastSelfName ? { sender: lastSelfName } : {}),
                 // Dedupe key: the client timestamp is stable across any retransmit
@@ -695,7 +697,7 @@ function install(): boolean {
           const self = decoded ? extractSelfDevice(decoded) : null
           if (self && self.deviceId !== lastSelfDeviceId) {
             lastSelfDeviceId = self.deviceId
-            dispatch({ type: "device", deviceId: self.deviceId, deviceName: self.deviceName })
+            dispatch({ type: "roster", speakerId: self.deviceId, name: self.deviceName })
             record({ phase: "self-device", deviceId: self.deviceId, name: self.deviceName })
           }
         } catch (err) {
@@ -714,7 +716,7 @@ function install(): boolean {
             const key = `${deviceId} ${deviceName}`
             if (dispatchedRoster.has(key)) continue
             dispatchedRoster.add(key)
-            dispatch({ type: "device", deviceId, deviceName })
+            dispatch({ type: "roster", speakerId: deviceId, name: deviceName })
             record({ phase: "roster-rpc", deviceId, name: deviceName })
           }
         } catch (err) {

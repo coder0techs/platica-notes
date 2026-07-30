@@ -5,7 +5,7 @@ import {
   extractSelfDevice,
   extractSelfName,
   looksLikeName,
-} from "../src/content/meet-rtc/identity"
+} from "../src/content/capture/meet/identity"
 
 // ---------- tiny protobuf builders ----------
 

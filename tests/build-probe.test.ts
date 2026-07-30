@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { extractMeetBuild } from "../src/content/meet-rtc/build-probe"
+import { extractMeetBuild } from "../src/content/capture/meet/build-probe"
 
 describe("extractMeetBuild", () => {
   it("finds the build token in a top-level value", () => {
