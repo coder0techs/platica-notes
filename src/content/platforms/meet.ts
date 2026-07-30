@@ -13,14 +13,16 @@ import { CaptureFeed } from "../core/feed"
 import { parseOwnChatMessage } from "../chatgoogle/parse"
 import {
   isMidMeetingJoin,
+  seedAttendees,
+  shouldAskLanguage,
+  shouldFinalizeStaleSession,
+} from "../core/session-lifecycle"
+import {
   MEET_CAPTION_RULES,
   nextLeaveState,
   nextMediaZeroSince,
-  seedAttendees,
-  shouldAskLanguage,
   shouldDrainTail,
   shouldEndFromMedia,
-  shouldFinalizeStaleSession,
   shouldFinishRearmWait,
 } from "./meet-lifecycle"
 
