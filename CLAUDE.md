@@ -3,8 +3,10 @@
 A Chrome MV3 extension that records Google Meet transcripts and in-meeting chat
 **locally** (no servers, no accounts, no network egress). This file orients new
 contributors (and Claude Code) on how the code is laid out and which invariants
-must not regress. User-facing docs live in `README.md`; the post-v1 idea backlog
-is in `docs/ROADMAP.md`.
+must not regress. The **process** around a change (branches, commits, what to run
+before pushing, how a merge request is reviewed) is in `CONTRIBUTING.md`.
+User-facing docs live in `README.md`; the post-v1 idea backlog is in
+`docs/ROADMAP.md`.
 
 ## Commands
 
@@ -109,3 +111,29 @@ keeping new decision logic pure and covered over embedding it in DOM glue.
 - Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`).
 - Use fictional names in test fixtures (e.g. Grace Hopper, Ada), never real
   people, and no real meeting links or ticket ids.
+
+## Working with others on this repo
+
+`CONTRIBUTING.md` is the full process. The parts worth knowing before the first
+change:
+
+- Branch off `main` as `<type>/<slug>`, matching the commit types. `main` is
+  protected: no direct pushes, no force pushes, changes land through a merge
+  request that the maintainer reviews and merges.
+- **There is no CI pipeline yet.** `npm run typecheck`, `npm test` and
+  `npm run build` are run by hand, and their output belongs in the merge request
+  description. The MR template asks for it because nothing else checks.
+- Commit types are load-bearing, not decorative: `npm run release` derives the
+  semver bump from the subjects since the last tag, so a feature filed as `chore`
+  ships the wrong version to the store. Contributors never bump versions or
+  create `v*` tags.
+- A push rule rejects commits authored from an address outside the
+  organisation's domains, plus anything resembling a secret and any `.env` file.
+- Design history lives in `docs/superpowers/specs/` (designs) and
+  `docs/superpowers/plans/` (implementation plans), one dated file per feature.
+  Read the design for the area before changing it; the trade-offs were already
+  argued out there.
+- `AGENTS.md` routes agents that do not read this file to these same rules.
+- `.claude/` and `.superpowers/` are git-ignored local agent state and include
+  personal session notes. Never commit them, and never move anything out of them
+  into the repo without reading it first.
