@@ -5,7 +5,7 @@
 > brainstorming capture, not a spec. Each "Near-term" item still needs a proper
 > design pass (open questions are listed) before it becomes a plan.
 >
-> **Captured:** 2026-06-19; extended 2026-06-29.
+> **Captured:** 2026-06-19; extended 2026-06-29, 2026-07-30.
 >
 > **Coordination note:** the v2 output-file format (YAML front matter + turn grid,
 > injection-safe via `yamlScalar`/`inlineText`) has **landed** in
@@ -258,6 +258,98 @@ the handling deliberate rather than discovered bug-by-bug.
 
 **Risk.** Design/reliability work, not a single feature; pairs naturally with the
 RTC-fallback backlog item.
+
+---
+
+## Near-term (captured 2026-07-30)
+
+### 7. Opt-in human-readable transcript file - 🔵 DISCUSS
+
+**What.** A setting that, when enabled, makes the extension **also** write a plain
+human-readable transcript file at finalize, with turns grouped the way the live panel
+already groups them rather than as the machine-shaped v2 artifact. For the user who
+does not intend to feed the file to an assistant and just wants something readable.
+
+**Why.** The saved `.md` is optimised for a downstream LLM (YAML front matter, turn
+grid, `RAW CAPTION VERSIONS`). Opening it as a human is unpleasant. The panel's
+rendering is already the readable form, so the idea is to make that a persisted
+output path instead of a screen-only view.
+
+**Starting points (no design decided yet).**
+- `mergeUtterances` and the `TimelineEntry` model in `src/shared/transcript.ts` are
+  the same grouping the panel uses; the readable renderer should reuse them rather
+  than reinvent grouping.
+- Emitting it is an extra render in `format.ts` plus a second `chrome.downloads` call
+  in `export.ts`, on the same privacy-folder routing as the primary file.
+
+**Open questions (for the design pass).**
+- Second file alongside the v2 one, or a mode switch that replaces it? (Two files
+  duplicates content; a switch loses the machine path for the same meeting.)
+- Filename/extension so the pair is obvious and does not collide (`… readable.md`?
+  `.txt`?), including the merge-in-place rewrite path.
+- How much survives into the readable form: chat, notes/bookmarks, join/leave
+  markers, timestamps at all vs only per-block?
+- Does the history page's re-download offer both?
+
+**Relation to item 4.** Overlaps deliberately: item 4 asks "should the one file read
+nicer", this asks "should there be a second, purely-human file". Decide them together
+so we do not ship two half-answers to the same complaint.
+
+**Touches.** `format.ts`, `export.ts`, settings in `shared/` + popup/settings copy,
+`tests/format.test.ts`.
+**Hard constraint.** The readable renderer is a new untrusted-string sink — keep the
+`inlineText` newline-collapsing discipline so a spoken/chat line cannot forge a turn,
+and keep it out of the debug log for private meetings.
+**Risk.** Low. Additive output path, no capture or lifecycle changes.
+
+### 8. Clickable links in the live panel - 🔵 DISCUSS
+
+**What.** Urls someone pastes into the meeting chat currently render in the floating
+transcript panel as plain text, so the user has to select and copy them by hand.
+Make them real clickable links.
+
+**Why.** Chat is where links live (docs, tickets, dashboards) and the panel is the
+only place the user sees them while the call is on. Copying a url out of a
+`white-space:pre-wrap` div during a meeting is exactly the moment a convenience gap
+hurts.
+
+**This revisits an earlier decision.** When chat was interleaved into the panel and
+the `.md`, links were deliberately left as plain text. This idea reopens the panel
+half only; whether the saved file changes is a separate question (most markdown
+viewers autolink a bare url anyway).
+
+**Starting points (no design decided yet).**
+- The render loop is `src/content/core/transcript-panel.ts` (~line 286): the body div
+  gets `text.textContent = entry.text`. Clickable links mean splitting `entry.text`
+  into text and url runs and appending `document.createElement("a")` nodes.
+- Keep the tokenizer a pure exported function so it gets hostile-input tests like the
+  rest of the parsing layer, rather than living inside the DOM glue.
+
+**Hard constraints (both are project invariants, not preferences).**
+- **XSS-safe DOM.** The link label still goes in via `textContent`; the anchor is
+  built with `createElement`, never `innerHTML`. The `href` must be scheme-validated
+  (`http`/`https` only, via `new URL()`), so a pasted `javascript:` or `data:` url can
+  never become a live anchor.
+- **Zero network egress stays intact.** An anchor the *user* clicks is fine, but
+  nothing may prefetch, resolve, unfurl or preview the url. No favicon fetch, no title
+  lookup, no link preview card.
+
+**Open questions.**
+- `target="_blank"` + `rel="noopener noreferrer"` is effectively mandatory: a
+  same-tab navigation from inside the Meet page would drop the user out of the call
+  and end capture. Confirm that is the only acceptable behaviour.
+- The panel lives inside Meet's own DOM and handles drag/scroll; verify a click on an
+  anchor is not swallowed by the panel's handlers (and does not start a drag).
+- What counts as a url: bare `example.com` without a scheme, trailing punctuation
+  (`(see https://x/y).`), markdown-style `[text](url)` someone pastes, `mailto:`?
+- Speech entries can in principle contain a url too (dictated). Linkify every entry
+  kind, or chat only?
+- Does the same treatment apply to the history page's rendered view?
+
+**Touches.** `transcript-panel.ts` (render + a new pure tokenizer module), tests for
+the tokenizer.
+**Risk.** Low-medium. Low in scope, but it is a new untrusted-string path into an
+active DOM node, which is precisely where the XSS invariant is easiest to break.
 
 ---
 
