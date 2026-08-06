@@ -3,6 +3,9 @@ dist/
 coverage/
 *.zip
 
+# Rendered from docs/manual/, regenerable, and too large to keep in git history.
+platica-notes-manual-*.pdf
+
 .superpowers/
 .claude/
 .DS_Store

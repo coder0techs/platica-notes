@@ -14,7 +14,7 @@
     "package": "npm run typecheck && npm test && npm run build && node scripts/package.mjs"
   },
   "keywords": [],
-  "author": "",
+  "author": "coder0techs",
   "license": "ISC",
   "type": "module",
   "private": true,
