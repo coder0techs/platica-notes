@@ -3,6 +3,10 @@
 A Chrome/Chromium extension that records **Google Meet transcripts and chat
 locally** — no servers, no accounts, no network calls.
 
+**Install it from the [Chrome Web Store](https://chromewebstore.google.com/detail/lfnfhogdkefkfjnlhhcacebleobpgecl).**
+That is the build to use; it updates itself. To run an unreleased build instead, see
+[docs/TEAM-INSTALL.md](docs/TEAM-INSTALL.md).
+
 ## How it works
 
 Plática Notes reads Meet's own live captions straight from the meeting's

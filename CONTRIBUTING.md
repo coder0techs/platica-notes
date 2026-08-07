@@ -132,7 +132,7 @@ rather than redacting a real one.
 | `docs/superpowers/specs/` | design documents, one per feature, dated |
 | `docs/superpowers/plans/` | implementation plans for those designs |
 | `docs/STORE-LISTING.md` | store copy, screenshot order and captions |
-| `docs/TEAM-INSTALL.md` | installing a build before the store listing is live |
+| `docs/TEAM-INSTALL.md` | installing an unpacked build of unreleased code |
 
 Before changing an area, read its design doc in `docs/superpowers/specs/`. They
 record the trade-offs that were already argued out, which is usually faster than

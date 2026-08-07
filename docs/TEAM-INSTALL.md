@@ -1,14 +1,21 @@
-# Installing before the Web Store listing is live
+# Installing an unpacked build
 
-The Chrome Web Store reviews every item the same way regardless of visibility —
-`private` and `trusted testers` do **not** skip or shorten the queue ("All visibility
-settings have the same policy requirements and will go through the same review
-process"). Until the listing is approved, the only way to get the extension onto a
-teammate's browser is an unpacked install.
+The extension is published: install it from the
+**[Chrome Web Store](https://chromewebstore.google.com/detail/lfnfhogdkefkfjnlhhcacebleobpgecl)**.
+That build is reviewed, signed and updates itself, so it is what everyone should be
+running.
+
+This page covers the one case the store does not: putting a build that is **not
+released yet** (a branch, a release candidate, a fix you want tested before it ships)
+onto someone's browser. Store visibility settings do not help there, because the Web
+Store reviews every item the same way regardless of visibility: `private` and
+`trusted testers` do **not** skip or shorten the queue ("All visibility settings have
+the same policy requirements and will go through the same review process"). An
+unpacked install is the only way to get pre-release code onto a teammate's browser.
 
 ## What to send
 
-`platica-notes-<version>.zip` — the same artifact `npm run package` builds for the
+`platica-notes-<version>.zip`, the same artifact `npm run package` builds for the
 store. It is git-ignored, so hand it over out-of-band (Slack, Drive) or attach it to
 a GitLab release for the version tag.
 
@@ -26,6 +33,10 @@ Verify: join a Google Meet call and check that the control pills (language,
 Transcript, Rec, Wipe, Private) appear at the top. Leaving the call writes the
 transcript to `Downloads/meetings/platica-notes/`.
 
+**Remove the store version first**, or the two copies run independently: both hook the
+same meeting, both capture, and both write a file, giving duplicate transcripts and
+double the storage. The same applies in reverse when going back to the store build.
+
 ## What differs from a store install
 
 - **Updates are manual.** Replace the folder's contents with the new build and press
@@ -35,10 +46,4 @@ transcript to `Downloads/meetings/platica-notes/`.
   server and no ID allowlist exists.
 - **The browser warns about developer-mode extensions** on startup. Expected.
 - **Local data is per-install.** Settings and the meeting history do not carry over
-  from an unpacked install to the store version later.
-
-## When the listing goes live
-
-Switch people to the store version, and have them **remove the unpacked copy first**.
-Two copies run independently: both hook the same meeting, both capture, and both
-write a file — duplicate transcripts and double the storage.
+  from an unpacked install to the store version, or back.

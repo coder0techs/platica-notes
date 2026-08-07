@@ -3,6 +3,11 @@
 Copy/paste-ready text for the Developer Dashboard. Fill the `<…>` placeholders.
 The extension's design (100% local, zero network) makes every answer truthful.
 
+The listing is live at
+<https://chromewebstore.google.com/detail/lfnfhogdkefkfjnlhhcacebleobpgecl>
+(item id `lfnfhogdkefkfjnlhhcacebleobpgecl`), so this page now describes the copy
+behind an **update** submission, not a first submission.
+
 ---
 
 ## Listing basics
