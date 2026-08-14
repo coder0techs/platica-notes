@@ -12,6 +12,7 @@ import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge
 import { RtcFeed } from "../meet-rtc/feed"
 import { parseOwnChatMessage } from "../chatgoogle/parse"
 import {
+  finalAttendees,
   isMidMeetingJoin,
   nextLeaveState,
   nextMediaZeroSince,
@@ -190,7 +191,16 @@ async function main(): Promise<void> {
       if (typeof parsed.deviceId === "string" && parsed.deviceId) {
         // Keep the name mapping (the state-6 leaf carries it) so recordLeave can
         // resolve the name even if this device was never seen present before.
-        if (typeof parsed.deviceName === "string" && parsed.deviceName) roster.set(parsed.deviceId, parsed.deviceName)
+        // Meet does not always broadcast a device's name while it is present: on a
+        // live 2026-08-14 call two participants' names arrived for the first time
+        // here, in their leave tombstones. So treat this as a naming event too —
+        // record the attendee and re-resolve the transcript — or those speakers stay
+        // "Speaker <tail>" in the panel and missing from the participant list.
+        if (typeof parsed.deviceName === "string" && parsed.deviceName) {
+          roster.set(parsed.deviceId, parsed.deviceName)
+          recordAttendee?.(parsed.deviceName)
+          refreshTranscript?.()
+        }
         recordLeave?.(parsed.deviceId)
       }
       return
@@ -394,11 +404,19 @@ async function runMeeting(tabId: number): Promise<void> {
   // by exact name, so a participant who reconnects with a new device id — or any
   // repeated roster broadcast — counts once.
   const attendees = new Set<string>()
+  // The roster is not a complete attendee source (see finalAttendees): anyone Meet
+  // never named while present would be missing from the list while their turns sit
+  // in the transcript under a real name. So the persisted list is always the union
+  // of the set and the transcript's own resolved speakers, recomputed wherever
+  // either side can change.
+  const syncParticipants = (): void => {
+    session.participants = finalAttendees([...attendees], session.transcript.map((u) => u.speaker))
+  }
   recordAttendee = (name) => {
     const trimmed = name.trim()
     if (!trimmed || attendees.has(trimmed)) return
     attendees.add(trimmed)
-    session.participants = [...attendees]
+    syncParticipants()
     writer.requestWrite()
   }
   // Seed from the roster known at join time. Roster device events stream from join
@@ -503,6 +521,7 @@ async function runMeeting(tabId: number): Promise<void> {
   // handler so a name learned mid-meeting appears without waiting for a caption.
   refreshTranscript = () => {
     session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
+    syncParticipants()
     panel.update(session.transcript, session.chat, session.notes ?? [], session.participantEvents ?? [])
     writer.requestWrite()
   }
@@ -692,6 +711,7 @@ async function runMeeting(tabId: number): Promise<void> {
     session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
     session.chat = [...prefixChat, ...feed.chatSnapshot()]
     session.participantEvents = [...participantEvents]
+    syncParticipants()
     writer.requestWrite()
     // Wait for Meet's trailing caption revisions, but ONLY while the media path is
     // still up. Once it drops (pc closed) no further captions can arrive, so there
@@ -722,7 +742,9 @@ async function runMeeting(tabId: number): Promise<void> {
     session.transcript = [...prefixTranscript, ...feed.transcriptSnapshot()]
     session.rawVersions = [...prefixRawVersions, ...feed.versionsSnapshot()]
     session.chat = [...prefixChat, ...feed.chatSnapshot()]
-    session.participants = [...attendees]
+    // Recomputed AFTER the final snapshot: the roster can learn a name in the leave
+    // tombstones (the 2026-08-14 case), which re-resolves that speaker's turns here.
+    syncParticipants()
     session.notes = [...notes]
     session.participantEvents = [...participantEvents]
     // Capture the complete debug trail (including this "meeting ended") into the

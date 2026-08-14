@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  finalAttendees,
   isMidMeetingJoin,
   nextLeaveState,
   nextMediaZeroSince,
@@ -123,6 +124,43 @@ describe("seedAttendees (participants known at join time)", () => {
 
   it("returns an empty list when nothing is known yet", () => {
     expect(seedAttendees([], [], null)).toEqual([])
+  })
+})
+
+describe("finalAttendees (participants at finalize time)", () => {
+  // The bug (live meeting, 2026-08-14): Meet never broadcast the roster entry for
+  // two participants during the call — their deviceId -> name pairs arrived only in
+  // the leave tombstones at the end. Speaker names resolve at snapshot time, so the
+  // transcript named them correctly, but the attendee set — fed exclusively by
+  // roster device events — did not, and the file listed 2 of 4 people while the
+  // body carried hundreds of turns from the missing two.
+  it("adds transcript speakers the attendee set never saw", () => {
+    expect(finalAttendees(["Ada Lovelace"], ["Ada Lovelace", "Grace Hopper"])).toEqual([
+      "Ada Lovelace",
+      "Grace Hopper",
+    ])
+  })
+
+  it("keeps the attendee set's own order and appends newcomers", () => {
+    expect(finalAttendees(["Ann", "Bob"], ["Cleo", "Ann"])).toEqual(["Ann", "Bob", "Cleo"])
+  })
+
+  it("never promotes an unresolved 'Speaker <tail>' placeholder to a participant", () => {
+    expect(finalAttendees(["Ada Lovelace"], ["Speaker 360", "Speaker spaces/x/devices/9"])).toEqual([
+      "Ada Lovelace",
+    ])
+  })
+
+  it("keeps a real name that merely starts with the word Speaker", () => {
+    expect(finalAttendees([], ["Speaker Grace Hopper"])).toEqual(["Speaker Grace Hopper"])
+  })
+
+  it("dedupes by exact trimmed name and drops blanks", () => {
+    expect(finalAttendees(["Ann"], [" Ann ", "", "  ", "Bob"])).toEqual(["Ann", "Bob"])
+  })
+
+  it("leaves the attendee set untouched when the transcript adds nothing", () => {
+    expect(finalAttendees(["Ann", "Bob"], [])).toEqual(["Ann", "Bob"])
   })
 })
 

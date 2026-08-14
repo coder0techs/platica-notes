@@ -27,6 +27,17 @@ const SELF_CHAT_DEDUP_MS = 5000
 
 const isSelfChatId = (id?: string): boolean => id !== undefined && id.startsWith("self-")
 
+// The label speakerFor emits for a device the roster has no name for. Exported so
+// callers can build one and, more importantly, recognise one: an unresolved label
+// must never reach the attendee list as if it were a person's name.
+export const speakerPlaceholder = (deviceId: string): string =>
+  `Speaker ${deviceId.slice(deviceId.lastIndexOf("/") + 1) || deviceId}`
+
+// Whether a speaker label is an unresolved placeholder rather than a real name.
+// The tail is a deviceId fragment, so it never contains whitespace — which keeps a
+// genuine name that merely starts with "Speaker" from matching.
+export const isSpeakerPlaceholder = (name: string): boolean => /^Speaker \S+$/.test(name)
+
 const elapsedMs = (fromIso: string, toIso: string): number => Date.parse(toIso) - Date.parse(fromIso)
 
 // A word for prefix comparison, folded the same way collapseVersions folds frames:
@@ -228,7 +239,6 @@ export class RtcFeed {
     if (name) return name
     // Meet device ids look like spaces/<id>/devices/<n> — the tail is short and
     // stable enough to tell speakers apart when the roster has no entry (yet).
-    const tail = deviceId.slice(deviceId.lastIndexOf("/") + 1)
-    return `Speaker ${tail || deviceId}`
+    return speakerPlaceholder(deviceId)
   }
 }
