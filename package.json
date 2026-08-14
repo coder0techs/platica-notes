@@ -1,6 +1,6 @@
 {
   "name": "platica-notes",
-  "version": "1.14.0",
+  "version": "1.14.1",
   "description": "Chrome extension that saves Google Meet transcripts and chat locally.",
   "scripts": {
     "test": "vitest run",

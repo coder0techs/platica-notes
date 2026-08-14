@@ -2,6 +2,14 @@
 
 All notable changes to Plática Notes, newest first.
 
+## 1.14.1 - 2026-08-14
+
+- **Speakers Meet names late are no longer stuck as "Speaker 360".** Meet does not
+  always announce a participant's name while they are in the call — on an observed
+  meeting it sent two people's names for the first time only as they left. Their
+  turns now pick up the real name as soon as it arrives, and the saved file's
+  participant list no longer omits people whose speech is in the transcript.
+
 ## 1.14.0 - 2026-07-29
 
 - **Recording on/off toggle.** A new in-meeting pill (● Rec / ⏸ Rec off) pauses
