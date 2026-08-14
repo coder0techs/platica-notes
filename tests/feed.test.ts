@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { RtcFeed, suffixAfter } from "../src/content/meet-rtc/feed"
+import { isSpeakerPlaceholder, RtcFeed, suffixAfter } from "../src/content/meet-rtc/feed"
 import type { RtcCaptionEvent, RtcChatEvent } from "../src/content/meet-rtc/bridge"
 
 const at = "2026-06-11T10:00:00.000Z"
@@ -85,6 +85,18 @@ describe("RtcFeed transcript", () => {
     const result = feed.transcriptSnapshot()
     expect(result[0].speaker).toBe("Speaker 42")
     expect(result[1].speaker).toBe("Speaker opaque-id")
+    // Every label this fallback emits must be recognisable as unresolved, so
+    // callers (the attendee list) never treat one as a participant's name.
+    expect(isSpeakerPlaceholder(result[0].speaker)).toBe(true)
+    expect(isSpeakerPlaceholder(result[1].speaker)).toBe(true)
+  })
+
+  it("does not mistake a resolved name for a placeholder", () => {
+    expect(isSpeakerPlaceholder("Alice García")).toBe(false)
+    // A name whose first word happens to be "Speaker" still has a space in the
+    // remainder; the fallback's tail (a deviceId) never does.
+    expect(isSpeakerPlaceholder("Speaker Grace Hopper")).toBe(false)
+    expect(isSpeakerPlaceholder("")).toBe(false)
   })
 
   it("keeps multiple messages from the same device in order", () => {

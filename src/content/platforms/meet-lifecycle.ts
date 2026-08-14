@@ -1,3 +1,5 @@
+import { isSpeakerPlaceholder } from "../meet-rtc/feed"
+
 // Pure lifecycle decisions for the Meet adapter, split out of meet.ts so they can
 // be unit-tested without meet.ts's import-time side effects (it calls main() and
 // touches the DOM/chrome). These encode the two historically-fragile rules: the
@@ -55,6 +57,26 @@ export function seedAttendees(prefix: string[], rosterNames: string[], selfName:
   for (const name of [...prefix, ...rosterNames, ...(selfName ? [selfName] : [])]) {
     const trimmed = name.trim()
     if (!trimmed || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    out.push(trimmed)
+  }
+  return out
+}
+
+// Build the attendee list written at finalize time. The attendee set is fed by
+// roster device events only, but Meet does not guarantee one per participant: on a
+// live 2026-08-14 call it broadcast two participants' deviceId -> name pairs for
+// the first time in their LEAVE tombstones, so the transcript named them (speakers
+// resolve from the roster at snapshot time) while the attendee list did not — the
+// file listed 2 of 4 people with hundreds of turns from the missing two. Union in
+// everyone the finished transcript actually attributes speech to, skipping labels
+// that are still unresolved placeholders. Attendee order is kept; newcomers append.
+export function finalAttendees(attendees: string[], transcriptSpeakers: string[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const name of [...attendees, ...transcriptSpeakers]) {
+    const trimmed = name.trim()
+    if (!trimmed || seen.has(trimmed) || isSpeakerPlaceholder(trimmed)) continue
     seen.add(trimmed)
     out.push(trimmed)
   }
