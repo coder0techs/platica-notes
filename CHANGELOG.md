@@ -2,6 +2,24 @@
 
 All notable changes to Plática Notes, newest first.
 
+## Unreleased
+
+- **Saved meetings are filed by month.** Transcripts now land in a `YYYY-MM`
+  subfolder of your chosen folder instead of piling into one flat directory.
+  Debug logs follow the same split. Files saved earlier stay where they are.
+- **New file names.** A saved meeting is now
+  `2026-08-04_15-59_Payments_status_exb-zusa-qnc.md`: date first so a folder
+  sorts chronologically, no spaces anywhere, and the meeting code at the end so
+  every occurrence of a recurring meeting can be pulled with one glob. The code
+  is left out when the meeting has none.
+- **Each turn carries a full timestamp and its duration.** A turn header was
+  `15:59 · +05:12`; it is now the complete local time with UTC offset, how long
+  the turn lasted, and the elapsed offset. A tool reading the file no longer has
+  to add the offset to the header's start time to know when something was said,
+  and can tell where a speaker's turn ended instead of guessing from the text.
+  Chat messages, notes and join/leave markers are instants, so they carry no
+  duration.
+
 ## 1.14.1 - 2026-08-14
 
 - **Speakers Meet names late are no longer stuck as "Speaker 360".** Meet does not
