@@ -11,6 +11,17 @@ name: Release
 # Trigger with `gh workflow run release.yml`, or the Actions tab. Nothing is
 # released on a schedule or on every merge: each release means a store submission
 # and a review, so cutting one stays a decision.
+#
+# One wrinkle worth knowing before it wastes anyone's afternoon: GitHub does not
+# start workflows for events created with GITHUB_TOKEN, so a release pull request
+# opened by this workflow gets NO CI, and the required checks never appear. Two
+# ways out, and the step below takes whichever is available:
+#
+#   * Add a fine-grained personal access token as the RELEASE_TOKEN secret, with
+#     Contents and Pull requests write on this repository. Events from it are
+#     attributed to a real user, so CI runs normally. This is the good fix.
+#   * Without that secret, close and reopen the pull request once (`gh pr close N
+#     && gh pr reopen N`). The reopen comes from you, so the checks run then.
 
 on:
   workflow_dispatch:
@@ -65,7 +76,10 @@ jobs:
 
       - name: Push the branch and open the pull request
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A personal access token when one is configured, so the pull request
+          # comes from a real user and CI actually runs on it; GITHUB_TOKEN
+          # otherwise, which works but leaves the checks unstarted.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.prepare.outputs.version }}
         run: |
           git push origin "release/v$VERSION"

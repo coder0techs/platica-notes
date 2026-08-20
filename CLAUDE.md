@@ -39,7 +39,10 @@ or writes a changelog entry by hand.
    `package.json`, `public/manifest.json` and `package-lock.json` in lockstep,
    and opens a `chore(release): vX.Y.Z` pull request. Check the version and the
    notes there. `node scripts/release.mjs --dry-run` previews it locally without
-   writing anything.
+   writing anything. If the release pull request shows no checks at all, that is
+   GitHub refusing to start workflows for events its own token created: close and
+   reopen the pull request once, or add a `RELEASE_TOKEN` secret (a fine-grained
+   PAT with Contents and Pull requests write) and the workflow will use it.
 3. **Merge that pull request.** The Publish workflow then tags `vX.Y.Z`
    (annotated, so `--follow-tags` works), runs the checks, builds
    `platica-notes-<version>.zip` and attaches it to a GitHub release whose body is
