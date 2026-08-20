@@ -12,6 +12,10 @@ All notable changes to Plática Notes, newest first.
   sorts chronologically, no spaces anywhere, and the meeting code at the end so
   every occurrence of a recurring meeting can be pulled with one glob. The code
   is left out when the meeting has none.
+- **The elapsed offset is now always `+HH:MM:SS`.** It used to be `+05:12` for the
+  first hour and `+1:00:41` after it, so a tool written against a short meeting
+  matched the beginning of a long one and silently skipped the rest. One shape now
+  covers the whole file, and the offsets sort as plain strings.
 - **Each turn carries a full timestamp and its duration.** A turn header was
   `15:59 · +05:12`; it is now the complete local time with UTC offset, how long
   the turn lasted, and the elapsed offset. A tool reading the file no longer has

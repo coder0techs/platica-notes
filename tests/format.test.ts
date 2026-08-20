@@ -102,7 +102,7 @@ describe("formatMeetingText (v3)", () => {
       chat: [],
     }))
     expect(text).toMatch(
-      /\*\*Alice\*\* · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+01:09\n> Hello everyone/,
+      /\*\*Alice\*\* · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+00:01:09\n> Hello everyone/,
     )
   })
 
@@ -120,7 +120,7 @@ describe("formatMeetingText (v3)", () => {
       chat: [],
     }))
     expect(text).toMatch(
-      /\*\*Alice\*\* · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · 30s · \+01:09\n> Hello everyone/,
+      /\*\*Alice\*\* · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · 30s · \+00:01:09\n> Hello everyone/,
     )
   })
 
@@ -137,7 +137,7 @@ describe("formatMeetingText (v3)", () => {
       chat: [{ sender: "Bob", sentAt: "2026-06-10T10:05:00.000Z", text: "see link" }],
     }))
     expect(text).toMatch(
-      /\*\*Bob\*\* · _chat_ · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+05:00\n> see link/,
+      /\*\*Bob\*\* · _chat_ · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+00:05:00\n> see link/,
     )
     expect(text.indexOf("see link")).toBeGreaterThan(text.indexOf("Hi Alice"))
   })
@@ -176,7 +176,7 @@ describe("formatMeetingText (v3)", () => {
       chat: [],
       notes: [{ at: "2026-06-10T10:03:00.000Z", text: "follow up with Ada" }],
     }))
-    expect(text).toMatch(/### Note · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+03:00\n> follow up with Ada/)
+    expect(text).toMatch(/### Note · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+00:03:00\n> follow up with Ada/)
     // A note must not look like a speaker turn (no bold-name header line).
     expect(text).not.toMatch(/^\*\*Note\*\*/m)
   })
@@ -187,7 +187,7 @@ describe("formatMeetingText (v3)", () => {
       chat: [],
       notes: [{ at: "2026-06-10T10:04:00.000Z", text: "" }],
     }))
-    expect(text).toMatch(/### Bookmark · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+04:00\n\n\*\*Alice\*\*/)
+    expect(text).toMatch(/### Bookmark · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+00:04:00\n\n\*\*Alice\*\*/)
   })
 
   it("renders a participant join as a heading block with no body line", () => {
@@ -196,7 +196,7 @@ describe("formatMeetingText (v3)", () => {
       chat: [],
       participantEvents: [{ at: "2026-06-10T10:05:00.000Z", name: "Grace Hopper", kind: "join" }],
     }))
-    expect(text).toMatch(/### Joined · Grace Hopper · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+05:00\n\n\*\*Alice\*\*/)
+    expect(text).toMatch(/### Joined · Grace Hopper · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+00:05:00\n\n\*\*Alice\*\*/)
     // A join must not look like a speaker turn.
     expect(text).not.toMatch(/^\*\*Grace Hopper\*\* · \d/m)
   })
@@ -207,7 +207,7 @@ describe("formatMeetingText (v3)", () => {
       chat: [],
       participantEvents: [{ at: "2026-06-10T10:07:00.000Z", name: "Grace Hopper", kind: "leave" }],
     }))
-    expect(text).toMatch(/### Left · Grace Hopper · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+07:00/)
+    expect(text).toMatch(/### Left · Grace Hopper · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+00:07:00/)
   })
 
   it("neutralizes newlines in a participant name so a marker cannot forge a turn header", () => {
@@ -581,17 +581,34 @@ describe("isoLocal", () => {
 })
 
 describe("elapsedLabel", () => {
-  it("formats sub-hour gaps as mm:ss", () => {
-    expect(elapsedLabel("2026-06-10T10:00:00.000Z", "2026-06-10T10:00:07.000Z")).toBe("00:07")
-    expect(elapsedLabel("2026-06-10T10:00:00.000Z", "2026-06-10T10:01:09.000Z")).toBe("01:09")
+  // Fixed width, always. The old shape switched from mm:ss to h:mm:ss once a
+  // meeting passed an hour, so a parser written against a short meeting silently
+  // stopped matching the rest of a long one — a real miss on a live file, where 6
+  // of 24 markers fell off the end.
+  it("always formats as HH:MM:SS, under and over an hour alike", () => {
+    expect(elapsedLabel("2026-06-10T10:00:00.000Z", "2026-06-10T10:00:07.000Z")).toBe("00:00:07")
+    expect(elapsedLabel("2026-06-10T10:00:00.000Z", "2026-06-10T10:01:09.000Z")).toBe("00:01:09")
+    expect(elapsedLabel("2026-06-10T10:00:00.000Z", "2026-06-10T11:05:03.000Z")).toBe("01:05:03")
   })
 
-  it("rolls to h:mm:ss past an hour", () => {
-    expect(elapsedLabel("2026-06-10T10:00:00.000Z", "2026-06-10T11:05:03.000Z")).toBe("1:05:03")
+  it("keeps one regex valid across the whole meeting", () => {
+    const shape = /^\d{2}:\d{2}:\d{2}$/
+    expect(elapsedLabel("2026-06-10T10:00:00.000Z", "2026-06-10T10:00:07.000Z")).toMatch(shape)
+    expect(elapsedLabel("2026-06-10T10:00:00.000Z", "2026-06-10T13:00:07.000Z")).toMatch(shape)
   })
 
-  it("clamps a negative or zero gap to 00:00", () => {
-    expect(elapsedLabel("2026-06-10T10:00:05.000Z", "2026-06-10T10:00:00.000Z")).toBe("00:00")
+  it("keeps labels lexicographically comparable in meeting order", () => {
+    const early = elapsedLabel("2026-06-10T10:00:00.000Z", "2026-06-10T10:59:00.000Z")
+    const late = elapsedLabel("2026-06-10T10:00:00.000Z", "2026-06-10T11:01:00.000Z")
+    expect(early < late).toBe(true)
+  })
+
+  it("clamps a negative or zero gap to zero", () => {
+    expect(elapsedLabel("2026-06-10T10:00:05.000Z", "2026-06-10T10:00:00.000Z")).toBe("00:00:00")
+  })
+
+  it("grows past two digits rather than truncating on an absurdly long span", () => {
+    expect(elapsedLabel("2026-06-10T10:00:00.000Z", "2026-06-15T10:00:00.000Z")).toBe("120:00:00")
   })
 })
 
