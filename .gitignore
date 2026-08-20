@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 *.zip
+*.pdf
 
 # Rendered from docs/manual/, regenerable, and too large to keep in git history.
 platica-notes-manual-*.pdf
