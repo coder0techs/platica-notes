@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Tests and build scripts DO run in node, unlike src/.
+    "types": ["chrome", "node"],
+    // The release and store helpers are plain .mjs so node can run them
+    // directly; allowJs lets the tests import them with real types.
+    "allowJs": true
+  },
+  // src/build-globals.d.ts is ambient, so it is only picked up by being listed:
+  // nothing imports it, and the src files these tests pull in depend on it.
+  "include": ["tests", "scripts", "src/build-globals.d.ts"]
+}
