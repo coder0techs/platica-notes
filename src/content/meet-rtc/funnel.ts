@@ -20,17 +20,12 @@ export const emptyFunnel = (): FunnelCounts => ({ wire: 0, decoded: 0, dispatche
 
 export const funnelSnapshot = (counts: FunnelCounts): string => JSON.stringify(counts)
 
-/**
- * Whether to write this snapshot to the debug log.
- *
- * The dedupe exists so an idle meeting does not repeat the same line every
- * thirty seconds. It must never apply to the snapshot taken when config
- * arrives: these counters live for the whole page, while the debug log is
- * written per meeting, so a call before the log window opened would set the
- * baseline and silence every call inside the window — leaving the meeting with
- * no reading at all. That is precisely how the first attempt to measure a
- * broken meeting produced nothing.
- */
-export function shouldRecordFunnel(snapshot: string, last: string, always: boolean): boolean {
-  return always || snapshot !== last
-}
+// There is deliberately no "skip if unchanged" here any more.
+//
+// It seemed obviously right — why write the same line every ten seconds? — and
+// it destroyed the evidence three separate times. The whole question these
+// snapshots answer is "did anything ever arrive", and the answer that matters is
+// a run of identical zeros. Suppressing repeats suppresses exactly the finding,
+// and leaves a log in which a broken meeting and a healthy one look the same:
+// empty. A few hundred small lines cost nothing next to the hex dumps already in
+// these files.

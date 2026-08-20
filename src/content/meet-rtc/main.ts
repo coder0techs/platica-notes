@@ -21,7 +21,7 @@ import {
 } from "./proto"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "./bridge"
 import { adoptPeerConnection } from "./adopt"
-import { emptyFunnel, funnelSnapshot, shouldRecordFunnel } from "./funnel"
+import { emptyFunnel } from "./funnel"
 import type { RtcConfig, RtcEvent } from "./bridge"
 import { makeChannelIdAllocator, shouldRecreateCaptions } from "./lifecycle"
 import { extractMeetBuild } from "./build-probe"
@@ -194,8 +194,8 @@ document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
         meetBuild: lastMeetBuild,
         restamp: true,
       })
-      recordFunnel("config", true)
-      recordCaptureState("config", true)
+      recordFunnel("config")
+      recordCaptureState("config")
       armFunnelSnapshots()
     }
     if (changed) resubscribeAll()
@@ -367,7 +367,6 @@ let firstTranscript = true
 // Meet's wire format looks like from here.
 const funnel = emptyFunnel()
 let funnelTimer: ReturnType<typeof setInterval> | undefined
-let funnelLast = ""
 // Ten seconds, not thirty: the question these snapshots exist to answer is
 // whether a channel ever appears, and it appears within seconds of joining.
 // Repetition is not a cost — an unchanging snapshot is deduped away.
@@ -384,10 +383,7 @@ const FUNNEL_SNAPSHOT_MS = 10000
  * every later call, and leave the meeting's log with no reading at all. That is
  * exactly what happened on the first attempt to measure a broken meeting.
  */
-function recordFunnel(reason: string, always = false): void {
-  const snapshot = funnelSnapshot(funnel)
-  if (!shouldRecordFunnel(snapshot, funnelLast, always)) return
-  funnelLast = snapshot
+function recordFunnel(reason: string): void {
   record({ phase: "funnel", reason, ...funnel })
 }
 
@@ -615,9 +611,7 @@ let ourPeerConnection: unknown
  * and starts later. Edge events fall outside it and the log looks empty. A
  * snapshot taken on every config push lands inside every meeting's window.
  */
-let captureStateLast = ""
-
-function recordCaptureState(reason: string, always = false): void {
+function recordCaptureState(reason: string): void {
   const state = {
     // The decisive one: false means another extension replaced the global
     // constructor after we wrapped it, so remotely-opened channels reach us only
@@ -630,12 +624,6 @@ function recordCaptureState(reason: string, always = false): void {
     subscribed: sessions.filter((s) => s.subscribed).length,
     lang: captionLanguage,
   }
-  // Deduped like the funnel, and for the same reason: an unchanging meeting
-  // should not repeat itself every thirty seconds. The config snapshot is never
-  // deduped, so every meeting window opens with an absolute reading.
-  const snapshot = JSON.stringify(state)
-  if (!always && snapshot === captureStateLast) return
-  captureStateLast = snapshot
   record({ phase: "capture-state", reason, ...state })
 }
 
