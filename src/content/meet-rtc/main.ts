@@ -180,6 +180,19 @@ document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
     const changed = cfg.captionLanguage !== captionLanguage
     captionLanguage = cfg.captionLanguage
     record({ phase: "config", lang: captionLanguage, changed })
+    // Re-stamp the build on every config push. The one emitted at install lands
+    // before the adapter takes its per-meeting debugStart slice, so it never
+    // reaches a saved log — checked across 219 of them, and "installed" appeared
+    // in none. A meeting's log has to say which build produced it.
+    if (debugEnabled) {
+      record({
+        phase: "installed",
+        version: typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev",
+        commit: typeof __BUILD_COMMIT__ === "string" ? __BUILD_COMMIT__ : "dev",
+        meetBuild: lastMeetBuild,
+        restamp: true,
+      })
+    }
     if (changed) resubscribeAll()
   } catch (err) {
     record({ phase: "config-error", error: String(err) })
@@ -945,10 +958,15 @@ function install(): boolean {
   return true
 }
 
+// Last Meet server build seen, so the per-config re-stamp can carry it into every
+// meeting's log rather than only the one that happened to be open when it probed.
+let lastMeetBuild: string | undefined
+
 function probeMeetBuild(tries = 0): void {
   try {
     const build = extractMeetBuild((window as unknown as { WIZ_global_data?: unknown }).WIZ_global_data)
     if (build) {
+      lastMeetBuild = build
       record({ phase: "meet-build", build })
       return
     }

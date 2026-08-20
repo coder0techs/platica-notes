@@ -1,4 +1,4 @@
-import { CAPTION_LANGUAGES } from "../../shared/languages"
+import { CAPTION_LANGUAGES, isDivider, MAX_FAVOURITE_LANGUAGES, orderedLanguages } from "../../shared/languages"
 
 const PULSE_ID = "platica-pulse"
 
@@ -124,6 +124,10 @@ const PILL_BASE =
   'font:500 13px "Google Sans",Roboto,system-ui,sans-serif;cursor:pointer;'
 const PILL_BG = "rgba(32,33,36,.92)"
 const PILL_BG_HOVER = "rgba(60,64,67,.95)"
+// Meet's own blue, used for the language button that is currently recording. The
+// other active states here are purple (panel open) and red (private), so blue
+// stays unambiguous.
+const LANG_BG_ACTIVE = "rgba(26,115,232,.95)"
 
 /**
  * Per-meeting on-screen controls, mounted top-center as one cohesive native-looking
@@ -136,6 +140,8 @@ export function mountMeetingControls(opts: {
   initialPrivate: boolean
   initialRecording: boolean
   onLanguageChange: (language: string) => void
+  /** Up to three tags pinned to the top of the language list. */
+  favouriteLanguages?: string[]
   onPrivateChange: (isPrivate: boolean) => void
   onRecordingChange: (recording: boolean) => void
   onToggleTranscript: () => void
@@ -174,10 +180,15 @@ export function mountMeetingControls(opts: {
   // of view once a lower item is selected, so a header here is both unreadable and
   // useless. The per-meeting scope is conveyed by the pill tooltip, the post-change
   // toast ("· only this meeting"), and the start-of-meeting language prompt instead.
-  for (const lang of CAPTION_LANGUAGES) {
+  // Pinned languages first, then a disabled divider, then the rest. The order is
+  // the whole signal: a divider is a line, not a header row, so it dodges the
+  // unreadable-grey problem described above while still showing where the
+  // shortlist ends.
+  for (const lang of orderedLanguages(CAPTION_LANGUAGES, opts.favouriteLanguages)) {
     const opt = document.createElement("option")
     opt.value = lang.value
     opt.textContent = lang.label
+    if (isDivider(lang)) opt.disabled = true
     select.appendChild(opt)
   }
   select.value = opts.initialLanguage
@@ -194,6 +205,7 @@ export function mountMeetingControls(opts: {
   }
   select.addEventListener("change", () => {
     syncLangText()
+    syncLangButtons()
     opts.onLanguageChange(select.value)
     // Confirm the change and reinforce that it is scoped to this meeting only.
     // Shorter than the default — it's a quick confirmation, not an onboarding cue.
@@ -202,6 +214,51 @@ export function mountMeetingControls(opts: {
   syncLangText()
 
   langPill.append(langVisual, select)
+
+  // --- favourite-language buttons -------------------------------------------
+  // A dropdown is the wrong shape for the thing people actually do in a call:
+  // switch between the two or three languages they meet in. Those get a button
+  // each, one click, current one lit. The pill above stays for everything else,
+  // so an unexpected language is never unreachable — a picker that can only
+  // offer three is a picker that fails the meeting it did not predict.
+  const favourites = (opts.favouriteLanguages ?? [])
+    .map((value) => CAPTION_LANGUAGES.find((l) => l.value === value))
+    .filter((l): l is (typeof CAPTION_LANGUAGES)[number] => Boolean(l))
+    .slice(0, MAX_FAVOURITE_LANGUAGES)
+
+  const langButtons = new Map<string, HTMLButtonElement>()
+  const syncLangButtons = () => {
+    for (const [value, button] of langButtons) {
+      const active = value === select.value
+      button.style.background = active ? LANG_BG_ACTIVE : PILL_BG
+      button.style.opacity = active ? "1" : ".75"
+      button.setAttribute("aria-pressed", String(active))
+    }
+  }
+
+  for (const lang of favourites) {
+    const button = document.createElement("button")
+    button.type = "button"
+    button.style.cssText = PILL_BASE + "gap:5px;border:none;cursor:pointer;"
+    button.title = `Plática Notes: record this meeting in ${lang.label}`
+    // Flag AND code together: Windows renders no flag for a regional-indicator
+    // pair, so the code is the label there and a nicety here.
+    const flag = document.createElement("span")
+    flag.textContent = lang.flag
+    const code = document.createElement("span")
+    code.textContent = lang.code
+    code.style.cssText = "font-size:11px;letter-spacing:.02em;"
+    button.append(flag, code)
+    button.addEventListener("click", () => {
+      if (select.value === lang.value) return
+      select.value = lang.value
+      syncLangText()
+      syncLangButtons()
+      opts.onLanguageChange(lang.value)
+      showToast(`${lang.flag} ${lang.label} · only this meeting`, 4000)
+    })
+    langButtons.set(lang.value, button)
+  }
 
   // --- transcript pill: toggles the live transcript panel. Highlighted (purple)
   // while the panel is open; the caller keeps this in sync via setTranscriptActive. ---
@@ -309,7 +366,8 @@ export function mountMeetingControls(opts: {
   })
   wipePill.textContent = "🗑 Wipe"
 
-  container.append(langPill, transcriptPill, recordingPill, wipePill, privacyPill)
+  syncLangButtons()
+  container.append(langPill, ...langButtons.values(), transcriptPill, recordingPill, wipePill, privacyPill)
   document.documentElement.appendChild(container)
   return {
     unmount: () => container.remove(),
@@ -341,6 +399,8 @@ export function mountLanguagePrompt(opts: {
   initialLanguage: string
   onPick: (language: string) => void
   onDisableAsking: () => void
+  /** Up to three tags pinned to the top of the language list. */
+  favouriteLanguages?: string[]
 }): { unmount: () => void } {
   const labelFor = (value: string) => CAPTION_LANGUAGES.find(l => l.value === value)?.label ?? value
 
@@ -367,10 +427,15 @@ export function mountLanguagePrompt(opts: {
   select.style.cssText =
     "width:100%;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.25);" +
     "background:rgba(0,0,0,.25);color:#fff;padding:0 8px;font:14px system-ui;cursor:pointer;"
-  for (const lang of CAPTION_LANGUAGES) {
+  // Pinned languages first, then a disabled divider, then the rest. The order is
+  // the whole signal: a divider is a line, not a header row, so it dodges the
+  // unreadable-grey problem described above while still showing where the
+  // shortlist ends.
+  for (const lang of orderedLanguages(CAPTION_LANGUAGES, opts.favouriteLanguages)) {
     const opt = document.createElement("option")
     opt.value = lang.value
     opt.textContent = lang.label
+    if (isDivider(lang)) opt.disabled = true
     select.appendChild(opt)
   }
   if (![...select.options].some(o => o.value === opts.initialLanguage)) {

@@ -1,7 +1,8 @@
-import { CAPTION_LANGUAGES } from "../../shared/languages"
+import { CAPTION_LANGUAGES, MAX_FAVOURITE_LANGUAGES } from "../../shared/languages"
 import { ACTIVE_TABS_KEY, getLocal, getSettings, hasActiveMeeting, saveSettings } from "../../shared/storage"
 
 const captionLanguage = document.querySelector<HTMLSelectElement>("#caption-language")!
+const favouriteLanguages = document.querySelector<HTMLDivElement>("#favourite-languages")!
 const activeMeetingNote = document.querySelector<HTMLParagraphElement>("#active-meeting-note")!
 const privateDefault = document.querySelector<HTMLInputElement>("#private-default")!
 const debugLog = document.querySelector<HTMLInputElement>("#debug-log")!
@@ -32,6 +33,61 @@ for (const lang of CAPTION_LANGUAGES) {
   captionLanguage.appendChild(opt)
 }
 
+// A toggle button per language, showing the same flag and code as the in-meeting
+// buttons they turn on — the setting looks like the thing it controls. Chosen
+// order follows this list rather than click order: a stable shortlist beats one
+// that reshuffles when a language is switched off and on again.
+const favouriteButtons: HTMLButtonElement[] = []
+const chosen = new Set<string>()
+
+for (const lang of CAPTION_LANGUAGES) {
+  const button = document.createElement("button")
+  button.type = "button"
+  button.className = "lang-chip"
+  button.value = lang.value
+  button.setAttribute("aria-pressed", "false")
+  button.title = lang.label
+
+  const flag = document.createElement("span")
+  flag.className = "lang-chip-flag"
+  // Flag and code together: Windows renders no flag for a regional-indicator
+  // pair, so the code carries the meaning there.
+  flag.textContent = lang.flag
+  const code = document.createElement("span")
+  code.className = "lang-chip-code"
+  code.textContent = lang.code
+  const name = document.createElement("span")
+  name.className = "lang-chip-name"
+  name.textContent = lang.label
+
+  button.append(flag, code, name)
+  favouriteLanguages.append(button)
+  favouriteButtons.push(button)
+
+  button.addEventListener("click", () => {
+    if (chosen.has(lang.value)) chosen.delete(lang.value)
+    else if (chosen.size < MAX_FAVOURITE_LANGUAGES) chosen.add(lang.value)
+    else return // at the cap: refuse rather than silently evicting someone's choice
+    syncFavourites()
+    void saveSettings({ favouriteLanguages: chosenFavourites() })
+  })
+}
+
+/** In list order, not click order. */
+const chosenFavourites = (): string[] =>
+  CAPTION_LANGUAGES.filter((l) => chosen.has(l.value)).map((l) => l.value)
+
+function syncFavourites(): void {
+  const full = chosen.size >= MAX_FAVOURITE_LANGUAGES
+  for (const button of favouriteButtons) {
+    const on = chosen.has(button.value)
+    button.setAttribute("aria-pressed", String(on))
+    button.classList.toggle("is-on", on)
+    // At the cap the rest go visibly inert rather than failing on click.
+    button.disabled = full && !on
+  }
+}
+
 async function init(): Promise<void> {
   const settings = await getSettings()
   captionLanguage.value = settings.captionLanguage
@@ -50,6 +106,9 @@ async function init(): Promise<void> {
   captionAlternatives.checked = settings.captionAlternatives
   mergeRejoins.checked = settings.mergeRejoins
   askLanguage.checked = settings.askLanguageEachMeeting
+  chosen.clear()
+  for (const value of settings.favouriteLanguages.slice(0, MAX_FAVOURITE_LANGUAGES)) chosen.add(value)
+  syncFavourites()
   folderPublic.value = settings.folderPublic
   folderPrivate.value = settings.folderPrivate
   folderDebug.value = settings.folderDebug

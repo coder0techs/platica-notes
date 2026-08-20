@@ -28,6 +28,20 @@ import {
 const ICON_FONT = ".google-symbols"
 const LEAVE_ICON_TEXT = "call_end"
 const MEETING_TITLE = ".u6vdEc"
+//
+// Second candidates for the same nodes, observed independently on Meet's own DOM.
+// Not used: they are written down so the pre-release check has somewhere to go
+// when a selector above stops matching, instead of starting the hunt from zero.
+// Any of them may rot just as fast — re-verify before trusting one.
+//
+//   meeting title   `.uBRSj .u6vdEc.ouH3xe`   — disambiguates if `.u6vdEc` ever
+//                                               matches more than one node
+//   leave button    `[jsname="CQylAd"]`, `[aria-label="Leave call"]`
+//                                             — independent of the icon ligature
+//   post-call view  `.kJU3pb`                 — present once the call UI is gone
+//   mic state       `button[jsname="hw0c9"][data-is-muted]`
+//                                             — we do not track mute at all today
+//   people panel    `.axUSnc`, `[jscontroller="izfDQc"]`
 // -------------------------------------------------------------------------------
 
 const MEETING_PATH = /^\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i
@@ -113,15 +127,43 @@ let onDebugEvent: (() => void) | null = null
 // debugStart indices never drift (chosen approach for Fix 2).
 const DEBUG_EVENTS_MAX = 5000
 
+// The adapter learns whether debug is on only once getSettings() resolves, which
+// is after "adapter loaded" and anything else that happens on the way there. The
+// MAIN world already retains its early events for this reason; without the same
+// here, the phase most worth reading when capture fails to start is the one that
+// is missing. Retained until settings arrive, then kept or dropped.
+let debugConfigSeen = false
+const debugBacklog: DebugEvent[] = []
+const DEBUG_BACKLOG_MAX = 500
+
 // Adapter's own lifecycle events: to the console and the debug buffer only when
 // debug is enabled (quiet by default; genuine errors use console.error directly).
 // Structured detail rides in `extra`.
 function dlog(msg: string, extra?: Record<string, unknown>): void {
+  // Spread caller data first so framing fields (t, ctx, msg) always win on collision.
+  const event: DebugEvent = { ...(extra ?? {}), t: new Date().toISOString(), ctx: "adapter", msg }
+  if (!debugConfigSeen) {
+    debugBacklog.push(event)
+    if (debugBacklog.length > DEBUG_BACKLOG_MAX) debugBacklog.shift()
+    return
+  }
   if (!debugEnabled) return
   console.log("[platica-notes]", msg, extra ?? "")
-  // Spread caller data first so framing fields (t, ctx, msg) always win on collision.
-  debugEvents.push({ ...(extra ?? {}), t: new Date().toISOString(), ctx: "adapter", msg })
+  debugEvents.push(event)
   onDebugEvent?.()
+}
+
+/** Settings have arrived: keep the retained adapter events, or drop them. */
+function settleDebugBacklog(enabled: boolean): void {
+  debugConfigSeen = true
+  if (enabled) {
+    for (const event of debugBacklog) {
+      console.log("[platica-notes]", event.msg, event)
+      debugEvents.push(event)
+    }
+    onDebugEvent?.()
+  }
+  debugBacklog.length = 0
 }
 
 // Set once the extension context is invalidated (reload/update mid-meeting). From
@@ -253,6 +295,7 @@ async function main(): Promise<void> {
   // subscribe, so push the config before any meeting can start.
   const settings = await getSettings()
   debugEnabled = settings.debugLog
+  settleDebugBacklog(debugEnabled)
   activeLanguage = settings.captionLanguage
   pushRtcConfig(activeLanguage, settings.debugLog)
   setUiHidden(settings.hideUi)
@@ -332,9 +375,29 @@ async function runMeeting(tabId: number): Promise<void> {
   const settings = await getSettings()
   let ending = false
 
-  // This meeting's debug window starts here. Earlier events (e.g. MAIN-world
-  // "installed") fall into the first meeting — acceptable.
+  // This meeting's debug window starts here. Everything before it — including the
+  // MAIN-world "installed" stamp, which is emitted at document_start — is outside
+  // the slice, which is why no saved log ever carried a build number. The header
+  // below puts the service facts INSIDE the window instead of hoping an earlier
+  // event survives.
   const debugStart = debugEvents.length
+  dlog("meeting header", {
+    extVersion: typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev",
+    extCommit: typeof __BUILD_COMMIT__ === "string" ? __BUILD_COMMIT__ : "dev",
+    extId: chrome.runtime?.id,
+    meetingPath,
+    tab: tabId,
+    userAgent: navigator.userAgent,
+    // Settings that decide what capture does, so a log can be read without also
+    // having to ask what the settings were at the time.
+    captionLanguage: settings.captionLanguage,
+    favouriteLanguages: settings.favouriteLanguages,
+    captionAlternatives: settings.captionAlternatives,
+    mergeRejoins: settings.mergeRejoins,
+    askLanguageEachMeeting: settings.askLanguageEachMeeting,
+    privateByDefault: settings.privateByDefault,
+    hideUi: settings.hideUi,
+  })
 
   // A mid-meeting reload of the SAME meeting continues its session (read above),
   // rather than erasing it. A different-meeting session was already finalized and
@@ -480,6 +543,7 @@ async function runMeeting(tabId: number): Promise<void> {
 
   const controls = mountMeetingControls({
     initialLanguage: session.captionLanguage ?? settings.captionLanguage,
+    favouriteLanguages: settings.favouriteLanguages,
     initialPrivate: session.isPrivate,
     initialRecording: recording,
     onPrivateChange: (isPrivate) => {
@@ -511,6 +575,7 @@ async function runMeeting(tabId: number): Promise<void> {
   if (shouldAskLanguage(settings.askLanguageEachMeeting, !!resumed, isUiHidden())) {
     languagePrompt = mountLanguagePrompt({
       initialLanguage: session.captionLanguage ?? settings.captionLanguage,
+      favouriteLanguages: settings.favouriteLanguages,
       onPick: (language) => { applyLanguage(language); controls.setLanguage(language) },
       onDisableAsking: () => void saveSettings({ askLanguageEachMeeting: false }),
     })
