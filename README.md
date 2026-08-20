@@ -85,6 +85,28 @@ folder sorts chronologically, there are no spaces, and the meeting code (absent
 when the meeting has none) lets you pull every occurrence of a recurring meeting
 with one glob.
 
+### Reading the file with a tool
+
+Every timeline line carries the same two clocks: a full local ISO 8601 instant
+with its UTC offset, and the time elapsed since the meeting started as
+`+HH:MM:SS`. Both are fixed width, so one pattern matches the whole file however
+long the meeting ran.
+
+Join and leave markers are `### Joined · <name> · <instant> · +<elapsed>` (and
+`### Left · …`). Two rules matter when deciding who was in the room at a given
+moment:
+
+- **No join marker means the person was already there** when the recording
+  started — not a missed event. Only arrivals *during* the meeting are marked;
+  everyone present at the start is in the `participants` header instead. The same
+  goes the other way: no leave marker means they were still there at the end.
+- **Your own arrival and departure are never marked**, and neither is anything in
+  the first ten seconds, which is when Meet streams the roster of people already
+  in the call.
+
+So "listed in the header, no join marker, speaks at 12:20" means present from the
+start; "no marker and never speaks" means present and silent.
+
 ### Cloud sync (optional)
 
 Sync `Downloads/Platica Notes/` with your own tooling (e.g. Google Drive for

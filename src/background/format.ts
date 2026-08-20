@@ -24,14 +24,18 @@ export function isoLocal(iso: string): string {
   )
 }
 
-// Elapsed time from `fromIso` to `toIso` as mm:ss, rolling to h:mm:ss past an
-// hour. Negative/zero clamps to 00:00. Timezone-independent (a difference).
+// Elapsed time from `fromIso` to `toIso`, always HH:MM:SS. Negative/zero clamps to
+// zero. Timezone-independent (a difference).
+//
+// Fixed width is the point: this label used to be mm:ss and switch to h:mm:ss once
+// a meeting passed an hour, so a parser written against a short meeting matched the
+// first hour of a long one and silently dropped the rest (observed: 6 of 24 markers
+// on a 61-minute call). One shape also makes the labels sort as strings. Hours grow
+// past two digits rather than truncate, so an absurd span stays correct.
 export function elapsedLabel(fromIso: string, toIso: string): string {
   const secs = Math.max(0, Math.round((Date.parse(toIso) - Date.parse(fromIso)) / 1000))
   const h = Math.floor(secs / 3600)
-  const m = Math.floor((secs % 3600) / 60)
-  const s = secs % 60
-  return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`
+  return `${pad2(h)}:${pad2(Math.floor((secs % 3600) / 60))}:${pad2(secs % 60)}`
 }
 
 // How long an entry lasted, as a unit-suffixed span: "30s", "3m05s". null for a
