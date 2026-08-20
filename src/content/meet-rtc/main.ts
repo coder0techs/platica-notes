@@ -20,6 +20,7 @@ import {
   toBytes,
 } from "./proto"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "./bridge"
+import { adoptPeerConnection } from "./adopt"
 import { emptyFunnel, funnelSnapshot, shouldRecordFunnel } from "./funnel"
 import type { RtcConfig, RtcEvent } from "./bridge"
 import { makeChannelIdAllocator, shouldRecreateCaptions } from "./lifecycle"
@@ -567,6 +568,18 @@ function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void
 
 // ---------- channel routing ----------
 
+// Connections we have already attached our datachannel listener to. Reached from
+// the constructor wrapper AND from every prototype hook, because the constructor
+// wrapper is the one thing another extension can take away from us.
+const adopted = new WeakSet<RTCPeerConnection>()
+
+function adopt(pc: RTCPeerConnection, where: string): void {
+  const attached = adoptPeerConnection(pc, adopted, (channel, owner) => {
+    handleChannel(channel as RTCDataChannel, owner)
+  })
+  if (attached) record({ phase: "pc-adopted", where, state: pc.connectionState })
+}
+
 // A channel can be created locally (createDataChannel) or arrive remotely
 // (datachannel event); both paths funnel here with the owning pc.
 const seenChannels = new WeakSet<RTCDataChannel>()
@@ -711,12 +724,28 @@ function install(): boolean {
   RTCPeerConnection.prototype.createDataChannel = function (this: RTCPeerConnection, ...args: unknown[]) {
     const ch: RTCDataChannel = (origCreate as any).apply(this, args)
     try {
+      // `this` is a live connection, whoever constructed it. Take the listener
+      // seat here in case our constructor wrapper was bypassed.
+      adopt(this, "createDataChannel")
       handleChannel(ch, this)
     } catch (err) {
       record({ phase: "hook-error", where: "createDataChannel", error: String(err) })
     }
     return ch
   }
+
+  // Earliest reliable touch point: Meet always answers an offer, and it does so
+  // before the remote channels open. createDataChannel only helps if Meet happens
+  // to create one locally first, which is not guaranteed.
+  const origSetRemote = RTCPeerConnection.prototype.setRemoteDescription
+  RTCPeerConnection.prototype.setRemoteDescription = function (this: RTCPeerConnection, ...args: unknown[]) {
+    try {
+      adopt(this, "setRemoteDescription")
+    } catch (err) {
+      record({ phase: "hook-error", where: "setRemoteDescription", error: String(err) })
+    }
+    return (origSetRemote as any).apply(this, args)
+  } as typeof RTCPeerConnection.prototype.setRemoteDescription
 
   // RPC response capture (debug-gated via record()). Meet does NOT include the
   // local user's own device in the `collections` roster channel, so transcript
@@ -989,13 +1018,7 @@ function install(): boolean {
     try {
       log("pc-created")
       record({ phase: "pc-created" })
-      conn.addEventListener("datachannel", (ev: RTCDataChannelEvent) => {
-        try {
-          handleChannel(ev.channel, conn)
-        } catch (err) {
-          record({ phase: "hook-error", where: "datachannel", error: String(err) })
-        }
-      })
+      adopt(conn, "constructor")
     } catch (err) {
       record({ phase: "hook-error", where: "pc-constructor", error: String(err) })
     }
