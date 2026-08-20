@@ -48,9 +48,8 @@ mind for every feature: prefer the design that keeps egress at zero.
 
 ## Near-term (explicitly requested 2026-06-19)
 
-> **Status:** all three shipped 2026-06-19 on `main` (commits `4bb1bba`,
-> `db0055f`, `4befe32`, `c37f41e`). Kept here for the design rationale and the
-> open questions that were resolved.
+> **Status:** all three shipped 2026-06-19 on `main`. Kept here for the design
+> rationale and the open questions that were resolved.
 
 ### 1. In-meeting notes, bookmarks & panel search — ✅ DONE
 

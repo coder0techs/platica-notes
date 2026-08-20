@@ -1,12 +1,12 @@
 # Instructions for AI coding agents
 
 Any agent working in this repository (Claude Code, Cursor, Copilot, Codex,
-GitLab Duo, anything else) must read both of these before editing:
+anything else) must read both of these before editing:
 
 - **[CLAUDE.md](CLAUDE.md)** for the architecture, the layer boundaries and the
   invariants that must not regress.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** for the process: branch names, commit
-  convention, what to run before pushing, how a merge request is reviewed.
+  convention, what to run before pushing, how a pull request is reviewed.
 
 They are the authority. This file only restates the rules that are absolute, so
 that an agent reading nothing else still cannot do damage.
@@ -27,7 +27,7 @@ that an agent reading nothing else still cannot do damage.
    `package.json` and `public/manifest.json` versions, and only the maintainer
    runs it.
 5. **English only**, everywhere in the repository: code, comments, docs, commit
-   messages, branch names, merge request titles and descriptions.
+   messages, branch names, pull request titles and descriptions.
 6. **Fictional names in fixtures.** Grace Hopper, Ada. Never real people, real
    meeting links or real ticket ids.
 7. **Never commit `.claude/`, `.superpowers/`, `dist/`, `coverage/` or zips.**
@@ -35,7 +35,9 @@ that an agent reading nothing else still cannot do damage.
 
 ## Verification is not optional
 
-There is no CI pipeline in this project yet. Nothing checks your work but you.
+GitHub Actions runs these three on every pull request, so a claim they pass is
+checkable. Run them yourself before pushing anyway: a red CI run costs a review
+cycle.
 
 ```bash
 npm run typecheck
@@ -43,14 +45,14 @@ npm test
 npm run build
 ```
 
-Run all three, and paste the actual output into the merge request. Never write
-"fixed", "works" or "tests pass" without the run that proves it. A unit suite
-does not prove the Meet DOM contract still holds, so if the change touches the
-in-meeting UI or Meet integration, say plainly in the MR that a live meeting
-check is still needed and who should do it.
+Never write "fixed", "works" or "tests pass" without the run that proves it. A
+unit suite does not prove the Meet DOM contract still holds, and CI cannot join
+a call, so if the change touches the in-meeting UI or Meet integration, say
+plainly in the pull request that a live meeting check is still needed and who
+should do it.
 
 ## Scope
 
 Do what was asked. Do not opportunistically reformat files, rename symbols,
 add abstractions for a single call site, or "improve" adjacent code in the same
-merge request. One MR, one concern, so a human can review it honestly.
+pull request. One PR, one concern, so a human can review it honestly.
