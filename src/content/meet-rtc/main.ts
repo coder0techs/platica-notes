@@ -195,7 +195,7 @@ document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
         restamp: true,
       })
       recordFunnel("config", true)
-      recordCaptureState("config")
+      recordCaptureState("config", true)
       armFunnelSnapshots()
     }
     if (changed) resubscribeAll()
@@ -368,7 +368,10 @@ let firstTranscript = true
 const funnel = emptyFunnel()
 let funnelTimer: ReturnType<typeof setInterval> | undefined
 let funnelLast = ""
-const FUNNEL_SNAPSHOT_MS = 30000
+// Ten seconds, not thirty: the question these snapshots exist to answer is
+// whether a channel ever appears, and it appears within seconds of joining.
+// Repetition is not a cost — an unchanging snapshot is deduped away.
+const FUNNEL_SNAPSHOT_MS = 10000
 
 /**
  * @param reason why this snapshot is being taken
@@ -398,7 +401,13 @@ function recordFunnel(reason: string, always = false): void {
  */
 function armFunnelSnapshots(): void {
   if (funnelTimer !== undefined) return
-  funnelTimer = setInterval(() => recordFunnel("tick"), FUNNEL_SNAPSHOT_MS)
+  funnelTimer = setInterval(() => {
+    recordFunnel("tick")
+    // State can change while the counters stay at zero — a media-session channel
+    // opening ten seconds in is exactly that, and a single reading at config time
+    // cannot see it.
+    recordCaptureState("tick")
+  }, FUNNEL_SNAPSHOT_MS)
 }
 
 function handleCaptions(bytes: Uint8Array): void {
@@ -606,10 +615,10 @@ let ourPeerConnection: unknown
  * and starts later. Edge events fall outside it and the log looks empty. A
  * snapshot taken on every config push lands inside every meeting's window.
  */
-function recordCaptureState(reason: string): void {
-  record({
-    phase: "capture-state",
-    reason,
+let captureStateLast = ""
+
+function recordCaptureState(reason: string, always = false): void {
+  const state = {
     // The decisive one: false means another extension replaced the global
     // constructor after we wrapped it, so remotely-opened channels reach us only
     // through the prototype hooks.
@@ -620,7 +629,14 @@ function recordCaptureState(reason: string): void {
     mediaSessions: sessions.length,
     subscribed: sessions.filter((s) => s.subscribed).length,
     lang: captionLanguage,
-  })
+  }
+  // Deduped like the funnel, and for the same reason: an unchanging meeting
+  // should not repeat itself every thirty seconds. The config snapshot is never
+  // deduped, so every meeting window opens with an absolute reading.
+  const snapshot = JSON.stringify(state)
+  if (!always && snapshot === captureStateLast) return
+  captureStateLast = snapshot
+  record({ phase: "capture-state", reason, ...state })
 }
 
 // A channel can be created locally (createDataChannel) or arrive remotely
