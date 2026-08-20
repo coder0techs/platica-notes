@@ -22,6 +22,7 @@ import {
   shouldEndFromMedia,
   shouldFinalizeStaleSession,
   shouldFinishRearmWait,
+  shouldWarnCaptureIdle,
 } from "./meet-lifecycle"
 
 // --- Google Meet DOM contract. Verify on a live meeting before each release. ---
@@ -69,6 +70,14 @@ const MEDIA_END_GRACE_MS = 5000
 // initial roster (or a reload re-sync), not a mid-meeting join — so those already
 // present get no "joined" marker. Measured from THIS runMeeting's start.
 const JOIN_SETTLE_MS = 10000
+// How long a meeting may run without capture ever asking Meet for captions before
+// we say something. Generous on purpose: joining, negotiating the peer connection
+// and routing the media-session channel all happen first, and a false alarm is
+// worse than a late one. Deliberately NOT a timeout on captions arriving —
+// nobody speaking is normal, and warning about it would train people to ignore
+// the notice.
+const CAPTURE_HEALTH_GRACE_MS = 45000
+const CAPTURE_HEALTH_TICK_MS = 5000
 
 // Roster events stream from join time — often before our leave-icon detection
 // lands — so the deviceId → name map lives at page level and survives across
@@ -116,6 +125,9 @@ let recordLeave: ((deviceId: string) => void) | null = null
 // device event arrives so a name learned mid-meeting shows up in the panel without
 // waiting for the next caption.
 let refreshTranscript: (() => void) | null = null
+// Set by the running meeting; the MAIN world calls it once the caption
+// subscription goes out.
+let onCaptureArmed: (() => void) | null = null
 
 // Optional debug trail. Like roster, the buffer lives for the whole tab; the
 // active meeting slices its own window out of it and flushes via onDebugEvent.
@@ -254,6 +266,12 @@ async function main(): Promise<void> {
         selfName = parsed.name
         recordAttendee?.(parsed.name)
       }
+      return
+    }
+    if (parsed.type === "capture-armed") {
+      // Meet has been asked for captions. Whether anyone speaks after this is
+      // not our business; the health watchdog only cares that we got this far.
+      onCaptureArmed?.()
       return
     }
     if (parsed.type === "media") {
@@ -541,6 +559,38 @@ async function runMeeting(tabId: number): Promise<void> {
     languagePrompt = null
   }
 
+  // --- capture health ---------------------------------------------------------
+  // Capture failing to start is currently silent: the meeting runs, the panel
+  // stays empty, and the first anyone knows is a missing file afterwards. This
+  // says something while there is still time to react. It does not claim to know
+  // why, and it never fires on a quiet meeting — see shouldWarnCaptureIdle.
+  let captureArmed = false
+  let captureWarned = false
+  const meetingStartedAt = Date.now()
+  onCaptureArmed = () => {
+    if (captureArmed) return
+    captureArmed = true
+    dlog("capture armed")
+  }
+  const captureHealthTimer = setInterval(() => {
+    if (
+      !shouldWarnCaptureIdle({
+        armed: captureArmed,
+        elapsedMs: Date.now() - meetingStartedAt,
+        graceMs: CAPTURE_HEALTH_GRACE_MS,
+        warned: captureWarned,
+        paused: !recording,
+      })
+    ) {
+      return
+    }
+    captureWarned = true
+    dlog("capture health warning", { elapsedMs: Date.now() - meetingStartedAt })
+    showPersistentNotice(
+      "Plática Notes may not be recording this meeting. Nothing has been captured " +
+        "so far. Reloading the tab usually fixes it — anything already captured is kept.",
+    )
+  }, CAPTURE_HEALTH_TICK_MS)
   const controls = mountMeetingControls({
     initialLanguage: session.captionLanguage ?? settings.captionLanguage,
     favouriteLanguages: settings.favouriteLanguages,
@@ -760,8 +810,10 @@ async function runMeeting(tabId: number): Promise<void> {
     // Stop the end-detection machinery first so neither the poller nor a
     // residual leave click can re-enter during the flush wait below.
     clearInterval(endWatcher)
+    clearInterval(captureHealthTimer)
     clearTimeout(titleTimer)
     document.removeEventListener("click", onDocumentClick, true)
+    onCaptureArmed = null
     // Leave the page-level RTC routing attached and wait: Meet keeps streaming
     // the final caption revision for a couple of seconds after Leave (same
     // messageId, higher version), so the feed completes the closing sentence

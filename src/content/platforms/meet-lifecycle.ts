@@ -161,3 +161,32 @@ export function nextLeaveState(
 export function shouldAskLanguage(ask: boolean, isResumed: boolean, uiHidden: boolean): boolean {
   return ask && !isResumed && !uiHidden
 }
+
+/**
+ * Whether to raise the "capture may not be working" notice.
+ *
+ * The signal is deliberately NOT "no captions have arrived": a meeting where
+ * everyone joined and nobody has said anything yet looks exactly like that, and
+ * warning there would train people to ignore the notice. What it keys off is
+ * whether capture ever got as far as ASKING Meet for captions — a media-session
+ * channel routed and the subscribe sent. That either happened or it did not, and
+ * silence has no bearing on it.
+ *
+ * Once raised it never repeats: a second identical notice adds nothing, and the
+ * condition it describes does not clear by itself.
+ */
+export function shouldWarnCaptureIdle(state: {
+  /** The MAIN world reported that the caption subscription went out. */
+  armed: boolean
+  /** Milliseconds since this meeting started. */
+  elapsedMs: number
+  /** How long to allow before deciding something is wrong. */
+  graceMs: number
+  /** A notice was already shown for this meeting. */
+  warned: boolean
+  /** Recording is paused by the user — nothing is expected to arrive. */
+  paused: boolean
+}): boolean {
+  if (state.armed || state.warned || state.paused) return false
+  return state.elapsedMs >= state.graceMs
+}

@@ -76,7 +76,15 @@ export interface RtcMediaEvent {
   pcState: RTCPeerConnectionState
 }
 
+// Capture reached the point where Meet has been asked for captions: a
+// media-session channel was routed and the subscribe went out. Emitted regardless
+// of whether anyone then speaks — silence is normal, never having asked is not.
+export interface RtcCaptureArmedEvent {
+  type: "capture-armed"
+}
+
 export type RtcEvent =
+  | RtcCaptureArmedEvent
   | RtcCaptionEvent
   | RtcChatEvent
   | RtcDeviceEvent

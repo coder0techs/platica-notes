@@ -256,6 +256,9 @@ function sendSubscribe(s: MediaSession): void {
     s.channel.send(buildAck(s.seq + 1) as unknown as ArrayBuffer)
     s.channel.send(buildAck(s.seq + 2) as unknown as ArrayBuffer)
     s.subscribed = true
+    // Tell the adapter capture is armed, so its watchdog stands down. Not
+    // debug-gated: this is a health signal, not diagnostics.
+    dispatch({ type: "capture-armed" })
     log("subscribe-sent", { op, lang: s.lang })
     record({ phase: "subscribe-sent", op, lang: s.lang })
   } catch (err) {
