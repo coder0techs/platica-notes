@@ -91,15 +91,22 @@ the tag before uploading anything.
 
 ## Trying it without touching the listing
 
-`status` is read-only and is the right first call after setting the secrets up:
+`status-only` is read-only and is the right first call after setting the secrets
+up. It asks the store for the item's state and stops — nothing is fetched,
+uploaded or submitted:
+
+```bash
+gh workflow run store.yml -f action=status-only
+```
+
+If it fails, the usual causes are the API not enabled on the Cloud project, or
+the service account's email not added under **Account** in the dashboard.
+
+The same call runs locally, if the key is on the machine:
 
 ```bash
 CWS_PUBLISHER_ID=... CWS_SERVICE_ACCOUNT_KEY="$(cat key.json)" node scripts/store.mjs status
 ```
-
-If that prints the item's state, the credentials and the wiring are correct. If
-it fails, the usual causes are the API not enabled on the Cloud project, or the
-service account's email not added under **Account** in the dashboard.
 
 ## What is still manual
 
