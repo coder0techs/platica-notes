@@ -4,6 +4,8 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+## 1.15.0 - 2026-08-20
+
 - **Saved meetings are filed by month.** Transcripts now land in a `YYYY-MM`
   subfolder of your chosen folder instead of piling into one flat directory.
   Debug logs follow the same split. Files saved earlier stay where they are.
