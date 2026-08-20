@@ -188,3 +188,5 @@ export const DEFAULT_SETTINGS: Settings = {
   folderPrivate: "meetings/platica-notes-private",
   folderDebug: "meetings/platica-notes-logs",
 }
+
+// throwaway line for a guard negative test; this branch is never merged
