@@ -10,6 +10,9 @@ export interface FinalizeResult {
   debug: DebugEvent[]
   title: string // for naming the debug file even when meeting is null
   startedAt: string
+  // Same role as `title`: the debug file's name carries the Meet code so it pairs
+  // up with its .md, and it is needed even when `meeting` is null.
+  meetingUrl?: string
   isPrivate: boolean // gates the debug-log download — private meetings never get one
 }
 
@@ -57,11 +60,13 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
         isPrivate: session.isPrivate,
       })
     }
+    const meetingUrl =
+      session.platform === "meet" && session.path ? `https://meet.google.com${session.path}` : undefined
     if (empty) {
       // Empty session: do not build/store a Meeting (history stays clean).
       await removeLocal(sessionKey(tabId))
       await untrackTab(tabId)
-      return { meeting: null, debug, title: session.title, startedAt: session.startedAt, isPrivate: session.isPrivate }
+      return { meeting: null, debug, title: session.title, startedAt: session.startedAt, meetingUrl, isPrivate: session.isPrivate }
     }
     const settings = await getSettings()
     const meeting: Meeting = {
@@ -79,8 +84,7 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
       participantEvents: session.participantEvents ?? [],
       recorder: session.selfName,
       language: session.captionLanguage ?? settings.captionLanguage,
-      meetingUrl:
-        session.platform === "meet" && session.path ? `https://meet.google.com${session.path}` : undefined,
+      meetingUrl,
       chatUrl: session.chatUrl,
     }
     // Commit to history — folding into a prior visit of the same meeting when the
@@ -100,7 +104,7 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
     await untrackTab(tabId)
     // The .md is `stored` (possibly merged); title/startedAt stay the incoming
     // visit's so the per-visit debug log keeps its own name (logs are not merged).
-    return { meeting: stored, debug, title: session.title, startedAt: session.startedAt, isPrivate: session.isPrivate }
+    return { meeting: stored, debug, title: session.title, startedAt: session.startedAt, meetingUrl, isPrivate: session.isPrivate }
   } finally {
     finalizing.delete(tabId)
   }

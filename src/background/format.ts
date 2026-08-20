@@ -1,5 +1,6 @@
 import type { DebugEvent, Meeting } from "../shared/types"
 import { flattenTimeline } from "../shared/transcript"
+import { meetCodeFromUrl } from "./merge"
 
 // Injected by esbuild's define at build time; typeof-guarded so vitest (which
 // does not define them) falls back to "dev" instead of throwing ReferenceError.
@@ -33,11 +34,15 @@ export function elapsedLabel(fromIso: string, toIso: string): string {
   return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`
 }
 
-// Local wall-clock HH:MM for a turn header. The absolute instant lives in the
-// front matter (started/ended), so a turn line only needs the clock + elapsed.
-export function clockLabel(iso: string): string {
-  const d = new Date(iso)
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+// How long an entry lasted, as a unit-suffixed span: "30s", "3m05s". null for a
+// zero/negative span so an instantaneous entry (chat, note, marker) renders
+// nothing. The explicit units matter: a bare "03:05" sitting next to the elapsed
+// offset on the same header line would read as a second wall-clock time.
+export function durationLabel(fromIso: string, toIso: string): string | null {
+  const secs = Math.round((Date.parse(toIso) - Date.parse(fromIso)) / 1000)
+  if (!Number.isFinite(secs) || secs <= 0) return null
+  const m = Math.floor(secs / 60)
+  return m > 0 ? `${m}m${pad2(secs % 60)}s` : `${secs}s`
 }
 
 const PLATFORM_SOURCES: Record<Meeting["platform"], string> = {
@@ -139,10 +144,16 @@ export function formatMeetingText(meeting: Meeting, opts: FormatOptions = {}): s
   for (const entry of flattenTimeline(meeting.transcript, meeting.chat, meeting.notes, meeting.participantEvents)) {
     while (visitPtr < visitAnchors.length && visitAnchors[visitPtr] <= entry.at) {
       const anchor = visitAnchors[visitPtr]
-      lines.push(`## Visit ${visitPtr + 2} · rejoined ${clockLabel(anchor)} · +${elapsedLabel(meeting.startedAt, anchor)}`, "")
+      lines.push(`## Visit ${visitPtr + 2} · rejoined ${isoLocal(anchor)} · +${elapsedLabel(meeting.startedAt, anchor)}`, "")
       visitPtr++
     }
-    const when = `${clockLabel(entry.at)} · +${elapsedLabel(meeting.startedAt, entry.at)}`
+    // A full local ISO instant per entry (not just the wall clock) so a consumer
+    // never has to add the elapsed offset to the front matter's `started` to place
+    // a turn in absolute time — the arithmetic that produced clock mismatches
+    // downstream. The elapsed offset stays for the human reading the file.
+    const span = durationLabel(entry.at, entry.endAt)
+    const when =
+      `${isoLocal(entry.at)}${span ? ` · ${span}` : ""} · +${elapsedLabel(meeting.startedAt, entry.at)}`
     // A recorder's note/bookmark is an annotation, not an utterance: render it as
     // a heading so it stands out structurally as its own block (not nested in a
     // speaker's quote) and never reads as a participant — for a human or an LLM.
@@ -210,20 +221,45 @@ export function sanitizeFolder(path: string, fallback: string): string {
 
 function fileStamp(iso: string): string {
   const d = new Date(iso)
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}-${pad2(d.getMinutes())}`
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}_${pad2(d.getHours())}-${pad2(d.getMinutes())}`
 }
 
+// The YYYY-MM bucket a meeting is filed under. Derived from the START instant, so
+// a call running over midnight into a new month stays with the day it began.
+// Digits and one dash only — never user input, so it needs no sanitising.
+export function monthFolder(iso: string): string {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`
+}
+
+// A filename segment with no spaces: the whole name is one shell-friendly token,
+// so a glob or a script never has to quote it. Runs after sanitizeFileName, whose
+// own "_" replacements collapse together with these.
+function fileToken(name: string): string {
+  return sanitizeFileName(name).replace(/\s+/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "") || "Meeting"
+}
+
+// `<date>_<time>_<title>[_<meet-code>]`. Date first so a folder listing sorts
+// chronologically; the code last because its shape (3-4-3 lowercase) is a reliable
+// right anchor, which keeps the whole name parseable by one regex even though the
+// title may itself contain the "_" separator.
+//
 // Accepts the lighter { title, startedAt } meta so a full Meeting (which
 // structurally satisfies it) and the finalize meta both work.
-function fileBase(meta: { title: string; startedAt: string }): string {
-  return `${sanitizeFileName(meta.title)} ${fileStamp(meta.startedAt)}`
+function fileBase(meta: { title: string; startedAt: string; meetingUrl?: string }): string {
+  const title = fileToken(meta.title)
+  const code = meetCodeFromUrl(meta.meetingUrl)
+  // An unnamed meeting takes its title from document.title, which IS the code;
+  // appending it again would stutter.
+  const suffix = code && code !== title.toLowerCase() ? `_${code}` : ""
+  return `${fileStamp(meta.startedAt)}_${title}${suffix}`
 }
 
 export function meetingFileName(meeting: Meeting): string {
   return `${fileBase(meeting)}.md`
 }
 
-export function debugLogFileName(meta: { title: string; startedAt: string }): string {
+export function debugLogFileName(meta: { title: string; startedAt: string; meetingUrl?: string }): string {
   return `${fileBase(meta)}.debug.jsonl`
 }
 

@@ -66,9 +66,20 @@ describe("finalizeSession", () => {
   it("carries the meeting url from the session path (meet)", async () => {
     chrome._store["session_5"] = makeSession({ transcript: oneUtterance, path: "/abc-defg-hij" })
     chrome._store["activeSessionTabs"] = [5]
-    await finalizeSession(5)
+    const r = await finalizeSession(5)
     const meetings = chrome._store["meetings"] as Meeting[]
     expect(meetings[0].meetingUrl).toBe("https://meet.google.com/abc-defg-hij")
+    // Also on the result itself: the debug log is named from this, not from the
+    // Meeting (which is null for an empty session).
+    expect(r!.meetingUrl).toBe("https://meet.google.com/abc-defg-hij")
+  })
+
+  it("carries the meeting url on an empty session too, so its debug log is named alike", async () => {
+    chrome._store["session_6"] = makeSession({ transcript: [], chat: [], path: "/abc-defg-hij" })
+    chrome._store["activeSessionTabs"] = [6]
+    const r = await finalizeSession(6)
+    expect(r!.meeting).toBeNull()
+    expect(r!.meetingUrl).toBe("https://meet.google.com/abc-defg-hij")
   })
 
   it("returns null and does nothing when there is no backing session", async () => {

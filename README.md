@@ -26,7 +26,10 @@ Everything is decoded in the page and kept on your machine.
 
 - Live transcript + in-meeting chat, saved as a readable Markdown `.md` per
   meeting: a short header (title, meeting link, time, participants) followed by
-  speaker-attributed turns. Each turn shows the speaker, the time, and the text.
+  speaker-attributed turns. Each turn carries the speaker, the full local
+  timestamp with its UTC offset, how long the turn lasted, the elapsed time since
+  the meeting started, and the text — so a tool can place any line in absolute
+  time and bound a speaker's run without re-deriving either.
 - **In-meeting transcript panel** — a floating, scrollable live transcript inside
   the Meet window, so you can scroll back and re-read without leaving the call.
   Includes a **search box** that filters the timeline, and a footer input to add
@@ -72,9 +75,15 @@ Files land in your Downloads folder:
 
 | Folder | Contents |
 |---|---|
-| `Downloads/Platica Notes/` | normal meeting transcripts (`<title> <date>.md`) |
-| `Downloads/Platica Notes private/` | transcripts of meetings marked private |
-| `Downloads/Platica Logs/` | debug logs (`.jsonl`), only when debug is on |
+| `Downloads/Platica Notes/2026-08/` | normal meeting transcripts, one subfolder per month |
+| `Downloads/Platica Notes private/2026-08/` | transcripts of meetings marked private |
+| `Downloads/Platica Logs/2026-08/` | debug logs (`.jsonl`), only when debug is on |
+
+A file is named `<date>_<time>_<title>_<meeting code>.md`, for example
+`2026-08-04_15-59_Payments_status_exb-zusa-qnc.md`. The date comes first so a
+folder sorts chronologically, there are no spaces, and the meeting code (absent
+when the meeting has none) lets you pull every occurrence of a recurring meeting
+with one glob.
 
 ### Cloud sync (optional)
 

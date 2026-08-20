@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { clockLabel, collapseVersions, debugLogFileName, elapsedLabel, formatDebugLog, formatMeetingText, isoLocal, meetingFileName, sanitizeFileName, sanitizeFolder } from "../src/background/format"
+import { collapseVersions, debugLogFileName, durationLabel, elapsedLabel, formatDebugLog, formatMeetingText, isoLocal, meetingFileName, sanitizeFileName, sanitizeFolder } from "../src/background/format"
 import type { DebugEvent, Meeting } from "../src/shared/types"
 
 function makeMeeting(overrides: Partial<Meeting> = {}): Meeting {
@@ -95,21 +95,62 @@ describe("formatMeetingText (v3)", () => {
     expect(fm.match(/- "Bob"/g)).toHaveLength(1)
   })
 
-  it("renders a speech turn as bold speaker · clock · elapsed with a blockquote body", () => {
+  it("renders a speech turn as bold speaker · absolute ISO · elapsed with a blockquote body", () => {
     const text = formatMeetingText(makeMeeting({
       startedAt: "2026-06-10T10:00:00.000Z",
       transcript: [{ speaker: "Alice", startedAt: "2026-06-10T10:01:09.000Z", text: "Hello everyone" }],
       chat: [],
     }))
-    expect(text).toMatch(/\*\*Alice\*\* · \d{2}:\d{2} · \+01:09\n> Hello everyone/)
+    expect(text).toMatch(
+      /\*\*Alice\*\* · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+01:09\n> Hello everyone/,
+    )
+  })
+
+  // ar-ebj: the turn's end is what lets a downstream merge bound a speaker run
+  // instead of reverse-engineering the boundary from text anchors.
+  it("renders a speech turn's duration between the timestamp and the elapsed offset", () => {
+    const text = formatMeetingText(makeMeeting({
+      startedAt: "2026-06-10T10:00:00.000Z",
+      transcript: [{
+        speaker: "Alice",
+        startedAt: "2026-06-10T10:01:09.000Z",
+        endedAt: "2026-06-10T10:01:39.000Z",
+        text: "Hello everyone",
+      }],
+      chat: [],
+    }))
+    expect(text).toMatch(
+      /\*\*Alice\*\* · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · 30s · \+01:09\n> Hello everyone/,
+    )
+  })
+
+  it("omits the duration for an utterance with no recorded end", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [{ speaker: "Alice", startedAt: "2026-06-10T10:01:00.000Z", text: "Hello" }],
+      chat: [],
+    }))
+    expect(text).not.toMatch(/\*\*Alice\*\*.*· \d+s ·/)
   })
 
   it("tags chat turns and interleaves them in time order", () => {
     const text = formatMeetingText(makeMeeting({
       chat: [{ sender: "Bob", sentAt: "2026-06-10T10:05:00.000Z", text: "see link" }],
     }))
-    expect(text).toMatch(/\*\*Bob\*\* · _chat_ · \d{2}:\d{2} · \+05:00\n> see link/)
+    expect(text).toMatch(
+      /\*\*Bob\*\* · _chat_ · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+05:00\n> see link/,
+    )
     expect(text.indexOf("see link")).toBeGreaterThan(text.indexOf("Hi Alice"))
+  })
+
+  // A chat message, note or marker is an instant: a "0s" there would be noise.
+  it("never emits a duration for an instantaneous entry", () => {
+    const text = formatMeetingText(makeMeeting({
+      transcript: [],
+      chat: [{ sender: "Bob", sentAt: "2026-06-10T10:05:00.000Z", text: "see link" }],
+      notes: [{ at: "2026-06-10T10:03:00.000Z", text: "follow up" }],
+      participantEvents: [{ at: "2026-06-10T10:02:00.000Z", name: "Grace Hopper", kind: "join" }],
+    }))
+    expect(text).not.toMatch(/· \d+s ·/)
   })
 
   it("marks an unresolved Speaker N label", () => {
@@ -135,7 +176,7 @@ describe("formatMeetingText (v3)", () => {
       chat: [],
       notes: [{ at: "2026-06-10T10:03:00.000Z", text: "follow up with Ada" }],
     }))
-    expect(text).toMatch(/### Note · \d{2}:\d{2} · \+03:00\n> follow up with Ada/)
+    expect(text).toMatch(/### Note · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+03:00\n> follow up with Ada/)
     // A note must not look like a speaker turn (no bold-name header line).
     expect(text).not.toMatch(/^\*\*Note\*\*/m)
   })
@@ -146,7 +187,7 @@ describe("formatMeetingText (v3)", () => {
       chat: [],
       notes: [{ at: "2026-06-10T10:04:00.000Z", text: "" }],
     }))
-    expect(text).toMatch(/### Bookmark · \d{2}:\d{2} · \+04:00\n\n\*\*Alice\*\*/)
+    expect(text).toMatch(/### Bookmark · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+04:00\n\n\*\*Alice\*\*/)
   })
 
   it("renders a participant join as a heading block with no body line", () => {
@@ -155,7 +196,7 @@ describe("formatMeetingText (v3)", () => {
       chat: [],
       participantEvents: [{ at: "2026-06-10T10:05:00.000Z", name: "Grace Hopper", kind: "join" }],
     }))
-    expect(text).toMatch(/### Joined · Grace Hopper · \d{2}:\d{2} · \+05:00\n\n\*\*Alice\*\*/)
+    expect(text).toMatch(/### Joined · Grace Hopper · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+05:00\n\n\*\*Alice\*\*/)
     // A join must not look like a speaker turn.
     expect(text).not.toMatch(/^\*\*Grace Hopper\*\* · \d/m)
   })
@@ -166,7 +207,7 @@ describe("formatMeetingText (v3)", () => {
       chat: [],
       participantEvents: [{ at: "2026-06-10T10:07:00.000Z", name: "Grace Hopper", kind: "leave" }],
     }))
-    expect(text).toMatch(/### Left · Grace Hopper · \d{2}:\d{2} · \+07:00/)
+    expect(text).toMatch(/### Left · Grace Hopper · \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2} · \+07:00/)
   })
 
   it("neutralizes newlines in a participant name so a marker cannot forge a turn header", () => {
@@ -435,8 +476,8 @@ describe("sanitizeFolder", () => {
 })
 
 describe("meetingFileName", () => {
-  it("matches shape: title + local date-time + .md", () => {
-    expect(meetingFileName(makeMeeting())).toMatch(/^Sprint sync \d{4}-\d{2}-\d{2} \d{2}-\d{2}\.md$/)
+  it("matches shape: local date, time, title, then .md — date first so a folder sorts chronologically", () => {
+    expect(meetingFileName(makeMeeting())).toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_Sprint_sync\.md$/)
   })
 
   it("contains hour-minute derived from local time", () => {
@@ -446,14 +487,56 @@ describe("meetingFileName", () => {
     expect(meetingFileName(makeMeeting())).toContain(expectedTime)
   })
 
-  it("sanitizes illegal chars in the title part of the filename", () => {
-    expect(meetingFileName(makeMeeting({ title: "a/b: report" }))).toMatch(/^a_b_ report /)
+  // The whole name is one shell-friendly token: no spaces anywhere, ever.
+  it("never emits a space, whatever the title contains", () => {
+    expect(meetingFileName(makeMeeting({ title: "  Q3   payments   review  " }))).not.toContain(" ")
+    expect(meetingFileName(makeMeeting({ title: "a/b: report" }))).not.toContain(" ")
   })
 
-  // regression guard — output must remain byte-identical after refactor
-  it("produces the same output after fileBase refactor", () => {
-    const m = makeMeeting()
-    expect(meetingFileName(m)).toBe(meetingFileName(m))
+  it("sanitizes illegal chars in the title part of the filename", () => {
+    expect(meetingFileName(makeMeeting({ title: "a/b: report" }))).toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_a_b_report\.md$/)
+  })
+
+  // ar-k1z: the Meet code identifies the recurring "room", so a whole series can
+  // be globbed out of a folder without opening a single file.
+  it("appends the Meet code from the meeting url", () => {
+    const name = meetingFileName(makeMeeting({ meetingUrl: "https://meet.google.com/exb-zusa-qnc" }))
+    expect(name).toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_Sprint_sync_exb-zusa-qnc\.md$/)
+  })
+
+  it("omits the code when the url carries none (a /lookup link, or no url at all)", () => {
+    expect(meetingFileName(makeMeeting({ meetingUrl: "https://meet.google.com/lookup/abcdef" })))
+      .toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_Sprint_sync\.md$/)
+    expect(meetingFileName(makeMeeting())).not.toMatch(/[a-z]{3}-[a-z]{4}-[a-z]{3}/)
+  })
+
+  // An unnamed meeting takes its title from document.title, which IS the code —
+  // appending it again would stutter.
+  it("does not repeat the code when the title already is the code", () => {
+    const name = meetingFileName(makeMeeting({
+      title: "exb-zusa-qnc",
+      meetingUrl: "https://meet.google.com/exb-zusa-qnc",
+    }))
+    expect(name).toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_exb-zusa-qnc\.md$/)
+    expect(name.match(/exb-zusa-qnc/g)).toHaveLength(1)
+  })
+
+  it("stays parseable by one regex: date, time, title, optional code", () => {
+    const parse = /^(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2})_(.*?)(?:_([a-z]{3}-[a-z]{4}-[a-z]{3}))?\.md$/
+    const withCode = meetingFileName(makeMeeting({
+      title: "Weekly_sync report",
+      meetingUrl: "https://meet.google.com/exb-zusa-qnc",
+    }))
+    const m = withCode.match(parse)
+    expect(m).not.toBeNull()
+    // The title survives intact even though it contains the separator itself.
+    expect(m?.[3]).toBe("Weekly_sync_report")
+    expect(m?.[4]).toBe("exb-zusa-qnc")
+    expect(meetingFileName(makeMeeting())).toMatch(parse)
+  })
+
+  it("falls back to a usable name when the title sanitizes away to nothing", () => {
+    expect(meetingFileName(makeMeeting({ title: "..." }))).toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_Meeting\.md$/)
   })
 })
 
@@ -472,6 +555,17 @@ describe("debugLogFileName", () => {
     const jsonl = debugLogFileName(m)
     const base = txt.slice(0, txt.length - ".md".length)
     expect(jsonl).toBe(`${base}.debug.jsonl`)
+  })
+
+  // The log is the .md's companion; a diverging base would break pairing them up.
+  it("carries the Meet code too, so the pair still shares one base", () => {
+    const m = makeMeeting({ meetingUrl: "https://meet.google.com/exb-zusa-qnc" })
+    expect(debugLogFileName(m)).toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_Sprint_sync_exb-zusa-qnc\.debug\.jsonl$/)
+  })
+
+  it("still works from the lighter meta the finalize path passes", () => {
+    expect(debugLogFileName({ title: "Sprint sync", startedAt: "2026-06-10T10:00:00.000Z" }))
+      .toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_Sprint_sync\.debug\.jsonl$/)
   })
 })
 
@@ -501,15 +595,28 @@ describe("elapsedLabel", () => {
   })
 })
 
-describe("clockLabel", () => {
-  it("renders local wall-clock HH:MM with no date or offset", () => {
-    expect(clockLabel("2026-06-10T10:05:00.000Z")).toMatch(/^\d{2}:\d{2}$/)
+describe("durationLabel", () => {
+  it("renders sub-minute spans as whole seconds", () => {
+    expect(durationLabel("2026-06-10T10:00:00.000Z", "2026-06-10T10:00:30.000Z")).toBe("30s")
+    expect(durationLabel("2026-06-10T10:00:00.000Z", "2026-06-10T10:00:59.000Z")).toBe("59s")
   })
 
-  it("agrees with the local hours/minutes of the instant", () => {
-    const d = new Date("2026-06-10T10:05:00.000Z")
-    const pad = (n: number) => String(n).padStart(2, "0")
-    expect(clockLabel("2026-06-10T10:05:00.000Z")).toBe(`${pad(d.getHours())}:${pad(d.getMinutes())}`)
+  // Minutes carry an explicit unit rather than mm:ss, so the value can never be
+  // misread as the elapsed offset sitting next to it on the same line.
+  it("renders a span of a minute or more as Nm SSs", () => {
+    expect(durationLabel("2026-06-10T10:00:00.000Z", "2026-06-10T10:01:00.000Z")).toBe("1m00s")
+    expect(durationLabel("2026-06-10T10:00:00.000Z", "2026-06-10T10:03:05.000Z")).toBe("3m05s")
+    expect(durationLabel("2026-06-10T10:00:00.000Z", "2026-06-10T11:02:03.000Z")).toBe("62m03s")
+  })
+
+  it("rounds to the nearest second", () => {
+    expect(durationLabel("2026-06-10T10:00:00.000Z", "2026-06-10T10:00:01.600Z")).toBe("2s")
+  })
+
+  it("returns null for a zero or negative span, so nothing is rendered", () => {
+    expect(durationLabel("2026-06-10T10:00:00.000Z", "2026-06-10T10:00:00.000Z")).toBeNull()
+    expect(durationLabel("2026-06-10T10:00:05.000Z", "2026-06-10T10:00:00.000Z")).toBeNull()
+    expect(durationLabel("2026-06-10T10:00:00.000Z", "2026-06-10T10:00:00.400Z")).toBeNull()
   })
 })
 

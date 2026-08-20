@@ -1,6 +1,6 @@
 import { getSettings } from "../shared/storage"
 import { DEFAULT_SETTINGS, type DebugEvent, type Meeting } from "../shared/types"
-import { debugLogFileName, formatDebugLog, formatMeetingText, meetingFileName, sanitizeFolder } from "./format"
+import { debugLogFileName, formatDebugLog, formatMeetingText, meetingFileName, monthFolder, sanitizeFolder } from "./format"
 
 export async function downloadMeeting(meeting: Meeting): Promise<void> {
   const settings = await getSettings()
@@ -15,9 +15,12 @@ export async function downloadMeeting(meeting: Meeting): Promise<void> {
     meeting.isPrivate ? settings.folderPrivate : settings.folderPublic,
     meeting.isPrivate ? DEFAULT_SETTINGS.folderPrivate : DEFAULT_SETTINGS.folderPublic,
   )
+  // Split by month inside the configured folder: a flat directory is unusable
+  // after a week of meetings. Fixed YYYY-MM rather than a setting — one shape
+  // everything (and everyone) can rely on.
   await chrome.downloads.download({
     url,
-    filename: `${folder}/${meetingFileName(meeting)}`,
+    filename: `${folder}/${monthFolder(meeting.startedAt)}/${meetingFileName(meeting)}`,
     // A merged meeting (visits > 1) rewrites the same file it produced on the
     // first visit (startedAt + title are preserved, so the name is identical).
     // A single-visit meeting still uniquifies so it never clobbers a sibling.
@@ -44,7 +47,7 @@ export async function downloadDebugLog(
   const folder = sanitizeFolder(settings.folderDebug, DEFAULT_SETTINGS.folderDebug)
   await chrome.downloads.download({
     url,
-    filename: `${folder}/${debugLogFileName(meta)}`,
+    filename: `${folder}/${monthFolder(meta.startedAt)}/${debugLogFileName(meta)}`,
     conflictAction: "uniquify",
   })
 }
