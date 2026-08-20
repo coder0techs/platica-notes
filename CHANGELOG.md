@@ -4,6 +4,8 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+## 1.16.0 - 2026-08-20
+
 - **Recording now survives another meeting recorder in the same tab.** With a
   second recording extension installed, Plática Notes captured nothing at all —
   no speech, no participants, nothing. It saw one of the fourteen channels Google
