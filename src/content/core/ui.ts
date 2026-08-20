@@ -260,9 +260,9 @@ export function mountMeetingControls(opts: {
     langButtons.set(lang.value, button)
   }
 
-  // --- transcript pill: toggles the live transcript panel. Highlighted (purple)
-  // while the panel is open; the caller keeps this in sync via setTranscriptActive. ---
-  const TRANSCRIPT_BG_ACTIVE = "rgba(103,80,164,.95)"
+  // --- transcript row: toggles the live transcript panel. Says which way it will
+  // go rather than colouring itself; the caller keeps it in sync via
+  // setTranscriptActive. ---
   let transcriptActive = false
   const transcriptPill = document.createElement("button")
   transcriptPill.type = "button"
@@ -270,7 +270,7 @@ export function mountMeetingControls(opts: {
   transcriptPill.textContent = "📄 Transcript"
   transcriptPill.title = "Plática Notes: show/hide the live transcript panel"
   const renderTranscript = () => {
-    transcriptPill.style.background = transcriptActive ? TRANSCRIPT_BG_ACTIVE : PILL_BG
+    transcriptPill.textContent = transcriptActive ? "📄 Hide transcript" : "📄 Show transcript"
   }
   transcriptPill.addEventListener("mouseenter", () => {
     if (!transcriptActive) transcriptPill.style.background = PILL_BG_HOVER
@@ -279,19 +279,17 @@ export function mountMeetingControls(opts: {
   transcriptPill.addEventListener("click", () => { opts.onToggleTranscript() })
   renderTranscript()
 
-  // --- privacy pill: the label is always "Private" and the text color never
-  // changes; state is shown by FILLING the whole pill red when the meeting is
-  // private (Meet-native red, like the leave button) and leaving it the default
-  // dark otherwise — same active-by-background pattern as the transcript pill. ---
-  const PRIVACY_BG_ACTIVE = "rgba(217,48,37,.95)" // red fill when private — noticeable
+  // --- privacy row: the toggle lives in the menu, but the state it sets shows on
+  // the recording pill (the lock), so a private meeting is never quietly private. ---
   let isPrivate = opts.initialPrivate
   const privacyPill = document.createElement("button")
   privacyPill.type = "button"
   privacyPill.style.cssText = PILL_BASE
   privacyPill.title = "Plática Notes: mark this meeting private (local-only folder)"
   const renderPrivacy = () => {
-    privacyPill.textContent = "🔒 Private"
-    privacyPill.style.background = isPrivate ? PRIVACY_BG_ACTIVE : PILL_BG
+    // A menu row cannot say "on" by filling itself red without shouting, so it
+    // says it in words instead.
+    privacyPill.textContent = isPrivate ? "🔒 Private · on" : "🔒 Mark private"
   }
   privacyPill.addEventListener("mouseenter", () => {
     if (!isPrivate) privacyPill.style.background = PILL_BG_HOVER
@@ -300,6 +298,9 @@ export function mountMeetingControls(opts: {
   privacyPill.addEventListener("click", () => {
     isPrivate = !isPrivate
     renderPrivacy()
+    // The lock lives on the recording pill; keep it in step. Safe to call here —
+    // by click time both renderers exist.
+    renderRecording()
     opts.onPrivateChange(isPrivate)
   })
   renderPrivacy()
@@ -316,7 +317,9 @@ export function mountMeetingControls(opts: {
   recordingPill.style.cssText = PILL_BASE
   recordingPill.title = "Plática Notes: pause/resume capturing this meeting"
   const renderRecording = () => {
-    recordingPill.textContent = recording ? "● Rec" : "⏸ Rec off"
+    // Carries the privacy state too, now that the toggle itself lives in the
+    // menu: hiding a control is fine, hiding what it is currently doing is not.
+    recordingPill.textContent = (recording ? "● Recording" : "⏸ Paused") + (isPrivate ? " 🔒" : "")
     recordingPill.style.background = recording ? RECORDING_BG_ON : RECORDING_BG_OFF
   }
   recordingPill.addEventListener("mouseenter", () => {
@@ -344,19 +347,19 @@ export function mountMeetingControls(opts: {
     wipeArmed = false
     if (wipeTimer) clearTimeout(wipeTimer)
     wipeTimer = undefined
-    wipePill.textContent = "🗑 Wipe"
-    wipePill.style.background = PILL_BG
+    wipePill.textContent = "🗑 Wipe what was captured"
+    wipePill.style.background = "transparent"
   }
   wipePill.addEventListener("mouseenter", () => {
     if (!wipeArmed) wipePill.style.background = PILL_BG_HOVER
   })
   wipePill.addEventListener("mouseleave", () => {
-    if (!wipeArmed) wipePill.style.background = PILL_BG
+    if (!wipeArmed) wipePill.style.background = "transparent"
   })
   wipePill.addEventListener("click", () => {
     if (!wipeArmed) {
       wipeArmed = true
-      wipePill.textContent = "🗑 Wipe? confirm"
+      wipePill.textContent = "🗑 Wipe — click again to confirm"
       wipePill.style.background = WIPE_BG_ARMED
       wipeTimer = setTimeout(disarmWipe, 4000)
       return
@@ -364,13 +367,89 @@ export function mountMeetingControls(opts: {
     disarmWipe()
     opts.onPurge()
   })
-  wipePill.textContent = "🗑 Wipe"
+  wipePill.textContent = "🗑 Wipe what was captured"
+
+  // --- overflow menu ---------------------------------------------------------
+  // The bar sits on top of somebody's meeting, so every pill has to earn its
+  // place. Two things do: whether it is recording, and in which language —
+  // getting either wrong ruins the transcript, and both need one click. The rest
+  // moves behind a menu.
+  //
+  // Wipe is the strongest case, and not on grounds of tidiness: it is the only
+  // control here that destroys what has been captured, and it sat one stray
+  // elbow away from the language buttons. Its two-click confirm still applies.
+  const MENU_ROW =
+    "box-sizing:border-box;width:100%;height:36px;display:flex;align-items:center;gap:8px;" +
+    "background:transparent;color:#e8eaed;border:none;border-radius:8px;padding:0 10px;text-align:left;" +
+    'font:400 13px "Google Sans",Roboto,system-ui,sans-serif;cursor:pointer;position:relative;'
+
+  const menu = document.createElement("div")
+  menu.style.cssText =
+    "position:absolute;top:42px;right:0;min-width:250px;display:none;flex-direction:column;gap:2px;" +
+    "background:rgba(41,42,45,.98);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:6px;" +
+    "box-shadow:0 8px 24px rgba(0,0,0,.35);"
+  menu.setAttribute("role", "menu")
+
+  // Restyle the moved controls as rows. Their behaviour is untouched — only where
+  // they live and how wide they are.
+  for (const pill of [langPill, transcriptPill, privacyPill, wipePill]) {
+    pill.style.cssText = MENU_ROW
+    pill.addEventListener("mouseenter", () => { pill.style.background = "rgba(255,255,255,.08)" })
+    pill.addEventListener("mouseleave", () => { pill.style.background = "transparent" })
+  }
+  // The language row keeps its transparent <select> stretched over it, so the row
+  // opens the full list exactly as the pill did.
+  caret.style.marginLeft = "auto"
+  wipePill.style.color = "#f28b82"
+
+  menu.append(langPill, transcriptPill, privacyPill, wipePill)
+
+  const moreButton = document.createElement("button")
+  moreButton.type = "button"
+  moreButton.setAttribute("aria-haspopup", "menu")
+  moreButton.setAttribute("aria-expanded", "false")
+  moreButton.setAttribute("aria-label", "Plática Notes: more options")
+  moreButton.title = "Plática Notes: more options"
+  moreButton.style.cssText = PILL_BASE + "width:38px;justify-content:center;border:none;"
+  moreButton.textContent = "⋯"
+
+  let menuOpen = false
+  const setMenu = (open: boolean) => {
+    menuOpen = open
+    menu.style.display = open ? "flex" : "none"
+    moreButton.setAttribute("aria-expanded", String(open))
+    moreButton.style.background = open ? PILL_BG_HOVER : PILL_BG
+  }
+  moreButton.addEventListener("click", (event) => {
+    event.stopPropagation()
+    setMenu(!menuOpen)
+  })
+  // Any click outside closes it, as does Escape. Both listeners are removed with
+  // the container on unmount.
+  const onDocClick = (event: MouseEvent) => {
+    if (menuOpen && !container.contains(event.target as Node)) setMenu(false)
+  }
+  const onKey = (event: KeyboardEvent) => {
+    if (menuOpen && event.key === "Escape") setMenu(false)
+  }
+  document.addEventListener("click", onDocClick, true)
+  document.addEventListener("keydown", onKey, true)
+
+  // The menu hangs off the bar, so the bar is the positioning context.
+  container.style.position = "fixed"
+  const moreWrap = document.createElement("div")
+  moreWrap.style.cssText = "position:relative;display:flex;"
+  moreWrap.append(moreButton, menu)
 
   syncLangButtons()
-  container.append(langPill, ...langButtons.values(), transcriptPill, recordingPill, wipePill, privacyPill)
+  container.append(recordingPill, ...langButtons.values(), moreWrap)
   document.documentElement.appendChild(container)
   return {
-    unmount: () => container.remove(),
+    unmount: () => {
+      document.removeEventListener("click", onDocClick, true)
+      document.removeEventListener("keydown", onKey, true)
+      container.remove()
+    },
     setTranscriptActive: (active: boolean) => {
       transcriptActive = active
       renderTranscript()

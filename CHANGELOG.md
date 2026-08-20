@@ -4,6 +4,15 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+- **The in-meeting controls are down to what you need mid-call.** The bar showed
+  eight buttons on top of your meeting; it now shows whether it is recording, your
+  language buttons, and a menu. The recording pill also carries the padlock when a
+  meeting is private, so hiding that toggle does not hide the state. Everything
+  else — the full language list, the transcript panel, the private toggle — moved
+  into the menu. **Wipe** moved there too, and that one is not about tidiness: it
+  is the only control that destroys what has been captured, and it no longer sits
+  a stray click away from the language buttons. It still asks before it fires.
+
 - **A meeting that is not recording speech now says so.** This used to fail
   silently: the meeting ran, the panel stayed empty, and the first sign was a
   missing file afterwards. A notice now appears while there is still time to fix
