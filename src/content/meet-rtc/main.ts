@@ -20,6 +20,7 @@ import {
   toBytes,
 } from "./proto"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "./bridge"
+import { emptyFunnel, funnelSnapshot, shouldRecordFunnel } from "./funnel"
 import type { RtcConfig, RtcEvent } from "./bridge"
 import { makeChannelIdAllocator, shouldRecreateCaptions } from "./lifecycle"
 import { extractMeetBuild } from "./build-probe"
@@ -192,7 +193,8 @@ document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
         meetBuild: lastMeetBuild,
         restamp: true,
       })
-      recordFunnel("config")
+      recordFunnel("config", true)
+      armFunnelSnapshots()
     }
     if (changed) resubscribeAll()
   } catch (err) {
@@ -361,19 +363,37 @@ let firstTranscript = true
 // entirely invisible until someone counted. A rising `dropped` is the other
 // signal: the decoder silently returning nothing usable is what a change to
 // Meet's wire format looks like from here.
-const funnel = { wire: 0, decoded: 0, dispatched: 0, dropped: 0 }
+const funnel = emptyFunnel()
 let funnelTimer: ReturnType<typeof setInterval> | undefined
 let funnelLast = ""
 const FUNNEL_SNAPSHOT_MS = 30000
 
-function recordFunnel(reason: string): void {
-  const snapshot = JSON.stringify(funnel)
-  if (snapshot === funnelLast) return
+/**
+ * @param reason why this snapshot is being taken
+ * @param always record even if the numbers have not moved
+ *
+ * The dedupe is only worth having for the periodic tick, where an idle meeting
+ * would otherwise repeat itself. It must NOT apply to the config snapshot: this
+ * counter lives for the whole page while the debug log is written per meeting,
+ * so a first call before the log window opens would set the baseline, silence
+ * every later call, and leave the meeting's log with no reading at all. That is
+ * exactly what happened on the first attempt to measure a broken meeting.
+ */
+function recordFunnel(reason: string, always = false): void {
+  const snapshot = funnelSnapshot(funnel)
+  if (!shouldRecordFunnel(snapshot, funnelLast, always)) return
   funnelLast = snapshot
   record({ phase: "funnel", reason, ...funnel })
 }
 
-/** Start the periodic snapshot on the first frame; there is nothing to report before. */
+/**
+ * Start the periodic snapshot.
+ *
+ * Armed on config rather than on the first caption frame. Arming on the first
+ * frame meant a meeting that never received one — the failure worth measuring —
+ * produced no snapshots at all: the instrument only reported when there was
+ * nothing wrong.
+ */
 function armFunnelSnapshots(): void {
   if (funnelTimer !== undefined) return
   funnelTimer = setInterval(() => recordFunnel("tick"), FUNNEL_SNAPSHOT_MS)
@@ -515,10 +535,7 @@ function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void
   ch.addEventListener("message", (e: MessageEvent) => {
     // Counted here rather than in handleCaptions: this is the wire, before
     // decompression can fail and before the decoder gets a say.
-    if (ch.label === "captions") {
-      funnel.wire++
-      armFunnelSnapshots()
-    }
+    if (ch.label === "captions") funnel.wire++
     if (!(e.data instanceof ArrayBuffer) && !(e.data instanceof Uint8Array)) {
       record({ phase: "unexpected-payload", label: ch.label, type: typeof e.data })
       return
