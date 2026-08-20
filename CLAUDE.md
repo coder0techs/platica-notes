@@ -24,33 +24,49 @@ then "Load unpacked"). Reload it after each build.
 
 ## Releasing a new version
 
-1. Update `CHANGELOG.md` (a new `## X.Y.Z - YYYY-MM-DD` section, newest first)
-   and, if behaviour changed, `README.md`.
-2. `npm run release` reads the Conventional Commit history since the last tag,
-   bumps the version in `package.json` and `public/manifest.json` in lockstep,
-   commits `chore(release): vX.Y.Z`, and tags it. No manual version editing.
-3. `npm run package` runs typecheck + tests + build, then writes
-   `platica-notes-<version>.zip`, the Chrome Web Store upload artifact.
-4. `git push --follow-tags` to publish the release commit and its tag.
+Releases are automated in two steps, and neither of them edits a version number
+or writes a changelog entry by hand.
+
+1. **Write the entry when the change lands, not at release time.** Every change
+   that a user could notice adds a bullet under `## Unreleased` in
+   `CHANGELOG.md`, in its own pull request. CI fails a pull request that touches
+   `src/` without one (label it `no-changelog` if the change really is invisible).
+   The notes are user-facing prose shown in the store and on the release page, so
+   they are never generated from commit subjects.
+2. **`gh workflow run release.yml`.** The Release workflow derives the version
+   from the Conventional Commit subjects since the last tag, dates the
+   `## Unreleased` entries into a `## X.Y.Z - YYYY-MM-DD` section, bumps
+   `package.json`, `public/manifest.json` and `package-lock.json` in lockstep,
+   and opens a `chore(release): vX.Y.Z` pull request. Check the version and the
+   notes there. `node scripts/release.mjs --dry-run` previews it locally without
+   writing anything.
+3. **Merge that pull request.** The Publish workflow then tags `vX.Y.Z`
+   (annotated, so `--follow-tags` works), runs the checks, builds
+   `platica-notes-<version>.zip` and attaches it to a GitHub release whose body is
+   that changelog section. It decides whether to run by asking if `main`'s version
+   already has a tag, so it is safe to re-run and does not care about merge-commit
+   messages.
+4. **Upload the zip** from the GitHub release in the Web Store Developer
+   Dashboard. This is the only manual step left. Listing copy, screenshot order
+   and captions are in `docs/STORE-LISTING.md`.
 5. If the in-meeting UI, the saved-file format, or a settings/history page changed,
    `npm run screenshots` regenerates the five 1280×800 listing shots in
    `docs/store/screenshots/` from the freshly built `dist/`.
 6. If a user-facing feature or setting changed, update `docs/manual/USER-MANUAL.md`
    and rebuild the PDF with `npm run manual`. It documents the **published**
    version, so write it against what the store actually serves, not the branch.
-7. `PRIVACY.md` needs no publishing step of its own any more. The `Pages`
-   workflow rebuilds <https://coder0techs.github.io/platica-notes/privacy.html>
-   from `main` whenever the file changes, and the store's policy URL points there.
-   It used to serve a hand-maintained Google Doc, which is exactly how the public
-   policy went stale between 1.13.0 (the `chat.google.com` disclosure) and 1.14.0.
-   All that is left is to bump the effective date in `PRIVACY.md` when the policy's
-   substance changes.
-8. Upload the zip in the Web Store Developer Dashboard. Listing copy, screenshot
-   order and captions are in `docs/STORE-LISTING.md`; the privacy policy is
-   `PRIVACY.md`.
+7. `PRIVACY.md` needs no publishing step of its own. The `Pages` workflow rebuilds
+   <https://coder0techs.github.io/platica-notes/privacy.html> from `main` whenever
+   the file changes, and the store's policy URL points there. It used to serve a
+   hand-maintained Google Doc, which is exactly how the public policy went stale
+   between 1.13.0 (the `chat.google.com` disclosure) and 1.14.0. All that is left
+   is to bump the effective date in `PRIVACY.md` when the policy's substance
+   changes.
 
-Do not commit the zip; it is git-ignored and fully regenerable. To share a
-downloadable build, attach it to a GitHub release for the tag instead.
+Do not commit the zip; it is git-ignored and CI attaches one to every release. CI
+also uploads a zip as a build artifact for every pull request and every push to
+`main`, so a loadable build of any branch is a download away — that is what
+`docs/TEAM-INSTALL.md` points at.
 
 ## Architecture
 

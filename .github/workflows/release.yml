@@ -1,0 +1,99 @@
+name: Release
+
+# Step one of two. Prepares the release and opens a pull request; publishing
+# happens in publish.yml once that pull request is on `main`.
+#
+# Split in two on purpose. `main` is protected and the workflow token is not an
+# admin, so it cannot push there — and the split is worth having anyway: the
+# computed version and the dated release notes are reviewable before anything is
+# tagged or shown to a Chrome Web Store user.
+#
+# Trigger with `gh workflow run release.yml`, or the Actions tab. Nothing is
+# released on a schedule or on every merge: each release means a store submission
+# and a review, so cutting one stays a decision.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: prepare the release pull request
+    runs-on: ubuntu-latest
+    steps:
+      # Full history and tags: the version is derived from the Conventional
+      # Commit subjects since the last v* tag.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+
+      - run: npm ci
+
+      # Never cut a release from a tree that does not build or pass.
+      - run: npm run check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Identify as the maintainer
+        run: |
+          git config user.name "coder0techs"
+          git config user.email "218495908+coder0techs@users.noreply.github.com"
+
+      # The version is only known after the script has read the commit range, so
+      # the branch is created first and renamed once the version exists.
+      - name: Prepare the release commit
+        id: prepare
+        run: |
+          git switch -c release/pending
+          node scripts/release.mjs
+          version=$(node -p "require('./package.json').version")
+          git branch -m "release/v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Push the branch and open the pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.prepare.outputs.version }}
+        run: |
+          git push origin "release/v$VERSION"
+          node scripts/changelog.mjs notes "$VERSION" > /tmp/notes.md
+          {
+            echo "## What and why"
+            echo
+            echo "Release \`v$VERSION\`. Prepared by the Release workflow, not by hand:"
+            echo "the version comes from the Conventional Commit subjects since the last"
+            echo "tag, and the entries below are the ones written under \`## Unreleased\`"
+            echo "as each change landed. Nothing here is generated from commit messages."
+            echo
+            echo "Merging this triggers the Publish workflow, which tags \`v$VERSION\`,"
+            echo "builds the store zip and attaches it to the GitHub release."
+            echo
+            echo "## Release notes"
+            echo
+            cat /tmp/notes.md
+            echo
+            echo "## Checklist"
+            echo
+            echo "- [ ] CI is green"
+            echo "- [ ] The notes above read as user-facing prose, not as a commit log"
+            echo "- [ ] Screenshots regenerated if the UI or the saved-file format changed (\`npm run screenshots\`)"
+            echo "- [ ] \`docs/manual/USER-MANUAL.md\` still describes what the store will serve"
+          } > /tmp/body.md
+          gh pr create \
+            --base main \
+            --head "release/v$VERSION" \
+            --title "chore(release): v$VERSION" \
+            --body-file /tmp/body.md

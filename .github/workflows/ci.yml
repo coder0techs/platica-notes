@@ -1,8 +1,9 @@
 name: CI
 
-# Runs the three checks that used to be pasted into a merge request by hand:
-# typecheck, unit tests, bundle. A red run is the same signal as a red local
-# run, so a pull request is not reviewable until this is green.
+# Runs the checks that used to be pasted into a merge request by hand, plus the
+# invariants the pull-request template used to ask a human to tick off. A red run
+# is the same signal as a red local run, so a pull request is not reviewable
+# until this is green.
 
 on:
   pull_request:
@@ -30,6 +31,11 @@ jobs:
 
       - run: npm ci
 
+      # Injection sinks, egress shapes, and one version across every file that
+      # carries one. See scripts/check-invariants.mjs for what is deliberately
+      # not machine-checkable.
+      - run: npm run check
+
       - run: npm run typecheck
 
       - run: npm test
@@ -45,3 +51,74 @@ jobs:
           test -f dist/content-meet.js
           test -f dist/meet-rtc-main.js
           ls -la dist
+
+      # A loadable build of every branch, without anyone having to clone and
+      # build it. docs/TEAM-INSTALL.md points here.
+      - run: node scripts/package.mjs
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: platica-notes-${{ github.sha }}
+          path: platica-notes-*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  guards:
+    # Rules that only mean something relative to the base branch, so they cannot
+    # live in the repo-wide invariant check.
+    name: pull request rules
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Version is bumped only by a release pull request
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [[ "$HEAD_REF" == release/* ]]; then
+            echo "Release pull request — a version bump is the point of it."
+            exit 0
+          fi
+          base_version=$(git show "origin/$BASE:package.json" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+          head_version=$(node -p "require('./package.json').version")
+          if [ "$base_version" != "$head_version" ]; then
+            echo "::error::This pull request changes the version ($base_version -> $head_version)."
+            echo "Contributors do not bump versions and do not create v* tags; the release"
+            echo "workflow owns them. Revert the version change."
+            exit 1
+          fi
+          echo "Version unchanged at $head_version."
+
+      - name: A change under src/ describes itself in the changelog
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          if [[ "$HEAD_REF" == release/* ]]; then
+            echo "Release pull request — it dates the changelog rather than adding to it."
+            exit 0
+          fi
+          if [[ ",$LABELS," == *,no-changelog,* ]]; then
+            echo "Labelled no-changelog — skipped."
+            exit 0
+          fi
+          if ! git diff --name-only "origin/$BASE...HEAD" | grep -q '^src/'; then
+            echo "No change under src/ — no changelog entry required."
+            exit 0
+          fi
+          before=$(git show "origin/$BASE:CHANGELOG.md" | node scripts/changelog.mjs count)
+          after=$(node scripts/changelog.mjs count < CHANGELOG.md)
+          if [ "$after" -le "$before" ]; then
+            echo "::error::This pull request changes src/ but adds no entry under '## Unreleased' in CHANGELOG.md."
+            echo "The release notes are hand-written prose shown to Chrome Web Store users; they"
+            echo "are never generated from commit subjects, so the entry has to be written here."
+            echo "Add one, or apply the 'no-changelog' label if the change really is invisible"
+            echo "to users (Unreleased entries: $before -> $after)."
+            exit 1
+          fi
+          echo "Unreleased entries: $before -> $after."

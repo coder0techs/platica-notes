@@ -29,8 +29,8 @@ than leaving it blank. -->
 - [ ] Conventional Commit subjects, in English, correctly typed (a feature is
       `feat`, so the release bump is right)
 - [ ] No version bump, no `public/manifest.json` version edit, no `v*` tag
-- [ ] User-visible change described above, so it can go into `CHANGELOG.md` at
-      release time
+- [ ] `CHANGELOG.md` has an entry under `## Unreleased` for anything a user could
+      notice, written as user-facing prose (it becomes the release notes verbatim)
 - [ ] Screenshots below, if the UI changed
 
 ## Screenshots

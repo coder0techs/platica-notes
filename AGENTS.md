@@ -23,9 +23,11 @@ that an agent reading nothing else still cannot do damage.
 3. **Honor the privacy flag on every output path** you add. Meetings marked
    private route to the private folder and are excluded from the debug log
    entirely.
-4. **Do not bump versions or create tags.** `npm run release` owns
-   `package.json` and `public/manifest.json` versions, and only the maintainer
-   runs it.
+4. **Do not bump versions or create tags.** The Release workflow owns the
+   version in `package.json`, `public/manifest.json` and `package-lock.json`, and
+   CI fails a pull request that changes one outside a `release/*` branch. Do add
+   a `CHANGELOG.md` entry under `## Unreleased` for anything a user could notice —
+   CI fails a pull request that touches `src/` without one.
 5. **English only**, everywhere in the repository: code, comments, docs, commit
    messages, branch names, pull request titles and descriptions.
 6. **Fictional names in fixtures.** Grace Hopper, Ada. Never real people, real
