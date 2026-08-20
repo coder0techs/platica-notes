@@ -195,6 +195,7 @@ document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
         restamp: true,
       })
       recordFunnel("config", true)
+      recordCaptureState("config")
       armFunnelSnapshots()
     }
     if (changed) resubscribeAll()
@@ -573,11 +574,53 @@ function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void
 // wrapper is the one thing another extension can take away from us.
 const adopted = new WeakSet<RTCPeerConnection>()
 
+// Counts and labels for the state snapshot below. A WeakSet cannot be counted
+// and edge events do not survive the log window, so the totals are kept here.
+let adoptedCount = 0
+const adoptedWhere: string[] = []
+const channelsSeen: string[] = []
+
 function adopt(pc: RTCPeerConnection, where: string): void {
   const attached = adoptPeerConnection(pc, adopted, (channel, owner) => {
     handleChannel(channel as RTCDataChannel, owner)
   })
-  if (attached) record({ phase: "pc-adopted", where, state: pc.connectionState })
+  if (!attached) return
+  adoptedCount++
+  if (!adoptedWhere.includes(where)) adoptedWhere.push(where)
+  record({ phase: "pc-adopted", where, state: pc.connectionState })
+}
+
+// Our wrapper of the global constructor, kept so the snapshot can report whether
+// it is still the one Meet would call. Another extension assigning the same
+// global after us is the whole failure mode, and this measures it instead of
+// inferring it from absences.
+let ourPeerConnection: unknown
+
+/**
+ * Everything about capture that is true right now, rather than the moment it
+ * became true.
+ *
+ * Three rounds of diagnosing a live failure were lost to the same trap: the
+ * events that matter — hooks installed, connection adopted, channel opened —
+ * all fire at page load or at join, while the debug log is sliced per meeting
+ * and starts later. Edge events fall outside it and the log looks empty. A
+ * snapshot taken on every config push lands inside every meeting's window.
+ */
+function recordCaptureState(reason: string): void {
+  record({
+    phase: "capture-state",
+    reason,
+    // The decisive one: false means another extension replaced the global
+    // constructor after we wrapped it, so remotely-opened channels reach us only
+    // through the prototype hooks.
+    ourConstructorInstalled: (window as unknown as { RTCPeerConnection?: unknown }).RTCPeerConnection === ourPeerConnection,
+    pcsAdopted: adoptedCount,
+    adoptedVia: adoptedWhere,
+    channels: channelsSeen,
+    mediaSessions: sessions.length,
+    subscribed: sessions.filter((s) => s.subscribed).length,
+    lang: captionLanguage,
+  })
 }
 
 // A channel can be created locally (createDataChannel) or arrive remotely
@@ -587,6 +630,7 @@ const seenChannels = new WeakSet<RTCDataChannel>()
 function handleChannel(ch: RTCDataChannel, pc: RTCPeerConnection): void {
   if (seenChannels.has(ch)) return
   seenChannels.add(ch)
+  if (!channelsSeen.includes(ch.label)) channelsSeen.push(ch.label)
   record({ phase: "channel", label: ch.label, state: ch.readyState, pc: pc.connectionState, id: ch.id })
   log("channel", ch.label)
   if (ch.label === "media-session") {
@@ -1028,6 +1072,7 @@ function install(): boolean {
   // Preserve statics (e.g. RTCPeerConnection.generateCertificate).
   Object.setPrototypeOf(Wrapped, OrigPC)
   w.RTCPeerConnection = Wrapped
+  ourPeerConnection = Wrapped
 
   log("installed")
   // Stamp the build so the very first debug event identifies which build ran.
