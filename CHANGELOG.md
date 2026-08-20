@@ -5,9 +5,12 @@ All notable changes to Plática Notes, newest first.
 ## Unreleased
 
 - **Recording now survives another meeting recorder in the same tab.** With a
-  second recording extension installed, Plática Notes captured nothing at all:
-  it never saw the channel Google Meet delivers captions on, so it never asked
-  for them. It no longer depends on being the extension that got there first.
+  second recording extension installed, Plática Notes captured nothing at all —
+  no speech, no participants, nothing. It saw one of the fourteen channels Google
+  Meet opens, and not the one captions arrive on, so it never asked for them. It
+  now attaches to each connection directly instead of assuming it is the only
+  extension on the page, and works alongside the other recorder rather than
+  needing it turned off.
 
 - **The in-meeting controls are down to what you need mid-call.** The bar showed
   eight buttons on top of your meeting; it now shows whether it is recording, your

@@ -593,6 +593,51 @@ function adopt(pc: RTCPeerConnection, where: string): void {
   adoptedCount++
   if (!adoptedWhere.includes(where)) adoptedWhere.push(where)
   record({ phase: "pc-adopted", where, state: pc.connectionState })
+  realPcPrototype ??= Object.getPrototypeOf(pc)
+  hookThisConnectionsCreateDataChannel(pc)
+}
+
+/**
+ * Intercept `createDataChannel` on this connection, whatever it currently
+ * resolves to.
+ *
+ * The prototype hook installed at startup is not enough, and measurement showed
+ * why. It is written against the global `RTCPeerConnection`, and an extension
+ * that loaded before us has already replaced that global with a plain function
+ * whose `.prototype` is an empty object unrelated to real connections — so the
+ * hook lands on nothing. With one such extension present we saw exactly one of
+ * Meet's fourteen channels: `collections`, the only one that arrives as a
+ * `datachannel` event. The thirteen Meet creates locally, including
+ * `media-session`, went straight past us, which is why no caption subscription
+ * was ever sent.
+ *
+ * Wrapping the property on the instance fixes it, and does so cooperatively.
+ * By the time we hold the connection, any other wrapper has already installed
+ * its own `createDataChannel`, so we chain on top of theirs: Meet calls ours, we
+ * see the channel, and we call theirs, which calls the browser's. Nobody is
+ * displaced and nobody has to lose.
+ */
+function hookThisConnectionsCreateDataChannel(pc: RTCPeerConnection): void {
+  try {
+    const current = pc.createDataChannel.bind(pc)
+    Object.defineProperty(pc, "createDataChannel", {
+      configurable: true,
+      writable: true,
+      value: function (this: RTCPeerConnection, ...args: unknown[]) {
+        const channel = (current as (...a: unknown[]) => RTCDataChannel)(...args)
+        try {
+          // handleChannel dedupes on the channel itself, so the startup
+          // prototype hook firing as well is harmless.
+          handleChannel(channel, pc)
+        } catch (err) {
+          record({ phase: "hook-error", where: "instance-createDataChannel", error: String(err) })
+        }
+        return channel
+      },
+    })
+  } catch (err) {
+    record({ phase: "hook-error", where: "instance-hook", error: String(err) })
+  }
 }
 
 // Our wrapper of the global constructor, kept so the snapshot can report whether
@@ -600,6 +645,12 @@ function adopt(pc: RTCPeerConnection, where: string): void {
 // global after us is the whole failure mode, and this measures it instead of
 // inferring it from absences.
 let ourPeerConnection: unknown
+// Our replacement for the prototype's createDataChannel, and the prototype a real
+// connection actually has. Comparing them says whether the startup patch landed
+// on anything: written against the global `RTCPeerConnection`, it lands on an
+// empty object when another extension replaced that global before us.
+let ourPrototypeCreate: unknown
+let realPcPrototype: object | null = null
 
 /**
  * Everything about capture that is true right now, rather than the moment it
@@ -617,6 +668,13 @@ function recordCaptureState(reason: string): void {
     // constructor after we wrapped it, so remotely-opened channels reach us only
     // through the prototype hooks.
     ourConstructorInstalled: (window as unknown as { RTCPeerConnection?: unknown }).RTCPeerConnection === ourPeerConnection,
+    // null until we hold a connection. false means the startup prototype patch
+    // went to an object no connection uses, so only the per-connection hook is
+    // doing any work.
+    prototypeHookLanded:
+      realPcPrototype === null
+        ? null
+        : (realPcPrototype as { createDataChannel?: unknown }).createDataChannel === ourPrototypeCreate,
     pcsAdopted: adoptedCount,
     adoptedVia: adoptedWhere,
     channels: channelsSeen,
@@ -769,7 +827,7 @@ function install(): boolean {
   // Catch channels Meet (or we) create locally; `this` is the owning pc.
   // Our code is try/caught so an exception here can never break Meet's call.
   const origCreate = RTCPeerConnection.prototype.createDataChannel
-  RTCPeerConnection.prototype.createDataChannel = function (this: RTCPeerConnection, ...args: unknown[]) {
+  ourPrototypeCreate = RTCPeerConnection.prototype.createDataChannel = function (this: RTCPeerConnection, ...args: unknown[]) {
     const ch: RTCDataChannel = (origCreate as any).apply(this, args)
     try {
       // `this` is a live connection, whoever constructed it. Take the listener
