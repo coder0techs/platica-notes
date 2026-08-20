@@ -10,6 +10,7 @@ import {
   shouldEndFromMedia,
   shouldFinalizeStaleSession,
   shouldFinishRearmWait,
+  shouldWarnCaptureIdle,
 } from "../src/content/platforms/meet-lifecycle"
 
 const GRACE = 8000
@@ -249,5 +250,47 @@ describe("shouldAskLanguage", () => {
   })
   it("does not ask while all UI is hidden", () => {
     expect(shouldAskLanguage(true, false, true)).toBe(false)
+  })
+})
+
+describe("shouldWarnCaptureIdle", () => {
+  const base = { armed: false, elapsedMs: 60_000, graceMs: 45_000, warned: false, paused: false }
+
+  it("warns when the grace has passed and capture never armed", () => {
+    expect(shouldWarnCaptureIdle(base)).toBe(true)
+  })
+
+  it("stays quiet while still inside the grace", () => {
+    expect(shouldWarnCaptureIdle({ ...base, elapsedMs: 44_999 })).toBe(false)
+  })
+
+  it("fires exactly at the grace boundary", () => {
+    expect(shouldWarnCaptureIdle({ ...base, elapsedMs: 45_000 })).toBe(true)
+  })
+
+  it("stays quiet when capture armed, however long the silence lasts", () => {
+    // The case this whole design exists for: everyone joined, nobody is talking.
+    // Captures nothing, and that is entirely normal.
+    expect(shouldWarnCaptureIdle({ ...base, armed: true })).toBe(false)
+    expect(shouldWarnCaptureIdle({ ...base, armed: true, elapsedMs: 3_600_000 })).toBe(false)
+  })
+
+  it("never warns twice for the same meeting", () => {
+    expect(shouldWarnCaptureIdle({ ...base, warned: true })).toBe(false)
+  })
+
+  it("stays quiet while the user has recording paused", () => {
+    expect(shouldWarnCaptureIdle({ ...base, paused: true })).toBe(false)
+  })
+
+  it("keeps quiet on every combination that is not a real fault", () => {
+    for (const armed of [true, false]) {
+      for (const warned of [true, false]) {
+        for (const paused of [true, false]) {
+          const fault = !armed && !warned && !paused
+          expect(shouldWarnCaptureIdle({ ...base, armed, warned, paused })).toBe(fault)
+        }
+      }
+    }
   })
 })

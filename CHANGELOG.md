@@ -4,6 +4,30 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+- **Recording now survives another meeting recorder in the same tab.** With a
+  second recording extension installed, Plática Notes captured nothing at all —
+  no speech, no participants, nothing. It saw one of the fourteen channels Google
+  Meet opens, and not the one captions arrive on, so it never asked for them. It
+  now attaches to each connection directly instead of assuming it is the only
+  extension on the page, and works alongside the other recorder rather than
+  needing it turned off.
+
+- **The in-meeting controls are down to what you need mid-call.** The bar showed
+  eight buttons on top of your meeting; it now shows whether it is recording, your
+  language buttons, and a menu. The recording pill also carries the padlock when a
+  meeting is private, so hiding that toggle does not hide the state. Everything
+  else — the full language list, the transcript panel, the private toggle — moved
+  into the menu. **Wipe** moved there too, and that one is not about tidiness: it
+  is the only control that destroys what has been captured, and it no longer sits
+  a stray click away from the language buttons. It still asks before it fires.
+
+- **A meeting that is not recording speech now says so.** This used to fail
+  silently: the meeting ran, the panel stayed empty, and the first sign was a
+  missing file afterwards. A notice now appears while there is still time to fix
+  it, and it names the usual cause — a second meeting-recorder extension in the
+  same tab, since only one of them can read Meet's captions. It does not fire on a
+  quiet meeting: a call where nobody has spoken yet is normal and stays silent.
+
 - **Links in the live panel are clickable.** A link someone pastes into the meeting
   chat used to be plain text you had to retype. It now opens in a new tab — never
   the current one, which would leave the call. Only `http` and `https` links become
@@ -18,6 +42,10 @@ All notable changes to Plática Notes, newest first.
   version and build, the browser, and the settings that decide what capture does.
   Diagnostic events from the first moments of a meeting are no longer dropped
   either — which is exactly the part worth reading when capture fails to start.
+  It also counts what happened to the captions: how many arrived, how many the
+  decoder could read, and how many were saved. A gap between those numbers is
+  the difference between "nobody spoke" and "something is broken", which until
+  now nothing recorded.
 
 ## 1.15.0 - 2026-08-20
 

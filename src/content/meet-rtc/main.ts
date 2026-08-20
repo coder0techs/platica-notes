@@ -20,6 +20,8 @@ import {
   toBytes,
 } from "./proto"
 import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "./bridge"
+import { adoptPeerConnection } from "./adopt"
+import { emptyFunnel } from "./funnel"
 import type { RtcConfig, RtcEvent } from "./bridge"
 import { makeChannelIdAllocator, shouldRecreateCaptions } from "./lifecycle"
 import { extractMeetBuild } from "./build-probe"
@@ -192,6 +194,9 @@ document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
         meetBuild: lastMeetBuild,
         restamp: true,
       })
+      recordFunnel("config")
+      recordCaptureState("config")
+      armFunnelSnapshots()
     }
     if (changed) resubscribeAll()
   } catch (err) {
@@ -256,6 +261,9 @@ function sendSubscribe(s: MediaSession): void {
     s.channel.send(buildAck(s.seq + 1) as unknown as ArrayBuffer)
     s.channel.send(buildAck(s.seq + 2) as unknown as ArrayBuffer)
     s.subscribed = true
+    // Tell the adapter capture is armed, so its watchdog stands down. Not
+    // debug-gated: this is a health signal, not diagnostics.
+    dispatch({ type: "capture-armed" })
     log("subscribe-sent", { op, lang: s.lang })
     record({ phase: "subscribe-sent", op, lang: s.lang })
   } catch (err) {
@@ -346,9 +354,66 @@ function resubscribeForCaptions(reason = "captions-reopened"): void {
 
 let firstTranscript = true
 
+// ---------- delivery funnel ----------
+// How many caption frames arrived on the wire, how many survived the decoder, and
+// how many were handed to the isolated world. Counting is unconditional: integers
+// cost nothing, and a funnel that only exists once debug is already on cannot
+// answer "where did the captions go" after the fact. Only recording it is gated.
+//
+// The number that matters is the gap. A comparable tool found a meeting with 165
+// frames on the wire and 13 lines stored — 152 lost in the hop between worlds,
+// entirely invisible until someone counted. A rising `dropped` is the other
+// signal: the decoder silently returning nothing usable is what a change to
+// Meet's wire format looks like from here.
+const funnel = emptyFunnel()
+let funnelTimer: ReturnType<typeof setInterval> | undefined
+// Ten seconds, not thirty: the question these snapshots exist to answer is
+// whether a channel ever appears, and it appears within seconds of joining.
+// Repetition is not a cost — an unchanging snapshot is deduped away.
+const FUNNEL_SNAPSHOT_MS = 10000
+
+/**
+ * @param reason why this snapshot is being taken
+ * @param always record even if the numbers have not moved
+ *
+ * The dedupe is only worth having for the periodic tick, where an idle meeting
+ * would otherwise repeat itself. It must NOT apply to the config snapshot: this
+ * counter lives for the whole page while the debug log is written per meeting,
+ * so a first call before the log window opens would set the baseline, silence
+ * every later call, and leave the meeting's log with no reading at all. That is
+ * exactly what happened on the first attempt to measure a broken meeting.
+ */
+function recordFunnel(reason: string): void {
+  record({ phase: "funnel", reason, ...funnel })
+}
+
+/**
+ * Start the periodic snapshot.
+ *
+ * Armed on config rather than on the first caption frame. Arming on the first
+ * frame meant a meeting that never received one — the failure worth measuring —
+ * produced no snapshots at all: the instrument only reported when there was
+ * nothing wrong.
+ */
+function armFunnelSnapshots(): void {
+  if (funnelTimer !== undefined) return
+  funnelTimer = setInterval(() => {
+    recordFunnel("tick")
+    // State can change while the counters stay at zero — a media-session channel
+    // opening ten seconds in is exactly that, and a single reading at config time
+    // cannot see it.
+    recordCaptureState("tick")
+  }, FUNNEL_SNAPSHOT_MS)
+}
+
 function handleCaptions(bytes: Uint8Array): void {
   const m = decodeTranscriptWrapper(bytes)
-  if (!m || !m.text || !m.deviceId || m.messageId === undefined || m.messageVersion === undefined) return
+  if (!m || !m.text || !m.deviceId || m.messageId === undefined || m.messageVersion === undefined) {
+    // Silent until now: a frame the decoder cannot use left no trace at all.
+    funnel.dropped++
+    return
+  }
+  funnel.decoded++
   if (firstTranscript) {
     firstTranscript = false
     log("first transcript", { lang: captionLanguage })
@@ -361,6 +426,7 @@ function handleCaptions(bytes: Uint8Array): void {
     messageVersion: m.messageVersion,
     text: m.text,
   })
+  funnel.dispatched++
 }
 
 // Chat now rides the collections channel (Google Meet moved it off meet_messages
@@ -474,6 +540,9 @@ function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void
   // processed strictly in arrival order.
   let queue: Promise<void> = Promise.resolve()
   ch.addEventListener("message", (e: MessageEvent) => {
+    // Counted here rather than in handleCaptions: this is the wire, before
+    // decompression can fail and before the decoder gets a say.
+    if (ch.label === "captions") funnel.wire++
     if (!(e.data instanceof ArrayBuffer) && !(e.data instanceof Uint8Array)) {
       record({ phase: "unexpected-payload", label: ch.label, type: typeof e.data })
       return
@@ -505,6 +574,117 @@ function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void
 
 // ---------- channel routing ----------
 
+// Connections we have already attached our datachannel listener to. Reached from
+// the constructor wrapper AND from every prototype hook, because the constructor
+// wrapper is the one thing another extension can take away from us.
+const adopted = new WeakSet<RTCPeerConnection>()
+
+// Counts and labels for the state snapshot below. A WeakSet cannot be counted
+// and edge events do not survive the log window, so the totals are kept here.
+let adoptedCount = 0
+const adoptedWhere: string[] = []
+const channelsSeen: string[] = []
+
+function adopt(pc: RTCPeerConnection, where: string): void {
+  const attached = adoptPeerConnection(pc, adopted, (channel, owner) => {
+    handleChannel(channel as RTCDataChannel, owner)
+  })
+  if (!attached) return
+  adoptedCount++
+  if (!adoptedWhere.includes(where)) adoptedWhere.push(where)
+  record({ phase: "pc-adopted", where, state: pc.connectionState })
+  realPcPrototype ??= Object.getPrototypeOf(pc)
+  hookThisConnectionsCreateDataChannel(pc)
+}
+
+/**
+ * Intercept `createDataChannel` on this connection, whatever it currently
+ * resolves to.
+ *
+ * The prototype hook installed at startup is not enough, and measurement showed
+ * why. It is written against the global `RTCPeerConnection`, and an extension
+ * that loaded before us has already replaced that global with a plain function
+ * whose `.prototype` is an empty object unrelated to real connections — so the
+ * hook lands on nothing. With one such extension present we saw exactly one of
+ * Meet's fourteen channels: `collections`, the only one that arrives as a
+ * `datachannel` event. The thirteen Meet creates locally, including
+ * `media-session`, went straight past us, which is why no caption subscription
+ * was ever sent.
+ *
+ * Wrapping the property on the instance fixes it, and does so cooperatively.
+ * By the time we hold the connection, any other wrapper has already installed
+ * its own `createDataChannel`, so we chain on top of theirs: Meet calls ours, we
+ * see the channel, and we call theirs, which calls the browser's. Nobody is
+ * displaced and nobody has to lose.
+ */
+function hookThisConnectionsCreateDataChannel(pc: RTCPeerConnection): void {
+  try {
+    const current = pc.createDataChannel.bind(pc)
+    Object.defineProperty(pc, "createDataChannel", {
+      configurable: true,
+      writable: true,
+      value: function (this: RTCPeerConnection, ...args: unknown[]) {
+        const channel = (current as (...a: unknown[]) => RTCDataChannel)(...args)
+        try {
+          // handleChannel dedupes on the channel itself, so the startup
+          // prototype hook firing as well is harmless.
+          handleChannel(channel, pc)
+        } catch (err) {
+          record({ phase: "hook-error", where: "instance-createDataChannel", error: String(err) })
+        }
+        return channel
+      },
+    })
+  } catch (err) {
+    record({ phase: "hook-error", where: "instance-hook", error: String(err) })
+  }
+}
+
+// Our wrapper of the global constructor, kept so the snapshot can report whether
+// it is still the one Meet would call. Another extension assigning the same
+// global after us is the whole failure mode, and this measures it instead of
+// inferring it from absences.
+let ourPeerConnection: unknown
+// Our replacement for the prototype's createDataChannel, and the prototype a real
+// connection actually has. Comparing them says whether the startup patch landed
+// on anything: written against the global `RTCPeerConnection`, it lands on an
+// empty object when another extension replaced that global before us.
+let ourPrototypeCreate: unknown
+let realPcPrototype: object | null = null
+
+/**
+ * Everything about capture that is true right now, rather than the moment it
+ * became true.
+ *
+ * Three rounds of diagnosing a live failure were lost to the same trap: the
+ * events that matter — hooks installed, connection adopted, channel opened —
+ * all fire at page load or at join, while the debug log is sliced per meeting
+ * and starts later. Edge events fall outside it and the log looks empty. A
+ * snapshot taken on every config push lands inside every meeting's window.
+ */
+function recordCaptureState(reason: string): void {
+  const state = {
+    // The decisive one: false means another extension replaced the global
+    // constructor after we wrapped it, so remotely-opened channels reach us only
+    // through the prototype hooks.
+    ourConstructorInstalled: (window as unknown as { RTCPeerConnection?: unknown }).RTCPeerConnection === ourPeerConnection,
+    // null until we hold a connection. false means the startup prototype patch
+    // went to an object no connection uses, so only the per-connection hook is
+    // doing any work.
+    prototypeHookLanded:
+      realPcPrototype === null
+        ? null
+        : (realPcPrototype as { createDataChannel?: unknown }).createDataChannel === ourPrototypeCreate,
+    pcsAdopted: adoptedCount,
+    adoptedVia: adoptedWhere,
+    channels: channelsSeen,
+    mediaSessions: sessions.length,
+    subscribed: sessions.filter((s) => s.subscribed).length,
+    lang: captionLanguage,
+  }
+  record({ phase: "capture-state", reason, ...state })
+}
+
 // A channel can be created locally (createDataChannel) or arrive remotely
 // (datachannel event); both paths funnel here with the owning pc.
 const seenChannels = new WeakSet<RTCDataChannel>()
@@ -512,6 +692,7 @@ const seenChannels = new WeakSet<RTCDataChannel>()
 function handleChannel(ch: RTCDataChannel, pc: RTCPeerConnection): void {
   if (seenChannels.has(ch)) return
   seenChannels.add(ch)
+  if (!channelsSeen.includes(ch.label)) channelsSeen.push(ch.label)
   record({ phase: "channel", label: ch.label, state: ch.readyState, pc: pc.connectionState, id: ch.id })
   log("channel", ch.label)
   if (ch.label === "media-session") {
@@ -646,15 +827,31 @@ function install(): boolean {
   // Catch channels Meet (or we) create locally; `this` is the owning pc.
   // Our code is try/caught so an exception here can never break Meet's call.
   const origCreate = RTCPeerConnection.prototype.createDataChannel
-  RTCPeerConnection.prototype.createDataChannel = function (this: RTCPeerConnection, ...args: unknown[]) {
+  ourPrototypeCreate = RTCPeerConnection.prototype.createDataChannel = function (this: RTCPeerConnection, ...args: unknown[]) {
     const ch: RTCDataChannel = (origCreate as any).apply(this, args)
     try {
+      // `this` is a live connection, whoever constructed it. Take the listener
+      // seat here in case our constructor wrapper was bypassed.
+      adopt(this, "createDataChannel")
       handleChannel(ch, this)
     } catch (err) {
       record({ phase: "hook-error", where: "createDataChannel", error: String(err) })
     }
     return ch
   }
+
+  // Earliest reliable touch point: Meet always answers an offer, and it does so
+  // before the remote channels open. createDataChannel only helps if Meet happens
+  // to create one locally first, which is not guaranteed.
+  const origSetRemote = RTCPeerConnection.prototype.setRemoteDescription
+  RTCPeerConnection.prototype.setRemoteDescription = function (this: RTCPeerConnection, ...args: unknown[]) {
+    try {
+      adopt(this, "setRemoteDescription")
+    } catch (err) {
+      record({ phase: "hook-error", where: "setRemoteDescription", error: String(err) })
+    }
+    return (origSetRemote as any).apply(this, args)
+  } as typeof RTCPeerConnection.prototype.setRemoteDescription
 
   // RPC response capture (debug-gated via record()). Meet does NOT include the
   // local user's own device in the `collections` roster channel, so transcript
@@ -927,13 +1124,7 @@ function install(): boolean {
     try {
       log("pc-created")
       record({ phase: "pc-created" })
-      conn.addEventListener("datachannel", (ev: RTCDataChannelEvent) => {
-        try {
-          handleChannel(ev.channel, conn)
-        } catch (err) {
-          record({ phase: "hook-error", where: "datachannel", error: String(err) })
-        }
-      })
+      adopt(conn, "constructor")
     } catch (err) {
       record({ phase: "hook-error", where: "pc-constructor", error: String(err) })
     }
@@ -943,6 +1134,7 @@ function install(): boolean {
   // Preserve statics (e.g. RTCPeerConnection.generateCertificate).
   Object.setPrototypeOf(Wrapped, OrigPC)
   w.RTCPeerConnection = Wrapped
+  ourPeerConnection = Wrapped
 
   log("installed")
   // Stamp the build so the very first debug event identifies which build ran.
