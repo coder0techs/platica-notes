@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { bumpLevel, cutChangelog, nextVersion, sectionFor, unreleasedBody } from "../scripts/lib/release-lib.mjs"
+import {
+  bumpLevel,
+  cutChangelog,
+  nextVersion,
+  replaceVersion,
+  sectionFor,
+  unreleasedBody,
+} from "../scripts/lib/release-lib.mjs"
 
 const CHANGELOG = `# Release notes
 
@@ -155,5 +162,43 @@ describe("sectionFor", () => {
 
   it("throws for a version with no section", () => {
     expect(() => sectionFor(CHANGELOG, "9.9.9")).toThrow(/no section/)
+  })
+})
+
+describe("replaceVersion", () => {
+  // public/manifest.json is hand-formatted with its arrays on one line. A
+  // JSON round-trip exploded them and turned a one-line release commit into a
+  // 41-line reformat, which is what this function exists to avoid.
+  const MANIFEST = `{
+  "manifest_version": 3,
+  "name": "Plática Notes",
+  "version": "1.14.1",
+  "permissions": ["storage", "unlimitedStorage", "downloads"],
+  "host_permissions": ["https://meet.google.com/*"]
+}
+`
+
+  it("changes only the version line", () => {
+    const out = replaceVersion(MANIFEST, "1.14.1", "1.15.0")
+    expect(out).toBe(MANIFEST.replace('"version": "1.14.1"', '"version": "1.15.0"'))
+  })
+
+  it("leaves hand-formatted inline arrays alone", () => {
+    const out = replaceVersion(MANIFEST, "1.14.1", "1.15.0")
+    expect(out).toContain('"permissions": ["storage", "unlimitedStorage", "downloads"]')
+    expect(out).toContain('"host_permissions": ["https://meet.google.com/*"]')
+  })
+
+  it("replaces both occurrences in a lockfile when two are expected", () => {
+    const lock = '{\n  "version": "1.0.0",\n  "packages": {\n    "": {\n      "version": "1.0.0"\n    }\n  }\n}\n'
+    const out = replaceVersion(lock, "1.0.0", "1.0.1", 2)
+    expect(out).not.toContain("1.0.0")
+    expect(out.split('"version": "1.0.1"').length - 1).toBe(2)
+  })
+
+  it("refuses when the count does not match, rather than guessing", () => {
+    const lock = '{\n  "version": "1.0.0",\n  "packages": {\n    "": {\n      "version": "1.0.0"\n    }\n  }\n}\n'
+    expect(() => replaceVersion(lock, "1.0.0", "1.0.1", 1)).toThrow(/found 2/)
+    expect(() => replaceVersion(MANIFEST, "9.9.9", "1.0.0")).toThrow(/found 0/)
   })
 })
