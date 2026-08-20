@@ -82,7 +82,20 @@ gh workflow run store.yml -f action=staged-rollout -f percentage=10
 The default is **draft**: the build is uploaded and nothing is live. That is
 deliberate. A submitted build reaches every existing user once Google approves
 it, and the review queue is not a place to discover that the wrong artifact went
-up. `staged-rollout` is the middle ground — a percentage of users first.
+up.
+
+The three ways out of draft differ in more than degree:
+
+| Action | What happens after Google approves |
+|---|---|
+| `submit-for-review` | Goes live to everyone, by itself |
+| `staged-rollout` | Waits for you to release it, then reaches N% of users |
+| (stay a draft) | Nothing; you publish from the dashboard |
+
+`staged-rollout` is the cautious one: review is out of the way, but the moment of
+going live is still yours. The percentage picks a **random** slice of users —
+there is no way to name who gets it, and no way to send a version only to
+yourself. For that, see below.
 
 The workflow uploads the zip attached to the GitHub release, not a fresh build,
 so what reaches the store is exactly the artifact that CI produced and that you
@@ -107,6 +120,27 @@ The same call runs locally, if the key is on the machine:
 ```bash
 CWS_PUBLISHER_ID=... CWS_SERVICE_ACCOUNT_KEY="$(cat key.json)" node scripts/store.mjs status
 ```
+
+## Testing a build on yourself first
+
+You cannot ship a version to only yourself through this listing. Worth knowing
+because the obvious guesses do not work:
+
+- **Staged rollout** picks a random percentage of users. With a small user base
+  10% might be nobody, and it might not be you.
+- **Trusted testers** is a property of an *item's visibility*, not of a version.
+  Switching this item to private would take it away from everyone who has it. A
+  parallel test track means a **second store item**, with its own id, uploaded to
+  separately.
+- The v2 API has no audience field at all: `publishType` and `deployPercentage`
+  are the only controls. (v1 had `publishTarget=trustedTesters`, and v1 is
+  switched off on 15 October 2026.)
+
+What does work, and takes a minute: download the zip from the GitHub release,
+unzip it, and load the folder at `chrome://extensions` with Developer mode on.
+That is a real install of exactly the artifact that would go to the store, and
+it is what `docs/TEAM-INSTALL.md` describes. It runs beside the store copy as a
+separate extension, so its history and settings are its own.
 
 ## What is still manual
 

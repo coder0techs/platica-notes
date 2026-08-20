@@ -1,6 +1,6 @@
 // Talk to the Chrome Web Store Publish API (v2).
 //
-//   node scripts/store.mjs status
+//   node scripts/store.mjs status [--json]
 //   node scripts/store.mjs upload <zip>
 //   node scripts/store.mjs publish [--percentage N]
 //
@@ -51,6 +51,33 @@ export function signedAssertion(key, now) {
   const signer = createSign("RSA-SHA256")
   signer.update(`${header}.${claims}`)
   return `${header}.${claims}.${signer.sign(key.private_key, "base64url")}`
+}
+
+/**
+ * One-line-per-revision summary of a fetchStatus response.
+ *
+ * Printing the raw JSON looks fine locally and is unreadable in Actions: GitHub
+ * masks each line of a multi-line secret separately, and a service account key
+ * contains lines that are just `{` and `}`, so every brace in the log turns into
+ * ***. Nothing leaks; it is simply illegible exactly when something has gone
+ * wrong. Revision keys are matched by suffix rather than listed, so a field the
+ * API adds later still shows up.
+ *
+ * @param {Record<string, any>} status
+ * @returns {string}
+ */
+export function summariseStatus(status) {
+  const lines = [`item: ${status.itemId ?? "unknown"}`]
+  for (const [key, value] of Object.entries(status)) {
+    if (!key.endsWith("RevisionStatus") || !value || typeof value !== "object") continue
+    const channels = (value.distributionChannels ?? [])
+      .map((c) => `${c.crxVersion ?? "?"} to ${c.deployPercentage ?? "?"}% of users`)
+      .join("; ")
+    const label = key.replace(/RevisionStatus$/, "").replace(/([A-Z])/g, " $1").trim().toLowerCase()
+    lines.push(`${label}: ${value.state ?? "unknown"}${channels ? ` — ${channels}` : ""}`)
+  }
+  if (lines.length === 1) lines.push("no revision information returned")
+  return lines.join("\n")
 }
 
 const serviceAccountKey = () => {
@@ -104,14 +131,14 @@ const call = async (url, options, what) => {
 // run a command.
 const runningDirectly = argv[1] && fileURLToPath(import.meta.url) === argv[1]
 
-const status = async () => {
+const status = async (args = []) => {
   const token = await accessToken()
   const result = await call(
     `${API}/v2/${item()}:fetchStatus`,
     { headers: { authorization: `Bearer ${token}` } },
     "fetchStatus",
   )
-  console.log(JSON.stringify(result, null, 2))
+  console.log(args.includes("--json") ? JSON.stringify(result, null, 2) : summariseStatus(result))
 }
 
 const upload = async (zip) => {
@@ -128,8 +155,8 @@ const upload = async (zip) => {
     },
     "upload",
   )
-  console.log(JSON.stringify(result, null, 2))
-  console.log("\nUploaded as a draft. It is not live until it is published and passes review.")
+  console.log(`Uploaded: ${result.itemId ?? EXTENSION_ID}${result.state ? ` (${result.state})` : ""}`)
+  console.log("It sits as a draft. Nothing is live until it is published and passes review.")
 }
 
 const publish = async (args) => {
@@ -138,8 +165,10 @@ const publish = async (args) => {
   if (percentage !== null && (!Number.isInteger(percentage) || percentage < 1 || percentage > 100)) {
     die("--percentage takes a whole number from 1 to 100.")
   }
-  // A staged publish reaches a slice of users first; a default publish reaches
-  // everyone once review passes.
+  // DEFAULT_PUBLISH goes live by itself the moment review passes. STAGED_PUBLISH
+  // still goes through review, but afterwards it waits for the developer to
+  // release it, and deployPercentage decides how much of the user base it then
+  // reaches. The percentage picks a random slice — there is no way to name who.
   const body =
     percentage === null
       ? { publishType: "DEFAULT_PUBLISH" }
@@ -156,16 +185,17 @@ const publish = async (args) => {
     },
     "publish",
   )
-  console.log(JSON.stringify(result, null, 2))
+  console.log(`Submitted: ${result.itemId ?? EXTENSION_ID}${result.state ? ` (${result.state})` : ""}`)
   if (result.warningInfo?.warnings?.length) {
+    for (const w of result.warningInfo.warnings) console.log(`  warning: ${w.reason} — ${w.description}`)
     console.log("\nThe store returned warnings; read them before assuming this went out cleanly.")
   }
 }
 
 if (runningDirectly) {
   const [command, ...rest] = argv.slice(2)
-  if (command === "status") await status()
+  if (command === "status") await status(rest)
   else if (command === "upload") await upload(rest[0])
   else if (command === "publish") await publish(rest)
-  else die("usage: node scripts/store.mjs status | upload <zip> | publish [--percentage N]")
+  else die("usage: node scripts/store.mjs status [--json] | upload <zip> | publish [--percentage N]")
 }
