@@ -1,0 +1,107 @@
+name: Publish
+
+# Step two of two. Tags the release and publishes it, once the release commit is
+# actually on `main`.
+#
+# The trigger is deliberately not a commit-message match: `main` takes merge
+# commits, so the release commit is not the head commit after a merge. Instead
+# this asks the only question that matters — does `main`'s version already have a
+# tag? If not, this is a release; if it does, the run is a no-op. That also makes
+# the workflow safe to re-run.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: tag, package and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Is this version already released?
+        id: check
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$version" > /dev/null; then
+            echo "v$version is already tagged — nothing to publish."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$version has no tag yet — publishing."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v7
+        if: steps.check.outputs.release == 'true'
+        with:
+          node-version: 26
+          cache: npm
+
+      - if: steps.check.outputs.release == 'true'
+        run: npm ci
+
+      # npm run package chains typecheck + tests + build before zipping, so the
+      # artifact that reaches the store cannot come from a tree that fails.
+      - if: steps.check.outputs.release == 'true'
+        run: npm run check
+
+      - if: steps.check.outputs.release == 'true'
+        run: npm run package
+
+      - name: Tag the release
+        if: steps.check.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          git config user.name "coder0techs"
+          git config user.email "218495908+coder0techs@users.noreply.github.com"
+          # Annotated, not lightweight: `git push --follow-tags` only follows
+          # annotated tags, and a lightweight one silently stayed local before.
+          git tag -a "v$VERSION" -m "v$VERSION"
+          git push origin "v$VERSION"
+
+      - name: Publish the GitHub release with the store zip
+        if: steps.check.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          node scripts/changelog.mjs notes "$VERSION" > /tmp/notes.md
+          {
+            cat /tmp/notes.md
+            echo
+            echo "---"
+            echo
+            echo "\`platica-notes-$VERSION.zip\` below is the Chrome Web Store upload artifact,"
+            echo "built from this tag. To run this version unpacked, unzip it and load the folder"
+            echo "at \`chrome://extensions\` with Developer mode on."
+          } > /tmp/body.md
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --notes-file /tmp/body.md \
+            --verify-tag \
+            "platica-notes-$VERSION.zip"
+
+      - name: Summary
+        if: steps.check.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          {
+            echo "### Published v$VERSION"
+            echo
+            echo "The zip is attached to the release. The only step left is uploading it in the"
+            echo "Chrome Web Store Developer Dashboard."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -7,7 +7,10 @@
     "types": ["chrome"],
     "strict": true,
     "noEmit": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    // The release helpers under scripts/ are plain .mjs so node can run them
+    // directly; allowJs lets the tests import them with real types.
+    "allowJs": true
   },
-  "include": ["src", "tests"]
+  "include": ["src", "tests", "scripts"]
 }

@@ -25,18 +25,25 @@ the top of the meeting, and leaving the call writes the transcript to
 
 ## Before you open a pull request
 
-Run the checks locally first. GitHub Actions runs the same three on every pull
+Run the checks locally first. GitHub Actions runs the same ones on every pull
 request (`.github/workflows/ci.yml`), so a failure is going to surface either
 way, and it is cheaper to see it here:
 
 ```bash
+npm run check
 npm run typecheck
 npm test
 npm run build
 ```
 
-`npm run package` chains all three and additionally zips `dist/`. Use it when
-your change could affect the shipped artifact.
+`npm run check` is the invariants: no HTML injection sinks, no new network egress,
+and one version across `package.json`, `public/manifest.json` and
+`package-lock.json`. It reports file and line, and it is the same script CI runs,
+so there is no version of "green locally, red in CI" here.
+
+`npm run package` chains all four and additionally zips `dist/`. Use it when your
+change could affect the shipped artifact — though CI already attaches a zip to
+every pull request as a build artifact, so you rarely need to.
 
 If you touched the in-meeting UI or the Meet integration, also verify it in a
 real meeting. A green suite does not prove the DOM contract still holds, and
@@ -101,15 +108,25 @@ Past "does it work", in this order, all from CLAUDE.md:
 - **Fixtures use fictional names** (Grace Hopper, Ada), never real people, and
   no real meeting links or ticket ids.
 
-## Releases are the maintainer's job
+## Releases are automated; the changelog entry is yours
 
-Do not bump the version, do not edit the version in `public/manifest.json`, and
-do not create `v*` tags in a pull request. `npm run release` does all of it in
-one step, and the number has to line up with what gets uploaded to the store.
+Do not bump the version, do not edit the version in `public/manifest.json` or
+`package-lock.json`, and do not create `v*` tags. The Release workflow owns all
+of that, and CI fails a pull request that changes a version outside a
+`release/*` branch.
 
-Describe your user-visible change in the PR description. The maintainer places
-it into `CHANGELOG.md` when cutting the release, so contributors do not conflict
-with each other in that file.
+What you do own is **the changelog entry**. Add a bullet under `## Unreleased` in
+`CHANGELOG.md`, in this pull request, describing the change the way a user of the
+extension would experience it. CI fails a pull request that touches `src/`
+without one; if the change genuinely cannot be noticed by a user, ask for the
+`no-changelog` label instead of writing a filler entry.
+
+Write it for the audience it actually reaches. That section becomes the release
+notes on the GitHub release and the text in the store, verbatim — nothing is
+generated from commit subjects, precisely so the notes read like prose and not
+like a commit log. Compare "**Saved meetings are filed by month.** Transcripts
+now land in a `YYYY-MM` subfolder…" with what `fix(export): month subfolders`
+would have produced.
 
 ## Reporting bugs and proposing features
 
