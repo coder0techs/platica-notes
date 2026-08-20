@@ -1,0 +1,84 @@
+name: PR rules
+
+# Rules that only mean something relative to the base branch, so they cannot live
+# in the repo-wide invariant check that `npm run check` runs.
+#
+# Separate from ci.yml because of the `no-changelog` escape hatch. A label change
+# has to re-evaluate the rule — otherwise someone applies the label, nothing
+# re-runs, and the pull request stays red until they push an empty commit. That
+# needs the `labeled` / `unlabeled` triggers, and putting those on ci.yml would
+# rebuild and re-zip the whole extension every time a label is touched.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-rules-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  guards:
+    name: pull request rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Version is bumped only by a release pull request
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [[ "$HEAD_REF" == release/* ]]; then
+            echo "Release pull request — a version bump is the point of it."
+            exit 0
+          fi
+          base_version=$(git show "origin/$BASE:package.json" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+          head_version=$(node -p "require('./package.json').version")
+          if [ "$base_version" != "$head_version" ]; then
+            echo "::error::This pull request changes the version ($base_version -> $head_version)."
+            echo "Contributors do not bump versions and do not create v* tags; the release"
+            echo "workflow owns them. Revert the version change."
+            exit 1
+          fi
+          echo "Version unchanged at $head_version."
+
+      - name: A change under src/ describes itself in the changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [[ "$HEAD_REF" == release/* ]]; then
+            echo "Release pull request — it dates the changelog rather than adding to it."
+            exit 0
+          fi
+          # Read the labels live rather than from the event payload, so that a
+          # re-run of an older run also sees the current state.
+          if gh api "repos/$REPO/issues/$PR/labels" --jq '.[].name' | grep -qx 'no-changelog'; then
+            echo "Labelled no-changelog — skipped."
+            exit 0
+          fi
+          if ! git diff --name-only "origin/$BASE...HEAD" | grep -q '^src/'; then
+            echo "No change under src/ — no changelog entry required."
+            exit 0
+          fi
+          before=$(git show "origin/$BASE:CHANGELOG.md" | node scripts/changelog.mjs count)
+          after=$(node scripts/changelog.mjs count < CHANGELOG.md)
+          if [ "$after" -le "$before" ]; then
+            echo "::error::This pull request changes src/ but adds no entry under '## Unreleased' in CHANGELOG.md."
+            echo "The release notes are hand-written prose shown to Chrome Web Store users; they"
+            echo "are never generated from commit subjects, so the entry has to be written here."
+            echo "Add one, or apply the 'no-changelog' label if the change really is invisible"
+            echo "to users (Unreleased entries: $before -> $after)."
+            exit 1
+          fi
+          echo "Unreleased entries: $before -> $after."
