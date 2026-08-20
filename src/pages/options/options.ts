@@ -33,41 +33,58 @@ for (const lang of CAPTION_LANGUAGES) {
   captionLanguage.appendChild(opt)
 }
 
-// One checkbox chip per language. The pinned block follows this list's order
-// rather than the order they were ticked: a stable, predictable shortlist beats
-// one that silently reshuffles when a box is unticked and ticked again.
-const favouriteBoxes: HTMLInputElement[] = []
+// A toggle button per language, showing the same flag and code as the in-meeting
+// buttons they turn on — the setting looks like the thing it controls. Chosen
+// order follows this list rather than click order: a stable shortlist beats one
+// that reshuffles when a language is switched off and on again.
+const favouriteButtons: HTMLButtonElement[] = []
+const chosen = new Set<string>()
+
 for (const lang of CAPTION_LANGUAGES) {
-  const label = document.createElement("label")
-  const box = document.createElement("input")
-  box.type = "checkbox"
-  box.value = lang.value
-  const text = document.createElement("span")
-  text.textContent = lang.label
-  label.append(box, text)
-  favouriteLanguages.append(label)
-  favouriteBoxes.push(box)
-  box.addEventListener("change", () => {
-    if (box.checked && chosenFavourites().length > MAX_FAVOURITE_LANGUAGES) {
-      // Already at the cap: refuse this one rather than silently dropping
-      // someone else's choice.
-      box.checked = false
-      return
-    }
-    applyFavouriteCap()
+  const button = document.createElement("button")
+  button.type = "button"
+  button.className = "lang-chip"
+  button.value = lang.value
+  button.setAttribute("aria-pressed", "false")
+  button.title = lang.label
+
+  const flag = document.createElement("span")
+  flag.className = "lang-chip-flag"
+  // Flag and code together: Windows renders no flag for a regional-indicator
+  // pair, so the code carries the meaning there.
+  flag.textContent = lang.flag
+  const code = document.createElement("span")
+  code.className = "lang-chip-code"
+  code.textContent = lang.code
+  const name = document.createElement("span")
+  name.className = "lang-chip-name"
+  name.textContent = lang.label
+
+  button.append(flag, code, name)
+  favouriteLanguages.append(button)
+  favouriteButtons.push(button)
+
+  button.addEventListener("click", () => {
+    if (chosen.has(lang.value)) chosen.delete(lang.value)
+    else if (chosen.size < MAX_FAVOURITE_LANGUAGES) chosen.add(lang.value)
+    else return // at the cap: refuse rather than silently evicting someone's choice
+    syncFavourites()
     void saveSettings({ favouriteLanguages: chosenFavourites() })
   })
 }
 
-const chosenFavourites = (): string[] => favouriteBoxes.filter((b) => b.checked).map((b) => b.value)
+/** In list order, not click order. */
+const chosenFavourites = (): string[] =>
+  CAPTION_LANGUAGES.filter((l) => chosen.has(l.value)).map((l) => l.value)
 
-// At the cap, the remaining boxes go visibly inert instead of failing on click.
-function applyFavouriteCap(): void {
-  const full = chosenFavourites().length >= MAX_FAVOURITE_LANGUAGES
-  for (const box of favouriteBoxes) {
-    const disabled = full && !box.checked
-    box.disabled = disabled
-    box.parentElement?.classList.toggle("is-full", disabled)
+function syncFavourites(): void {
+  const full = chosen.size >= MAX_FAVOURITE_LANGUAGES
+  for (const button of favouriteButtons) {
+    const on = chosen.has(button.value)
+    button.setAttribute("aria-pressed", String(on))
+    button.classList.toggle("is-on", on)
+    // At the cap the rest go visibly inert rather than failing on click.
+    button.disabled = full && !on
   }
 }
 
@@ -89,9 +106,9 @@ async function init(): Promise<void> {
   captionAlternatives.checked = settings.captionAlternatives
   mergeRejoins.checked = settings.mergeRejoins
   askLanguage.checked = settings.askLanguageEachMeeting
-  const favourites = new Set(settings.favouriteLanguages)
-  for (const box of favouriteBoxes) box.checked = favourites.has(box.value)
-  applyFavouriteCap()
+  chosen.clear()
+  for (const value of settings.favouriteLanguages.slice(0, MAX_FAVOURITE_LANGUAGES)) chosen.add(value)
+  syncFavourites()
   folderPublic.value = settings.folderPublic
   folderPrivate.value = settings.folderPrivate
   folderDebug.value = settings.folderDebug

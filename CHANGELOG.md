@@ -16,10 +16,11 @@ All notable changes to Plática Notes, newest first.
   the current one, which would leave the call. Only `http` and `https` links become
   clickable, nothing is prefetched or previewed, and the address the meeting is on
   is not passed to the site you open.
-- **Pin the languages you actually use.** Settings has a new row: tick up to three
-  languages and they sit at the top of every caption-language list, in the
-  in-meeting pill and in the start-of-meeting prompt. Nothing is hidden — the full
-  list is still there, just below the ones you picked.
+- **A button per language you actually use.** Pick up to three in Settings and each
+  one gets its own flag button in the meeting, so switching the recording language
+  is a single click instead of a trip through a dropdown of fourteen. Nothing is
+  hidden — the full list stays in the language pill for the meeting you did not see
+  coming.
 - **The debug log now says what produced it.** Each log starts with the extension
   version and build, the browser, and the settings that decide what capture does.
   Diagnostic events from the first moments of a meeting are no longer dropped
