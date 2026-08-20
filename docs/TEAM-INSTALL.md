@@ -17,7 +17,7 @@ unpacked install is the only way to get pre-release code onto a teammate's brows
 
 `platica-notes-<version>.zip`, the same artifact `npm run package` builds for the
 store. It is git-ignored, so hand it over out-of-band (Slack, Drive) or attach it to
-a GitLab release for the version tag.
+a GitHub release for the version tag.
 
 ## Install (Chrome or Arc)
 

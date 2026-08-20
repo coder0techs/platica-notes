@@ -23,10 +23,11 @@ To see it capture for real, join a Google Meet call. The control pills appear at
 the top of the meeting, and leaving the call writes the transcript to
 `Downloads/meetings/platica-notes/`.
 
-## Before you open a merge request
+## Before you open a pull request
 
-**There is no CI pipeline in this project yet**, so nothing runs these for you.
-Run them and put the result in the merge request:
+Run the checks locally first. GitHub Actions runs the same three on every pull
+request (`.github/workflows/ci.yml`), so a failure is going to surface either
+way, and it is cheaper to see it here:
 
 ```bash
 npm run typecheck
@@ -60,26 +61,26 @@ to the Chrome Web Store.
 Two rules that are easy to trip over:
 
 - **Everything written in this repository is in English**: commit subjects and
-  bodies, branch names, code, comments, docs, merge request titles and
+  bodies, branch names, code, comments, docs, pull request titles and
   descriptions. That includes quoted UI strings. Reference the key or translate
   the label, never paste the original.
-- **Commit with your work email.** A push rule rejects commits whose author
-  address is outside the organisation's allowed domains, and the rejection is
-  not self-explanatory when it happens. Run `git config user.email` before your
-  first commit here. The same rule blocks anything that looks like a secret, and
-  any file named `.env`.
+- **Never commit a secret or an `.env` file.** Nothing in this repository needs
+  one, and this repository is public: a pushed secret is a leaked secret, and
+  rewriting it out of history does not un-leak it. GitHub secret scanning is on,
+  but treat it as a backstop, not a filter.
 
-## Merge requests
+## Pull requests
 
-- Target `main`. It is protected: no direct pushes, no force pushes.
-- The description template loads itself when you open the MR. Keep the
-  checklist and tick only what you actually did, command output included.
-- Open it as a **Draft** while it is still moving. That stops a review of a
+- Target `main`. It is protected: no direct pushes, no force pushes, and CI must
+  be green before the merge button works.
+- The description template loads itself when you open the PR. Keep the checklist
+  and tick only what you actually did.
+- Open it as a **draft** while it is still moving. That stops a review of a
   moving target and tells everyone else which files are taken.
-- The maintainer reviews and merges. Do not merge your own MR even if the button
+- The maintainer reviews and merges. Do not merge your own PR even if the button
   is enabled for you.
 - The source branch is deleted automatically on merge.
-- One MR, one concern. A refactor plus a feature in one diff is a diff nobody
+- One PR, one concern. A refactor plus a feature in one diff is a diff nobody
   can review honestly.
 
 ### What a reviewer looks at
@@ -103,10 +104,10 @@ Past "does it work", in this order, all from CLAUDE.md:
 ## Releases are the maintainer's job
 
 Do not bump the version, do not edit the version in `public/manifest.json`, and
-do not create `v*` tags in a merge request. `npm run release` does all of it in
+do not create `v*` tags in a pull request. `npm run release` does all of it in
 one step, and the number has to line up with what gets uploaded to the store.
 
-Describe your user-visible change in the MR description. The maintainer places
+Describe your user-visible change in the PR description. The maintainer places
 it into `CHANGELOG.md` when cutting the release, so contributors do not conflict
 with each other in that file.
 
@@ -143,19 +144,20 @@ rediscovering them.
 `node_modules/`, `dist/`, `coverage/`, `*.zip`, the generated manual PDF, and
 `.claude/` plus `.superpowers/`. The last two are local agent state, including a
 session log that is personal working notes rather than project history. Do not
-commit them and do not add them to a merge request.
+commit them and do not add them to a pull request.
 
 The build artifact is regenerable, so it is never committed. To hand a build to
-someone, attach the zip to a GitLab release for the tag, or send it out of band
+someone, attach the zip to a GitHub release for the tag, or send it out of band
 as `docs/TEAM-INSTALL.md` describes.
 
 ## If you work with an AI agent
 
 Point it at [AGENTS.md](AGENTS.md), which routes it to CLAUDE.md and this file.
-Two expectations, because they are where agent-authored MRs usually fail review:
+Two expectations, because they are where agent-authored PRs usually fail review:
 
 - The invariants above are not suggestions to be traded off against
-  convenience. An MR that adds a network call to make a feature simpler gets
+  convenience. A PR that adds a network call to make a feature simpler gets
   closed, not discussed.
-- Every claim that something works needs the command output that shows it. A
-  merge request saying "tests pass" without the run is treated as untested.
+- Every claim that something works needs the evidence that shows it. CI covers
+  typecheck, tests and build; anything it cannot see, such as a live-meeting
+  check, needs the actual observation, not the word "works".

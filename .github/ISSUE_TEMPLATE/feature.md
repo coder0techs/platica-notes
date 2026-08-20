@@ -1,3 +1,9 @@
+---
+name: Feature proposal
+about: Something the extension should be able to do
+labels: enhancement
+---
+
 ## The problem
 
 <!-- What is hard or impossible today, from a user's point of view. Not the

@@ -1,3 +1,9 @@
+---
+name: Bug report
+about: Something the extension does wrong
+labels: bug
+---
+
 ## What happened
 
 <!-- The wrong behaviour, in one or two sentences. -->

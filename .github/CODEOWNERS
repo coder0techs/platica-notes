@@ -1,0 +1,10 @@
+# Every change here is reviewed by the maintainer, so one catch-all rule is the
+# whole file. Its effect today is to request the maintainer's review
+# automatically on every pull request.
+#
+# It only *blocks* a merge once "Require review from Code Owners" is switched on
+# for the protected `main` branch in Settings > Branches. That setting is
+# deliberately not enabled: the maintainer works solo and would be blocked by
+# his own rule.
+
+* @coder0techs

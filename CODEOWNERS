@@ -1,8 +1,0 @@
-# Every change here is reviewed by the maintainer, so one catch-all rule is the
-# whole file. Its effect today is to pre-fill the reviewer on a merge request.
-#
-# It only *blocks* a merge once "Require approval from Code Owners" is switched
-# on for the protected `main` branch in Settings > Repository > Protected
-# branches. That setting is deliberately not enabled yet.
-
-* @alexander.rodriguez
