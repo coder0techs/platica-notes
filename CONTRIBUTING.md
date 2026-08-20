@@ -128,7 +128,8 @@ rather than redacting a real one.
 | `CLAUDE.md` | architecture, invariants, release steps |
 | `README.md` | user-facing documentation |
 | `CHANGELOG.md` | per-version history, newest first |
-| `PRIVACY.md` | the published privacy policy |
+| `PRIVACY.md` | the published privacy policy; the store's policy URL serves it |
+| `scripts/site.mjs` | assembles the GitHub Pages site from the built doc pages |
 | `docs/ROADMAP.md` | post-v1 backlog, ideas at varying stages of decidedness |
 | `docs/superpowers/specs/` | design documents, one per feature, dated |
 | `docs/superpowers/plans/` | implementation plans for those designs |

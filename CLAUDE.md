@@ -38,11 +38,13 @@ then "Load unpacked"). Reload it after each build.
 6. If a user-facing feature or setting changed, update `docs/manual/USER-MANUAL.md`
    and rebuild the PDF with `npm run manual`. It documents the **published**
    version, so write it against what the store actually serves, not the branch.
-7. **If `PRIVACY.md` changed, paste it into the published privacy-policy Google Doc
-   and re-publish it.** The store's policy URL serves that doc, not this file, so
-   editing only the repo silently leaves the public policy stale — which is exactly
-   what happened between 1.13.0 (the `chat.google.com` disclosure) and 1.14.0. Check
-   the live URL's effective date against `PRIVACY.md` before submitting.
+7. `PRIVACY.md` needs no publishing step of its own any more. The `Pages`
+   workflow rebuilds <https://coder0techs.github.io/platica-notes/privacy.html>
+   from `main` whenever the file changes, and the store's policy URL points there.
+   It used to serve a hand-maintained Google Doc, which is exactly how the public
+   policy went stale between 1.13.0 (the `chat.google.com` disclosure) and 1.14.0.
+   All that is left is to bump the effective date in `PRIVACY.md` when the policy's
+   substance changes.
 8. Upload the zip in the Web Store Developer Dashboard. Listing copy, screenshot
    order and captions are in `docs/STORE-LISTING.md`; the privacy policy is
    `PRIVACY.md`.
