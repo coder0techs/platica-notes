@@ -1,4 +1,4 @@
-import { CAPTION_LANGUAGES } from "../../shared/languages"
+import { CAPTION_LANGUAGES, orderedLanguages } from "../../shared/languages"
 
 const PULSE_ID = "platica-pulse"
 
@@ -136,6 +136,8 @@ export function mountMeetingControls(opts: {
   initialPrivate: boolean
   initialRecording: boolean
   onLanguageChange: (language: string) => void
+  /** Up to three tags pinned to the top of the language list. */
+  favouriteLanguages?: string[]
   onPrivateChange: (isPrivate: boolean) => void
   onRecordingChange: (recording: boolean) => void
   onToggleTranscript: () => void
@@ -174,10 +176,15 @@ export function mountMeetingControls(opts: {
   // of view once a lower item is selected, so a header here is both unreadable and
   // useless. The per-meeting scope is conveyed by the pill tooltip, the post-change
   // toast ("· only this meeting"), and the start-of-meeting language prompt instead.
-  for (const lang of CAPTION_LANGUAGES) {
+  // Pinned languages first, then a disabled divider, then the rest. The order is
+  // the whole signal: a divider is a line, not a header row, so it dodges the
+  // unreadable-grey problem described above while still showing where the
+  // shortlist ends.
+  for (const lang of orderedLanguages(CAPTION_LANGUAGES, opts.favouriteLanguages)) {
     const opt = document.createElement("option")
     opt.value = lang.value
     opt.textContent = lang.label
+    if (lang.separator) opt.disabled = true
     select.appendChild(opt)
   }
   select.value = opts.initialLanguage
@@ -341,6 +348,8 @@ export function mountLanguagePrompt(opts: {
   initialLanguage: string
   onPick: (language: string) => void
   onDisableAsking: () => void
+  /** Up to three tags pinned to the top of the language list. */
+  favouriteLanguages?: string[]
 }): { unmount: () => void } {
   const labelFor = (value: string) => CAPTION_LANGUAGES.find(l => l.value === value)?.label ?? value
 
@@ -367,10 +376,15 @@ export function mountLanguagePrompt(opts: {
   select.style.cssText =
     "width:100%;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.25);" +
     "background:rgba(0,0,0,.25);color:#fff;padding:0 8px;font:14px system-ui;cursor:pointer;"
-  for (const lang of CAPTION_LANGUAGES) {
+  // Pinned languages first, then a disabled divider, then the rest. The order is
+  // the whole signal: a divider is a line, not a header row, so it dodges the
+  // unreadable-grey problem described above while still showing where the
+  // shortlist ends.
+  for (const lang of orderedLanguages(CAPTION_LANGUAGES, opts.favouriteLanguages)) {
     const opt = document.createElement("option")
     opt.value = lang.value
     opt.textContent = lang.label
+    if (lang.separator) opt.disabled = true
     select.appendChild(opt)
   }
   if (![...select.options].some(o => o.value === opts.initialLanguage)) {

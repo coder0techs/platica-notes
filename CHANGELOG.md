@@ -4,6 +4,20 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+- **Links in the live panel are clickable.** A link someone pastes into the meeting
+  chat used to be plain text you had to retype. It now opens in a new tab — never
+  the current one, which would leave the call. Only `http` and `https` links become
+  clickable, nothing is prefetched or previewed, and the address the meeting is on
+  is not passed to the site you open.
+- **Pin the languages you actually use.** Settings has a new row: tick up to three
+  languages and they sit at the top of every caption-language list, in the
+  in-meeting pill and in the start-of-meeting prompt. Nothing is hidden — the full
+  list is still there, just below the ones you picked.
+- **The debug log now says what produced it.** Each log starts with the extension
+  version and build, the browser, and the settings that decide what capture does.
+  Diagnostic events from the first moments of a meeting are no longer dropped
+  either — which is exactly the part worth reading when capture fails to start.
+
 ## 1.15.0 - 2026-08-20
 
 - **Saved meetings are filed by month.** Transcripts now land in a `YYYY-MM`

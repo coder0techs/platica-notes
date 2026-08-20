@@ -1,4 +1,5 @@
 import type { ChatMessage, Note, ParticipantEvent, Utterance } from "../../shared/types"
+import { linkify } from "./linkify"
 import { isNearBottom, mergeTimeline } from "../../shared/transcript"
 import { registerUiEl } from "./ui"
 
@@ -243,6 +244,31 @@ export function mountTranscriptPanel(opts: {
     return entry.speaker.toLowerCase().includes(query) || entry.text.toLowerCase().includes(query)
   }
 
+  // Body text with its links clickable. Every piece still reaches the DOM as a
+  // text node or as an anchor's textContent — never as markup — so the
+  // no-innerHTML invariant holds by construction rather than by review.
+  function appendLinkified(host: HTMLElement, value: string): void {
+    for (const segment of linkify(value)) {
+      if (segment.kind === "text") {
+        host.append(document.createTextNode(segment.value))
+        continue
+      }
+      const anchor = document.createElement("a")
+      // linkify only yields http(s) hrefs; anything else stayed a text segment.
+      anchor.href = segment.href
+      anchor.textContent = segment.value
+      // A same-tab navigation would leave the call, which is the one thing a
+      // click in this panel must never do.
+      anchor.target = "_blank"
+      anchor.rel = "noopener noreferrer nofollow"
+      // The meeting's own URL is nobody else's business, and nothing is
+      // prefetched or unfurled: the anchor is inert until it is clicked.
+      anchor.referrerPolicy = "no-referrer"
+      anchor.style.cssText = "color:#8ab4f8;text-decoration:underline;"
+      host.append(anchor)
+    }
+  }
+
   function render(): void {
     const timeline = mergeTimeline(latestTranscript, latestChat, latestNotes, latestParticipantEvents).filter(matches)
     // Capture BEFORE rebuilding: replaceChildren can disturb scrollTop, and any
@@ -287,7 +313,7 @@ export function mountTranscriptPanel(opts: {
         const text = document.createElement("div")
         text.style.cssText =
           "color:#e8eaed;font:400 13px/1.5 Roboto,system-ui,sans-serif;white-space:pre-wrap;overflow-wrap:anywhere;"
-        text.textContent = entry.text
+        appendLinkified(text, entry.text)
         block.append(text)
       }
       body.append(block)

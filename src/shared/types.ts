@@ -166,6 +166,12 @@ export interface Settings {
    * forget to switch the in-meeting pill. The prompt never blocks capture.
    */
   askLanguageEachMeeting: boolean
+  /**
+   * Up to three BCP 47 tags pinned to the top of every caption-language list.
+   * Empty by default. Pinning only reorders: the full list stays available, so a
+   * meeting in an unexpected language is one scroll away rather than unreachable.
+   */
+  favouriteLanguages: string[]
   // Download subfolders, relative to the browser Downloads directory.
   folderPublic: string
   folderPrivate: string
@@ -183,6 +189,7 @@ export const DEFAULT_SETTINGS: Settings = {
   captionAlternatives: true,
   hideUi: false,
   mergeRejoins: true,
+  favouriteLanguages: [],
   askLanguageEachMeeting: false,
   folderPublic: "meetings/platica-notes",
   folderPrivate: "meetings/platica-notes-private",

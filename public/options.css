@@ -41,3 +41,15 @@ section {
   border-radius: 6px;
   padding: 8px 12px;
 }
+
+/* Favourite-language picker: a wrapping row of small checkbox chips. */
+.checks { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 6px; }
+.checks label {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border: 1px solid var(--line, #e6e8ee); border-radius: 999px;
+  font-size: 13px; cursor: pointer; user-select: none;
+}
+.checks label:hover { border-color: var(--accent, #4f46e5); }
+.checks input { margin: 0; cursor: pointer; }
+.checks label.is-full { opacity: .45; cursor: not-allowed; }
+.checks label.is-full input { cursor: not-allowed; }

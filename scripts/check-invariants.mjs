@@ -14,6 +14,7 @@
 
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "./lib/scan-lib.mjs"
 
 const files = (dir) => {
   const out = []
@@ -35,9 +36,12 @@ const failures = []
 const scan = (paths, pattern, describe, allow = []) => {
   for (const path of paths) {
     if (allow.includes(path)) continue
-    const lines = readFileSync(path, "utf8").split("\n")
-    lines.forEach((line, i) => {
-      if (pattern.test(line)) failures.push(`${path}:${i + 1}: ${describe}\n    ${line.trim()}`)
+    const source = readFileSync(path, "utf8")
+    const raw = source.split("\n")
+    // Match against comment-free lines: a comment naming a sink is documentation,
+    // not a sink. Report the original line so the message is readable.
+    stripComments(source).forEach((line, i) => {
+      if (pattern.test(line)) failures.push(`${path}:${i + 1}: ${describe}\n    ${raw[i].trim()}`)
     })
   }
 }

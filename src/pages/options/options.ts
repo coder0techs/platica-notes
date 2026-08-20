@@ -1,7 +1,8 @@
-import { CAPTION_LANGUAGES } from "../../shared/languages"
+import { CAPTION_LANGUAGES, MAX_FAVOURITE_LANGUAGES } from "../../shared/languages"
 import { ACTIVE_TABS_KEY, getLocal, getSettings, hasActiveMeeting, saveSettings } from "../../shared/storage"
 
 const captionLanguage = document.querySelector<HTMLSelectElement>("#caption-language")!
+const favouriteLanguages = document.querySelector<HTMLDivElement>("#favourite-languages")!
 const activeMeetingNote = document.querySelector<HTMLParagraphElement>("#active-meeting-note")!
 const privateDefault = document.querySelector<HTMLInputElement>("#private-default")!
 const debugLog = document.querySelector<HTMLInputElement>("#debug-log")!
@@ -32,6 +33,44 @@ for (const lang of CAPTION_LANGUAGES) {
   captionLanguage.appendChild(opt)
 }
 
+// One checkbox chip per language. The pinned block follows this list's order
+// rather than the order they were ticked: a stable, predictable shortlist beats
+// one that silently reshuffles when a box is unticked and ticked again.
+const favouriteBoxes: HTMLInputElement[] = []
+for (const lang of CAPTION_LANGUAGES) {
+  const label = document.createElement("label")
+  const box = document.createElement("input")
+  box.type = "checkbox"
+  box.value = lang.value
+  const text = document.createElement("span")
+  text.textContent = lang.label
+  label.append(box, text)
+  favouriteLanguages.append(label)
+  favouriteBoxes.push(box)
+  box.addEventListener("change", () => {
+    if (box.checked && chosenFavourites().length > MAX_FAVOURITE_LANGUAGES) {
+      // Already at the cap: refuse this one rather than silently dropping
+      // someone else's choice.
+      box.checked = false
+      return
+    }
+    applyFavouriteCap()
+    void saveSettings({ favouriteLanguages: chosenFavourites() })
+  })
+}
+
+const chosenFavourites = (): string[] => favouriteBoxes.filter((b) => b.checked).map((b) => b.value)
+
+// At the cap, the remaining boxes go visibly inert instead of failing on click.
+function applyFavouriteCap(): void {
+  const full = chosenFavourites().length >= MAX_FAVOURITE_LANGUAGES
+  for (const box of favouriteBoxes) {
+    const disabled = full && !box.checked
+    box.disabled = disabled
+    box.parentElement?.classList.toggle("is-full", disabled)
+  }
+}
+
 async function init(): Promise<void> {
   const settings = await getSettings()
   captionLanguage.value = settings.captionLanguage
@@ -50,6 +89,9 @@ async function init(): Promise<void> {
   captionAlternatives.checked = settings.captionAlternatives
   mergeRejoins.checked = settings.mergeRejoins
   askLanguage.checked = settings.askLanguageEachMeeting
+  const favourites = new Set(settings.favouriteLanguages)
+  for (const box of favouriteBoxes) box.checked = favourites.has(box.value)
+  applyFavouriteCap()
   folderPublic.value = settings.folderPublic
   folderPrivate.value = settings.folderPrivate
   folderDebug.value = settings.folderDebug
