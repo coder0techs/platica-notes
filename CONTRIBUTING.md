@@ -152,6 +152,7 @@ rather than redacting a real one.
 | `docs/superpowers/plans/` | implementation plans for those designs |
 | `docs/STORE-LISTING.md` | store copy, screenshot order and captions |
 | `docs/TEAM-INSTALL.md` | installing an unpacked build of unreleased code |
+| `docs/STORE-AUTOMATION.md` | one-time setup for uploading to the store from CI |
 
 Before changing an area, read its design doc in `docs/superpowers/specs/`. They
 record the trade-offs that were already argued out, which is usually faster than

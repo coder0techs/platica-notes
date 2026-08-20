@@ -1,0 +1,129 @@
+name: Chrome Web Store
+
+# Uploads a released build to the Chrome Web Store, and optionally submits it for
+# review. Deliberately manual: publishing reaches real users, and the default
+# leaves the upload sitting as a draft in the dashboard so a human decides.
+#
+# One-time setup — the service account, the two secrets, and where the publisher
+# id comes from — is in docs/STORE-AUTOMATION.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to upload (blank = the latest release)"
+        required: false
+        type: string
+      action:
+        description: "What to do after uploading"
+        required: true
+        default: draft
+        type: choice
+        options:
+          - draft
+          - submit-for-review
+          - staged-rollout
+      percentage:
+        description: "Percentage of users, for staged-rollout only (1-100)"
+        required: false
+        default: "10"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chrome-web-store
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    name: upload to the store
+    runs-on: ubuntu-latest
+    env:
+      CWS_SERVICE_ACCOUNT_KEY: ${{ secrets.CWS_SERVICE_ACCOUNT_KEY }}
+      CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      - name: Are the credentials configured?
+        run: |
+          missing=""
+          [ -n "$CWS_SERVICE_ACCOUNT_KEY" ] || missing="$missing CWS_SERVICE_ACCOUNT_KEY"
+          [ -n "$CWS_PUBLISHER_ID" ] || missing="$missing CWS_PUBLISHER_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing"
+            echo "See docs/STORE-AUTOMATION.md for how to create them. Nothing was uploaded."
+            exit 1
+          fi
+
+      # Upload exactly the artifact that was released and verified, rather than
+      # rebuilding it here and hoping the result is identical.
+      - name: Fetch the released zip
+        id: fetch
+        run: |
+          tag="${{ inputs.tag }}"
+          if [ -z "$tag" ]; then
+            tag=$(gh release view --json tagName --jq .tagName)
+            echo "No tag given; using the latest release, $tag."
+          fi
+          gh release download "$tag" --pattern '*.zip' --dir .
+          zip=$(ls platica-notes-*.zip)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "zip=$zip" >> "$GITHUB_OUTPUT"
+          ls -la "$zip"
+
+      # The version inside the artifact is the one the store will see, so check it
+      # against the tag rather than trusting the file name.
+      - name: The zip really is that version
+        run: |
+          unzip -o -q "${{ steps.fetch.outputs.zip }}" -d /tmp/unpacked
+          version=$(node -p "require('/tmp/unpacked/manifest.json').version")
+          expected="${{ steps.fetch.outputs.tag }}"
+          expected="${expected#v}"
+          if [ "$version" != "$expected" ]; then
+            echo "::error::The zip for ${{ steps.fetch.outputs.tag }} contains manifest version $version."
+            exit 1
+          fi
+          echo "manifest version $version matches ${{ steps.fetch.outputs.tag }}."
+
+      - name: Status before
+        run: node scripts/store.mjs status
+
+      - name: Upload
+        run: node scripts/store.mjs upload "${{ steps.fetch.outputs.zip }}"
+
+      - name: Submit for review
+        if: inputs.action == 'submit-for-review'
+        run: node scripts/store.mjs publish
+
+      - name: Submit for review as a staged rollout
+        if: inputs.action == 'staged-rollout'
+        run: node scripts/store.mjs publish --percentage "${{ inputs.percentage }}"
+
+      - name: Status after
+        run: node scripts/store.mjs status
+
+      - name: Summary
+        run: |
+          {
+            echo "### ${{ steps.fetch.outputs.tag }} uploaded"
+            echo
+            case "${{ inputs.action }}" in
+              draft)
+                echo "Left as a **draft**. Nothing is live: open the Developer Dashboard and press"
+                echo "Submit for review when you are ready."
+                ;;
+              submit-for-review)
+                echo "**Submitted for review.** It goes live to everyone once Google approves it."
+                ;;
+              staged-rollout)
+                echo "**Submitted for review** as a staged rollout to ${{ inputs.percentage }}% of users."
+                ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"

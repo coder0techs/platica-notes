@@ -7,10 +7,11 @@
     "types": ["chrome"],
     "strict": true,
     "noEmit": true,
-    "skipLibCheck": true,
-    // The release helpers under scripts/ are plain .mjs so node can run them
-    // directly; allowJs lets the tests import them with real types.
-    "allowJs": true
+    "skipLibCheck": true
   },
-  "include": ["src", "tests", "scripts"]
+  // Extension code only, and deliberately without node's type definitions: if
+  // `process` or `Buffer` type-checked in src/, a node-only slip would reach the
+  // browser before anyone noticed. Tests and build scripts are checked by
+  // tsconfig.tools.json, which does have them.
+  "include": ["src"]
 }

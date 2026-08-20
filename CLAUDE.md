@@ -15,8 +15,10 @@ npm install
 npm run build      # bundle src/ to dist/ (esbuild)
 npm run watch      # rebuild on change
 npm test           # unit tests (vitest)
-npm run typecheck  # tsc --noEmit
-npm run package    # typecheck + test + build, then zip dist/ for the Web Store
+npm run check      # invariants: injection sinks, egress, one version everywhere
+npm run typecheck  # two passes: src/ without node's types, then tests + scripts with them
+npm run site       # assemble site/ from the built doc pages (GitHub Pages)
+npm run package    # check + typecheck + test + build, then zip dist/ for the Web Store
 ```
 
 Load `dist/` as an unpacked extension at `chrome://extensions` (Developer mode,
@@ -49,9 +51,14 @@ or writes a changelog entry by hand.
    that changelog section. It decides whether to run by asking if `main`'s version
    already has a tag, so it is safe to re-run and does not care about merge-commit
    messages.
-4. **Upload the zip** from the GitHub release in the Web Store Developer
-   Dashboard. This is the only manual step left. Listing copy, screenshot order
-   and captions are in `docs/STORE-LISTING.md`.
+4. **`gh workflow run store.yml`** uploads the zip attached to that GitHub
+   release to the Chrome Web Store. It defaults to leaving a **draft**, so
+   nothing reaches users until someone decides: `-f action=submit-for-review`
+   submits it, `-f action=staged-rollout -f percentage=10` submits it to a slice
+   of users first. Setup and the two secrets it needs are in
+   `docs/STORE-AUTOMATION.md`. Listing copy, screenshot order and captions stay
+   manual and live in `docs/STORE-LISTING.md` — the API publishes packages, not
+   store copy.
 5. If the in-meeting UI, the saved-file format, or a settings/history page changed,
    `npm run screenshots` regenerates the five 1280×800 listing shots in
    `docs/store/screenshots/` from the freshly built `dist/`.
