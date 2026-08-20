@@ -4,12 +4,12 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
-- **A meeting that is not being recorded now says so.** Capture failing to start
-  used to be silent: the meeting ran, the panel stayed empty, and the first sign
-  was a missing file afterwards. A notice now appears in the meeting if recording
-  never got going, while there is still time to reload and save the meeting. It
-  does not fire on a quiet meeting — a call where nobody has spoken yet is normal
-  and stays silent.
+- **A meeting that is not recording speech now says so.** This used to fail
+  silently: the meeting ran, the panel stayed empty, and the first sign was a
+  missing file afterwards. A notice now appears while there is still time to fix
+  it, and it names the usual cause — a second meeting-recorder extension in the
+  same tab, since only one of them can read Meet's captions. It does not fire on a
+  quiet meeting: a call where nobody has spoken yet is normal and stays silent.
 
 - **Links in the live panel are clickable.** A link someone pastes into the meeting
   chat used to be plain text you had to retype. It now opens in a new tab — never

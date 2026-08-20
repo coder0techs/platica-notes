@@ -586,9 +586,14 @@ async function runMeeting(tabId: number): Promise<void> {
     }
     captureWarned = true
     dlog("capture health warning", { elapsedMs: Date.now() - meetingStartedAt })
+    // Speech, specifically. The chat channel is independent and keeps working in
+    // the one failure we have reproduced, so "nothing has been captured" would be
+    // wrong — and the earlier draft went on to promise that whatever had been
+    // captured was safe, which contradicted the sentence before it.
     showPersistentNotice(
-      "Plática Notes may not be recording this meeting. Nothing has been captured " +
-        "so far. Reloading the tab usually fixes it — anything already captured is kept.",
+      "Plática Notes is not recording speech in this meeting. The usual cause is a " +
+        "second meeting-recorder extension running in this tab — only one of them can " +
+        "read Meet's captions. Turn the other one off and reload the tab.",
     )
   }, CAPTURE_HEALTH_TICK_MS)
   const controls = mountMeetingControls({
