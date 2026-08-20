@@ -141,7 +141,10 @@ jobs:
                 echo "**Submitted for review.** It goes live to everyone once Google approves it."
                 ;;
               staged-rollout)
-                echo "**Submitted for review** as a staged rollout to ${{ inputs.percentage }}% of users."
+                echo "**Submitted for review**, staged. After Google approves it, it does *not*"
+                echo "go live by itself: it waits for you to release it, and then reaches"
+                echo "${{ inputs.percentage }}% of users. The percentage is a random slice — the store"
+                echo "has no way to name who gets it."
                 ;;
             esac
             echo
