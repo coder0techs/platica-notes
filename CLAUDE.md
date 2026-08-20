@@ -55,7 +55,7 @@ or writes a changelog entry by hand.
    release to the Chrome Web Store. It defaults to leaving a **draft**, so
    nothing reaches users until someone decides: `-f action=submit-for-review`
    submits it, `-f action=staged-rollout -f percentage=10` submits it to a slice
-   of users first. Setup and the two secrets it needs are in
+   of users first, and `-f action=status-only` just checks the credentials. Setup and the two secrets it needs are in
    `docs/STORE-AUTOMATION.md`. Listing copy, screenshot order and captions stay
    manual and live in `docs/STORE-LISTING.md` — the API publishes packages, not
    store copy.

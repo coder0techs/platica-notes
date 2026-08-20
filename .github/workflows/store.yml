@@ -15,11 +15,12 @@ on:
         required: false
         type: string
       action:
-        description: "What to do after uploading"
+        description: "What to do (status-only touches nothing)"
         required: true
         default: draft
         type: choice
         options:
+          - status-only
           - draft
           - submit-for-review
           - staged-rollout
@@ -62,10 +63,16 @@ jobs:
             exit 1
           fi
 
+      # Read-only, and the right first call after setting the secrets up: it
+      # proves the credentials and the wiring without touching the listing.
+      - name: Status
+        run: node scripts/store.mjs status
+
       # Upload exactly the artifact that was released and verified, rather than
       # rebuilding it here and hoping the result is identical.
       - name: Fetch the released zip
         id: fetch
+        if: inputs.action != 'status-only'
         run: |
           tag="${{ inputs.tag }}"
           if [ -z "$tag" ]; then
@@ -81,6 +88,7 @@ jobs:
       # The version inside the artifact is the one the store will see, so check it
       # against the tag rather than trusting the file name.
       - name: The zip really is that version
+        if: inputs.action != 'status-only'
         run: |
           unzip -o -q "${{ steps.fetch.outputs.zip }}" -d /tmp/unpacked
           version=$(node -p "require('/tmp/unpacked/manifest.json').version")
@@ -92,10 +100,8 @@ jobs:
           fi
           echo "manifest version $version matches ${{ steps.fetch.outputs.tag }}."
 
-      - name: Status before
-        run: node scripts/store.mjs status
-
       - name: Upload
+        if: inputs.action != 'status-only'
         run: node scripts/store.mjs upload "${{ steps.fetch.outputs.zip }}"
 
       - name: Submit for review
@@ -107,9 +113,21 @@ jobs:
         run: node scripts/store.mjs publish --percentage "${{ inputs.percentage }}"
 
       - name: Status after
+        if: inputs.action != 'status-only'
         run: node scripts/store.mjs status
 
       - name: Summary
+        if: inputs.action == 'status-only'
+        run: |
+          {
+            echo "### Credentials work"
+            echo
+            echo "The store answered, so the service account and the publisher id are right."
+            echo "Nothing was uploaded and nothing in the listing was touched."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summary
+        if: inputs.action != 'status-only'
         run: |
           {
             echo "### ${{ steps.fetch.outputs.tag }} uploaded"
@@ -126,4 +144,7 @@ jobs:
                 echo "**Submitted for review** as a staged rollout to ${{ inputs.percentage }}% of users."
                 ;;
             esac
+            echo
+            echo "The store listing itself — description, screenshots, category, privacy answers —"
+            echo "is untouched. This API publishes packages, not store copy."
           } >> "$GITHUB_STEP_SUMMARY"
