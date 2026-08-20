@@ -727,10 +727,27 @@ async function runMeeting(tabId: number): Promise<void> {
   }, 7000)
 
   let firstCaptionLogged = false
+  // This half of the delivery funnel: what actually crossed into the isolated
+  // world and what the feed did with it. The MAIN world counts the wire side.
+  // Comparing the two is the point — a gap between dispatched and received is a
+  // loss in the hop between worlds, which nothing would otherwise show.
+  const funnel = { received: 0, applied: 0, ignored: 0, paused: 0 }
   activeMeetingHandler = (event) => {
-    if (!recording && (event.type === "transcript" || event.type === "chat")) return
+    if (!recording && (event.type === "transcript" || event.type === "chat")) {
+      // Dropped on purpose, but still counted: otherwise a paused meeting looks
+      // exactly like a broken one in the numbers.
+      if (event.type === "transcript") funnel.paused++
+      return
+    }
     if (event.type === "transcript") {
-      if (!feed.handleCaption(event, new Date().toISOString())) return
+      funnel.received++
+      if (!feed.handleCaption(event, new Date().toISOString())) {
+        // Not a loss: an older revision of a line already held, which the feed
+        // is supposed to reject. Counted so it is not mistaken for one.
+        funnel.ignored++
+        return
+      }
+      funnel.applied++
       if (!firstCaptionLogged) {
         firstCaptionLogged = true
         dlog("captions are flowing")
@@ -806,7 +823,7 @@ async function runMeeting(tabId: number): Promise<void> {
   async function endMeeting(reason: string): Promise<void> {
     if (ending) return
     ending = true
-    dlog("meeting ended", { reason })
+    dlog("meeting ended", { reason, funnel })
     // Stop the end-detection machinery first so neither the poller nor a
     // residual leave click can re-enter during the flush wait below.
     clearInterval(endWatcher)

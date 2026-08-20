@@ -24,6 +24,10 @@ All notable changes to Plática Notes, newest first.
   version and build, the browser, and the settings that decide what capture does.
   Diagnostic events from the first moments of a meeting are no longer dropped
   either — which is exactly the part worth reading when capture fails to start.
+  It also counts what happened to the captions: how many arrived, how many the
+  decoder could read, and how many were saved. A gap between those numbers is
+  the difference between "nobody spoke" and "something is broken", which until
+  now nothing recorded.
 
 ## 1.15.0 - 2026-08-20
 

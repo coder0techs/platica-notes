@@ -192,6 +192,7 @@ document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
         meetBuild: lastMeetBuild,
         restamp: true,
       })
+      recordFunnel("config")
     }
     if (changed) resubscribeAll()
   } catch (err) {
@@ -349,9 +350,43 @@ function resubscribeForCaptions(reason = "captions-reopened"): void {
 
 let firstTranscript = true
 
+// ---------- delivery funnel ----------
+// How many caption frames arrived on the wire, how many survived the decoder, and
+// how many were handed to the isolated world. Counting is unconditional: integers
+// cost nothing, and a funnel that only exists once debug is already on cannot
+// answer "where did the captions go" after the fact. Only recording it is gated.
+//
+// The number that matters is the gap. A comparable tool found a meeting with 165
+// frames on the wire and 13 lines stored — 152 lost in the hop between worlds,
+// entirely invisible until someone counted. A rising `dropped` is the other
+// signal: the decoder silently returning nothing usable is what a change to
+// Meet's wire format looks like from here.
+const funnel = { wire: 0, decoded: 0, dispatched: 0, dropped: 0 }
+let funnelTimer: ReturnType<typeof setInterval> | undefined
+let funnelLast = ""
+const FUNNEL_SNAPSHOT_MS = 30000
+
+function recordFunnel(reason: string): void {
+  const snapshot = JSON.stringify(funnel)
+  if (snapshot === funnelLast) return
+  funnelLast = snapshot
+  record({ phase: "funnel", reason, ...funnel })
+}
+
+/** Start the periodic snapshot on the first frame; there is nothing to report before. */
+function armFunnelSnapshots(): void {
+  if (funnelTimer !== undefined) return
+  funnelTimer = setInterval(() => recordFunnel("tick"), FUNNEL_SNAPSHOT_MS)
+}
+
 function handleCaptions(bytes: Uint8Array): void {
   const m = decodeTranscriptWrapper(bytes)
-  if (!m || !m.text || !m.deviceId || m.messageId === undefined || m.messageVersion === undefined) return
+  if (!m || !m.text || !m.deviceId || m.messageId === undefined || m.messageVersion === undefined) {
+    // Silent until now: a frame the decoder cannot use left no trace at all.
+    funnel.dropped++
+    return
+  }
+  funnel.decoded++
   if (firstTranscript) {
     firstTranscript = false
     log("first transcript", { lang: captionLanguage })
@@ -364,6 +399,7 @@ function handleCaptions(bytes: Uint8Array): void {
     messageVersion: m.messageVersion,
     text: m.text,
   })
+  funnel.dispatched++
 }
 
 // Chat now rides the collections channel (Google Meet moved it off meet_messages
@@ -477,6 +513,12 @@ function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void
   // processed strictly in arrival order.
   let queue: Promise<void> = Promise.resolve()
   ch.addEventListener("message", (e: MessageEvent) => {
+    // Counted here rather than in handleCaptions: this is the wire, before
+    // decompression can fail and before the decoder gets a say.
+    if (ch.label === "captions") {
+      funnel.wire++
+      armFunnelSnapshots()
+    }
     if (!(e.data instanceof ArrayBuffer) && !(e.data instanceof Uint8Array)) {
       record({ phase: "unexpected-payload", label: ch.label, type: typeof e.data })
       return
