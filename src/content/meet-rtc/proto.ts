@@ -37,6 +37,13 @@ export interface RosterEntry {
    * Undefined when the field is absent.
    */
   state?: number
+  /**
+   * Leaf field 21. Present when this device is a presentation/screen-share child
+   * of a real participant's device rather than a participant of its own: the id
+   * names the parent. Such a device must not be counted as an attendee, and its
+   * captions belong to the person behind the parent device.
+   */
+  parentDeviceId?: string
 }
 
 // Leaf presence state (RosterEntry.state) meaning the participant has left. Ground-
@@ -231,6 +238,51 @@ function walkLen(c: Cursor, end: number, targetField: number): { start: number; 
   return null
 }
 
+// Every occurrence of a len-delimited field at this level, not just the first.
+// Protobuf allows any field to repeat, and Meet does repeat the roster nesting: a
+// join cascade or a teardown batch arrives as several sibling records in one
+// packet. Tolerant by construction — a malformed tail returns what was already
+// found rather than discarding the whole level.
+function walkLenAll(buf: Uint8Array, start: number, end: number): (targetField: number) => Span[] {
+  return (targetField: number): Span[] => {
+    const out: Span[] = []
+    const c: Cursor = { buf, i: start }
+    const safeEnd = Math.min(end, buf.length)
+    try {
+      while (c.i < safeEnd) {
+        const { field, wire } = readTag(c)
+        if (field === targetField && wire === 2) {
+          const l = readVarint(c)
+          const fieldEnd = boundedEnd(c, l)
+          out.push({ start: c.i, end: fieldEnd })
+          c.i = fieldEnd
+        } else {
+          skip(c, wire)
+        }
+      }
+    } catch {
+      /* keep what decoded cleanly */
+    }
+    return out
+  }
+}
+
+interface Span { start: number; end: number }
+
+// Follow a chain of nested len-delimited fields, branching at EVERY occurrence of
+// each step, and return the spans reached at the end of the path. This is what
+// makes the roster decoders see every record in a packet instead of one.
+function walkPathAll(buf: Uint8Array, path: number[]): Span[] {
+  let level: Span[] = [{ start: 0, end: buf.length }]
+  for (const field of path) {
+    const next: Span[] = []
+    for (const span of level) next.push(...walkLenAll(buf, span.start, span.end)(field))
+    if (next.length === 0) return []
+    level = next
+  }
+  return level
+}
+
 // ---------- collections-channel chat decoder ----------
 
 // Google Meet moved chat off the meet_messages data channel onto the collections
@@ -322,68 +374,59 @@ export function decodeOutgoingChat(buf: Uint8Array): { text: string; sentAt?: nu
 
 // ---------- roster decoder ----------
 
-// Leaf: field 1 = deviceId(string), field 2 = deviceName(string),
-// field 4 = presence state (varint; 1 = present, 6 = left — see RosterEntry.state).
+// Leaf: field 1 = deviceId(string), field 2 = fullName(string),
+// field 4 = presence state (varint; 1 = present, 6 = left — see RosterEntry.state),
+// field 21 = parentDeviceId(string), field 29 = displayName(string).
+//
+// Meet does not always send fullName: guests, dial-ins and some external
+// participants arrive with only the short displayName. Requiring field 2 dropped
+// those devices entirely, which both lost them from the participant list and left
+// their speech under a "Speaker N" label.
 function decodeLeaf(buf: Uint8Array, start: number, end: number): RosterEntry | null {
   // Clamp end so a caller passing an oversized bound cannot walk past the buffer.
   const safeEnd = Math.min(end, buf.length)
   const c: Cursor = { buf, i: start }
   let deviceId: string | undefined
-  let deviceName: string | undefined
+  let fullName: string | undefined
+  let displayName: string | undefined
+  let parentDeviceId: string | undefined
   let state: number | undefined
   while (c.i < safeEnd) {
     const { field, wire } = readTag(c)
     if (field === 1 && wire === 2) deviceId = readString(c)
-    else if (field === 2 && wire === 2) deviceName = readString(c)
+    else if (field === 2 && wire === 2) fullName = readString(c)
     else if (field === 4 && wire === 0) state = readVarint(c)
+    else if (field === 21 && wire === 2) parentDeviceId = readString(c)
+    else if (field === 29 && wire === 2) displayName = readString(c)
     else skip(c, wire)
   }
+  // An empty fullName is as good as absent — fall through to displayName.
+  const deviceName = fullName?.trim() ? fullName : displayName?.trim() ? displayName : undefined
   if (deviceId === undefined || deviceName === undefined) return null
-  return state === undefined ? { deviceId, deviceName } : { deviceId, deviceName, state }
+  const entry: RosterEntry = { deviceId, deviceName }
+  if (state !== undefined) entry.state = state
+  if (parentDeviceId !== undefined) entry.parentDeviceId = parentDeviceId
+  return entry
 }
 
-// Collection form: outer.f2 → l1.f2 → l2.REPEATED f2 = leaf
-function collectFromCollectionForm(buf: Uint8Array, results: RosterEntry[]): void {
-  const c: Cursor = { buf, i: 0 }
-  const l1 = walkLen(c, buf.length, 2); if (!l1) return
-  const c1: Cursor = { buf, i: l1.start }
-  const l2 = walkLen(c1, l1.end, 2); if (!l2) return
-  const c2: Cursor = { buf, i: l2.start }
-  // read repeated field 2 leaves
-  while (c2.i < l2.end) {
-    const { field, wire } = readTag(c2)
-    if (field === 2 && wire === 2) {
-      const l = readVarint(c2)
-      const leafEnd = boundedEnd(c2, l)
-      const entry = decodeLeaf(buf, c2.i, leafEnd)
-      c2.i = leafEnd
-      if (entry) results.push(entry)
-    } else {
-      skip(c2, wire)
-    }
-  }
-}
-
-// Single-device form: outer.f1 → s1.f2 → s2.f13 → s3.f1 → s4.f2 = leaf
-function collectFromSingleForm(buf: Uint8Array, results: RosterEntry[]): void {
-  const c: Cursor = { buf, i: 0 }
-  const s1 = walkLen(c, buf.length, 1); if (!s1) return
-  const c1: Cursor = { buf, i: s1.start }
-  const s2 = walkLen(c1, s1.end, 2); if (!s2) return
-  const c2: Cursor = { buf, i: s2.start }
-  const s3 = walkLen(c2, s2.end, 13); if (!s3) return
-  const c3: Cursor = { buf, i: s3.start }
-  const s4 = walkLen(c3, s3.end, 1); if (!s4) return
-  const c4: Cursor = { buf, i: s4.start }
-  const leaf = walkLen(c4, s4.end, 2); if (!leaf) return
-  const entry = decodeLeaf(buf, leaf.start, leaf.end)
-  if (entry) results.push(entry)
-}
+// Both wire forms the roster arrives in, as field paths ending on the name leaf.
+// Every step follows all of its occurrences (see walkPathAll), so a packet
+// batching several devices yields all of them.
+const COLLECTION_LEAF_PATH = [2, 2, 2] // outer.f2 → l1.f2 → l2.f2 = leaf
+const SINGLE_LEAF_PATH = [1, 2, 13, 1, 2] // outer.f1 → f2 → f13 → f1 → f2 = leaf
 
 export function decodeRoster(buf: Uint8Array): RosterEntry[] {
   const results: RosterEntry[] = []
-  try { collectFromCollectionForm(buf, results) } catch { /* tolerate malformed */ }
-  try { collectFromSingleForm(buf, results) } catch { /* tolerate malformed */ }
+  for (const path of [COLLECTION_LEAF_PATH, SINGLE_LEAF_PATH]) {
+    try {
+      for (const leaf of walkPathAll(buf, path)) {
+        const entry = decodeLeaf(buf, leaf.start, leaf.end)
+        if (entry) results.push(entry)
+      }
+    } catch {
+      /* tolerate malformed — keep whatever decoded */
+    }
+  }
   return results
 }
 
@@ -398,19 +441,10 @@ export function decodeRoster(buf: Uint8Array): RosterEntry[] {
 export function decodeRosterLeave(buf: Uint8Array): string[] {
   const out: string[] = []
   try {
-    const c: Cursor = { buf, i: 0 }
-    const s1 = walkLen(c, buf.length, 1); if (!s1) return out
-    const c1: Cursor = { buf, i: s1.start }
-    const s2 = walkLen(c1, s1.end, 2); if (!s2) return out
-    const c2: Cursor = { buf, i: s2.start }
-    const s13 = walkLen(c2, s2.end, 13); if (!s13) return out
-    const c13: Cursor = { buf, i: s13.start }
-    const node = walkLen(c13, s13.end, 1); if (!node) return out
     // Within f13.f1: f3 is the removed deviceId (bare string). Absent on joins,
-    // which instead carry an f2 leaf here.
-    const cNode: Cursor = { buf, i: node.start }
-    const idField = walkLen(cNode, node.end, 3)
-    if (idField) {
+    // which instead carry an f2 leaf here. Every step follows all its occurrences,
+    // so a teardown cascade batching several departures yields all of them.
+    for (const idField of walkPathAll(buf, [1, 2, 13, 1, 3])) {
       const id = decoder.decode(buf.slice(idField.start, Math.min(idField.end, buf.length)))
       if (id) out.push(id)
     }

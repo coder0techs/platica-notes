@@ -317,13 +317,32 @@ describe("decodeOutgoingChat", () => {
 
 // ---------- roster builder helpers ----------
 
-function buildLeaf(opts: { deviceId?: string; deviceName?: string; extra?: boolean; state?: number }): number[] {
+function buildLeaf(opts: {
+  deviceId?: string
+  deviceName?: string
+  extra?: boolean
+  state?: number
+  displayName?: string
+  parentDeviceId?: string
+}): number[] {
   const out: number[] = []
   if (opts.deviceId !== undefined) lenField(1, strBytes(opts.deviceId), out)
   if (opts.deviceName !== undefined) lenField(2, strBytes(opts.deviceName), out)
   if (opts.state !== undefined) { tagBytes(4, 0, out); writeVarint(opts.state, out) }  // presence state
   if (opts.extra) { tagBytes(5, 0, out); writeVarint(3, out) }  // unknown field
+  if (opts.parentDeviceId !== undefined) lenField(21, strBytes(opts.parentDeviceId), out)
+  if (opts.displayName !== undefined) lenField(29, strBytes(opts.displayName), out)
   return out
+}
+
+// Wraps leaves in the collection form without going through buildCollectionForm,
+// for the cases that need a hand-built leaf.
+function collectionOf(leaves: number[][]): Uint8Array {
+  const l2: number[] = []
+  for (const leaf of leaves) lenField(2, leaf, l2)
+  const l1: number[] = []; lenField(2, l2, l1)
+  const outer: number[] = []; lenField(2, l1, outer)
+  return u8(outer)
 }
 
 // Collection form: field2→l1; l1:field2→l2; l2:REPEATED field2=leaf
@@ -342,6 +361,45 @@ function buildSingleDeviceForm(device: { deviceId: string; deviceName: string })
   const s2: number[] = []; lenField(13, s3, s2)
   const s1: number[] = []; lenField(2, s2, s1)
   const outer: number[] = []; lenField(1, s1, outer)
+  return u8(outer)
+}
+
+// Single-device form, but with the leaf repeated at a chosen level of the nesting.
+// `at` names the level that repeats: the outer field 1, the f13→f1 device node, or
+// the leaf itself.
+function buildSingleFormRepeated(
+  devices: Array<{ deviceId: string; deviceName: string }>,
+  at: "outer" | "node" | "leaf",
+): Uint8Array {
+  const leafOf = (d: { deviceId: string; deviceName: string }): number[] => buildLeaf(d)
+  if (at === "leaf") {
+    const s4: number[] = []
+    for (const d of devices) lenField(2, leafOf(d), s4)
+    const s3: number[] = []; lenField(1, s4, s3)
+    const s2: number[] = []; lenField(13, s3, s2)
+    const s1: number[] = []; lenField(2, s2, s1)
+    const outer: number[] = []; lenField(1, s1, outer)
+    return u8(outer)
+  }
+  if (at === "node") {
+    const s3: number[] = []
+    for (const d of devices) {
+      const s4: number[] = []; lenField(2, leafOf(d), s4)
+      lenField(1, s4, s3)
+    }
+    const s2: number[] = []; lenField(13, s3, s2)
+    const s1: number[] = []; lenField(2, s2, s1)
+    const outer: number[] = []; lenField(1, s1, outer)
+    return u8(outer)
+  }
+  const outer: number[] = []
+  for (const d of devices) {
+    const s4: number[] = []; lenField(2, leafOf(d), s4)
+    const s3: number[] = []; lenField(1, s4, s3)
+    const s2: number[] = []; lenField(13, s3, s2)
+    const s1: number[] = []; lenField(2, s2, s1)
+    lenField(1, s1, outer)
+  }
   return u8(outer)
 }
 
@@ -394,6 +452,54 @@ describe("decodeRoster", () => {
     expect(decodeRoster(new Uint8Array([0x08, 0x01]))).toEqual([])
   })
 
+  // ar-k9i. Every level of the nesting is a protobuf field that may repeat, and
+  // walking only the first occurrence silently drops the rest of the packet — the
+  // participants in it are then only learned later (or never), which invents their
+  // join time. Reading them all is monotonic: a single occurrence decodes exactly
+  // as before.
+  describe("repeated records", () => {
+    const two = [
+      { deviceId: "d1", deviceName: "Ada" },
+      { deviceId: "d2", deviceName: "Grace" },
+    ]
+
+    it.each(["outer", "node", "leaf"] as const)(
+      "reads every device of the single-device form when it repeats at the %s level",
+      (at) => {
+        const result = decodeRoster(buildSingleFormRepeated(two, at))
+        expect(result).toEqual(two)
+      },
+    )
+
+    it("reads every leaf container of the collection form, not just the first", () => {
+      // Two sibling l2 containers under l1 (each holding one leaf).
+      const l1: number[] = []
+      for (const d of two) {
+        const l2: number[] = []; lenField(2, buildLeaf(d), l2)
+        lenField(2, l2, l1)
+      }
+      const outer: number[] = []; lenField(2, l1, outer)
+      expect(decodeRoster(u8(outer))).toEqual(two)
+    })
+
+    it("reads every top-level collection container, not just the first", () => {
+      const outer: number[] = []
+      for (const d of two) {
+        const l2: number[] = []; lenField(2, buildLeaf(d), l2)
+        const l1: number[] = []; lenField(2, l2, l1)
+        lenField(2, l1, outer)
+      }
+      expect(decodeRoster(u8(outer))).toEqual(two)
+    })
+
+    it("decodes a single record exactly as before (no behaviour change)", () => {
+      expect(decodeRoster(buildSingleDeviceForm({ deviceId: "d3", deviceName: "Carol" })))
+        .toEqual([{ deviceId: "d3", deviceName: "Carol" }])
+      expect(decodeRoster(buildCollectionForm([{ deviceId: "d1", deviceName: "Alice" }])))
+        .toEqual([{ deviceId: "d1", deviceName: "Alice" }])
+    })
+  })
+
   it("handles collection form with zero devices", () => {
     const buf = buildCollectionForm([])
     expect(decodeRoster(buf)).toEqual([])
@@ -417,6 +523,52 @@ describe("decodeRoster", () => {
     const result = decodeRoster(buildSingleDeviceForm({ deviceId: "d3", deviceName: "Carol" }))
     expect(result[0]).toEqual({ deviceId: "d3", deviceName: "Carol" })
     expect(result[0].state).toBeUndefined()
+  })
+
+  // ar-aml, field 29. Meet does not always send fullName (field 2) — guests and
+  // dial-ins arrive with only the short displayName. Dropping the leaf for a
+  // missing field 2 lost the participant AND left their speech as "Speaker N".
+  it("falls back to displayName (field 29) when fullName is absent", () => {
+    const result = decodeRoster(collectionOf([buildLeaf({ deviceId: "d1", displayName: "Ada" })]))
+    expect(result).toEqual([{ deviceId: "d1", deviceName: "Ada" }])
+  })
+
+  it("prefers fullName over displayName when both are present", () => {
+    const result = decodeRoster(collectionOf([
+      buildLeaf({ deviceId: "d1", deviceName: "Ada Lovelace", displayName: "Ada" }),
+    ]))
+    expect(result[0].deviceName).toBe("Ada Lovelace")
+  })
+
+  it("still drops a leaf with no name at all, and one with no deviceId", () => {
+    const result = decodeRoster(collectionOf([
+      buildLeaf({ deviceId: "no-name" }),
+      buildLeaf({ displayName: "Nameless" }), // no deviceId
+      buildLeaf({ deviceId: "ok", deviceName: "Good" }),
+    ]))
+    expect(result).toEqual([{ deviceId: "ok", deviceName: "Good" }])
+  })
+
+  it("treats an empty fullName as absent and falls back to displayName", () => {
+    const result = decodeRoster(collectionOf([
+      buildLeaf({ deviceId: "d1", deviceName: "", displayName: "Ada" }),
+    ]))
+    expect(result[0].deviceName).toBe("Ada")
+  })
+
+  // ar-aml, field 21. A screen share arrives as its own device parented to the
+  // real participant's. Reporting the parent lets the caller attribute its
+  // captions to the person and keep it out of the attendee list.
+  it("reports parentDeviceId (field 21) for a presentation child device", () => {
+    const result = decodeRoster(collectionOf([
+      buildLeaf({ deviceId: "d2", deviceName: "Ada Lovelace", parentDeviceId: "d1" }),
+    ]))
+    expect(result).toEqual([{ deviceId: "d2", deviceName: "Ada Lovelace", parentDeviceId: "d1" }])
+  })
+
+  it("omits parentDeviceId for an ordinary participant device", () => {
+    const result = decodeRoster(collectionOf([buildLeaf({ deviceId: "d1", deviceName: "Ada" })]))
+    expect(result[0].parentDeviceId).toBeUndefined()
   })
 
   it("decodes state 6 (left) from a real collections leave packet", () => {
@@ -451,6 +603,37 @@ describe("decodeRosterLeave", () => {
   it("returns nothing for an unrelated/garbage buffer and never throws", () => {
     expect(decodeRosterLeave(new Uint8Array([0x08, 0x01]))).toEqual([])
     expect(() => decodeRosterLeave(new Uint8Array([0x0a, 0xff, 0xff]))).not.toThrow()
+  })
+
+  // Same ar-k9i problem on the leave path: a teardown cascade puts several
+  // departures in one packet, and only the first was read.
+  it("extracts every removed deviceId when the packet carries several", () => {
+    // Two device nodes under f13, each a bare f3 id.
+    const s13: number[] = []
+    for (const id of ["spaces/S/devices/1", "spaces/S/devices/2"]) {
+      const node: number[] = []; lenField(3, strBytes(id), node)
+      lenField(1, node, s13)
+    }
+    const s2: number[] = []; lenField(13, s13, s2)
+    const s1: number[] = []; lenField(2, s2, s1)
+    const outer: number[] = []; lenField(1, s1, outer)
+    expect(decodeRosterLeave(u8(outer))).toEqual(["spaces/S/devices/1", "spaces/S/devices/2"])
+  })
+
+  it("extracts departures spread across repeated top-level records", () => {
+    const outer: number[] = []
+    for (const id of ["spaces/S/devices/1", "spaces/S/devices/2"]) {
+      const node: number[] = []; lenField(3, strBytes(id), node)
+      const s13: number[] = []; lenField(1, node, s13)
+      const s2: number[] = []; lenField(13, s13, s2)
+      const s1: number[] = []; lenField(2, s2, s1)
+      lenField(1, s1, outer)
+    }
+    expect(decodeRosterLeave(u8(outer))).toEqual(["spaces/S/devices/1", "spaces/S/devices/2"])
+  })
+
+  it("still reads a single departure exactly as before", () => {
+    expect(decodeRosterLeave(hexToBytes(LEAVE_574))).toEqual(["spaces/MsQcnxZuWvGM/devices/574"])
   })
 })
 
