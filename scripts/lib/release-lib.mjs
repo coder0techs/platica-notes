@@ -105,3 +105,30 @@ export function sectionFor(changelog, version) {
   const next = changelog.indexOf("\n## ", after)
   return (next === -1 ? changelog.slice(after) : changelog.slice(after, next)).trim()
 }
+
+/**
+ * Replace a top-level `"version": "…"` value without reformatting the rest of
+ * the file.
+ *
+ * Re-serialising with `JSON.stringify(…, null, 2)` looked equivalent and was
+ * not: `public/manifest.json` keeps its arrays on one line by hand, and a
+ * round-trip exploded them, turning a one-line release commit into a 41-line
+ * reformat. A release commit should be the version and nothing else.
+ *
+ * @param {string} text file contents
+ * @param {string} from current version
+ * @param {string} to new version
+ * @param {number} expected how many occurrences must be present
+ * @returns {string} the contents with the version replaced
+ */
+export function replaceVersion(text, from, to, expected = 1) {
+  const needle = `"version": ${JSON.stringify(from)}`
+  const found = text.split(needle).length - 1
+  if (found !== expected) {
+    throw new Error(
+      `Expected ${expected} occurrence(s) of ${needle}, found ${found}. ` +
+        "Refusing to guess which one is the package version.",
+    )
+  }
+  return text.split(needle).join(`"version": ${JSON.stringify(to)}`)
+}

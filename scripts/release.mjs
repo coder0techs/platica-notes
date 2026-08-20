@@ -13,7 +13,7 @@
 
 import { execSync } from "node:child_process"
 import { readFileSync, writeFileSync } from "node:fs"
-import { bumpLevel, cutChangelog, nextVersion, sectionFor } from "./lib/release-lib.mjs"
+import { bumpLevel, cutChangelog, nextVersion, replaceVersion, sectionFor } from "./lib/release-lib.mjs"
 
 const dryRun = process.argv.includes("--dry-run")
 const sh = (cmd) => execSync(cmd, { encoding: "utf8" }).trim()
@@ -60,24 +60,21 @@ if (dryRun) {
 
 writeFileSync("CHANGELOG.md", changelog)
 
-pkg.version = next
-writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n")
+// Rewrite the version in place rather than re-serialising the JSON. public/
+// manifest.json keeps its arrays on one line by hand; a JSON round-trip exploded
+// them and turned a one-line release commit into a 41-line reformat.
+writeFileSync("package.json", replaceVersion(readFileSync("package.json", "utf8"), current, next))
 
 // The committed manifest must match the tag: build.mjs stamps the dist copy, but
 // anyone reading the source or Load-unpacking public/ has to see the real version.
 const manifestPath = "public/manifest.json"
-const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
-manifest.version = next
-writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n")
+writeFileSync(manifestPath, replaceVersion(readFileSync(manifestPath, "utf8"), current, next))
 
-// The lockfile carries the version twice. Leaving it behind is not cosmetic: it
-// drifted to 1.14.0 while package.json said 1.14.1, and `npm ci` in CI is the
-// thing that reads this file.
+// The lockfile carries the version twice, at the root and under packages[""].
+// Leaving it behind is not cosmetic: it drifted to 1.14.0 while package.json said
+// 1.14.1, and `npm ci` in CI is the thing that reads this file.
 const lockPath = "package-lock.json"
-const lock = JSON.parse(readFileSync(lockPath, "utf8"))
-lock.version = next
-if (lock.packages?.[""]) lock.packages[""].version = next
-writeFileSync(lockPath, JSON.stringify(lock, null, 2) + "\n")
+writeFileSync(lockPath, replaceVersion(readFileSync(lockPath, "utf8"), current, next, 2))
 
 sh(`git add CHANGELOG.md package.json ${manifestPath} ${lockPath}`)
 sh(`git commit -m "chore(release): v${next}"`)
