@@ -6,6 +6,7 @@
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "build": "node build.mjs",
+    "site": "node scripts/site.mjs",
     "watch": "node build.mjs --watch",
     "typecheck": "tsc --noEmit",
     "release": "node scripts/release.mjs",

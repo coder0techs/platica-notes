@@ -1,0 +1,72 @@
+name: Pages
+
+# Publishes README.md, PRIVACY.md and CHANGELOG.md as a small static site.
+#
+# The Chrome Web Store listing points its privacy-policy URL at the published
+# privacy.html, so the policy users are shown is whatever is on `main`. Before
+# this workflow existed the store URL served a hand-maintained Google Doc, and
+# it silently went stale between 1.13.0 and 1.14.0 because updating the repo did
+# not update the doc. Nothing to paste anywhere now.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - PRIVACY.md
+      - CHANGELOG.md
+      - public/docs.css
+      - build.mjs
+      - scripts/site.mjs
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; queue instead of cancelling, so the last content
+# on main is always what ends up published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: build and deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+
+      - run: npm ci
+
+      # build.mjs renders the Markdown into the same self-contained pages the
+      # extension ships, so the site and the in-extension docs cannot diverge.
+      - run: npm run build
+
+      - run: npm run site
+
+      - name: Check the privacy policy really made it
+        run: |
+          test -f site/privacy.html
+          test -f site/index.html
+          test -f site/docs.css
+          grep -q "Privacy Policy" site/privacy.html
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v5
