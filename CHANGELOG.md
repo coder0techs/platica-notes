@@ -19,6 +19,16 @@ All notable changes to Plática Notes, newest first.
   and can tell where a speaker's turn ended instead of guessing from the text.
   Chat messages, notes and join/leave markers are instants, so they carry no
   duration.
+- **Participants without a full name are no longer dropped.** Meet does not always
+  send a participant's full name — guests, dial-ins and some external participants
+  arrive with only a short display name, and those people were skipped entirely:
+  missing from the participant list, with their speech left under a "Speaker N"
+  label. The short name is now used when the full one is absent.
+- **A packet carrying several roster updates is now read in full.** Joins and
+  departures can arrive batched, and only the first entry of such a packet was
+  decoded; the rest were learned late or not at all, which could put a
+  participant's join at the wrong moment. Every record in a packet is now read,
+  on both the join and the leave path.
 
 ## 1.14.1 - 2026-08-14
 
