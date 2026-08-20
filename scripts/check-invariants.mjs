@@ -18,6 +18,9 @@ import { join } from "node:path"
 const files = (dir) => {
   const out = []
   for (const name of readdirSync(dir)) {
+    // Skip dotfiles. They are never source, and a stray .DS_Store is binary
+    // rubbish that would only ever produce a confusing match.
+    if (name.startsWith(".")) continue
     const path = join(dir, name)
     if (statSync(path).isDirectory()) out.push(...files(path))
     else out.push(path)
