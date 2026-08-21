@@ -3,6 +3,11 @@
 Copy/paste-ready text for the Developer Dashboard. Fill the `<…>` placeholders.
 The extension's design (100% local, zero network) makes every answer truthful.
 
+**Every fenced block here is paste-ready and deliberately unwrapped**: one line per
+paragraph, per bullet, per step, however long. The dashboard's textareas keep the
+line breaks they are given, so a block hard-wrapped at 80 columns to look tidy in
+this file arrives in the listing wrapped at 80 columns. Do not reflow them.
+
 The listing is live at
 <https://chromewebstore.google.com/detail/lfnfhogdkefkfjnlhhcacebleobpgecl>
 (item id `lfnfhogdkefkfjnlhhcacebleobpgecl`), so this page now describes the copy
@@ -21,44 +26,30 @@ behind an **update** submission, not a first submission.
 ## Detailed description (suggested)
 
 ```
-Plática Notes saves your meeting transcripts and in-meeting chat as a Markdown
-file on your own computer: no servers, no accounts, no uploads. It currently
-works with Google Meet.
+Plática Notes saves your meeting transcripts and in-meeting chat as a Markdown file on your own computer: no servers, no accounts, no uploads. It currently works with Google Meet.
 
-• Reads Google Meet's own live captions, so the on-screen caption band never
-  has to be turned on and capture keeps working in background tabs.
+• Reads Google Meet's own live captions, so the on-screen caption band never has to be turned on and capture keeps working in background tabs.
 • Speaker-attributed transcript plus in-meeting chat, interleaved chronologically.
 • Inline join and leave markers, so you can see who was in the room when.
-• A floating, scrollable transcript panel inside the meeting window, searchable,
-  with notes you can type as the call happens.
-• Fourteen caption languages. Pin the two or three you actually meet in and each
-  gets its own button in the call, so switching mid-meeting is one click.
-• One recording pill in the meeting, showing that it is recording and for how long.
-  Everything else is a click away in a menu, not a toolbar over somebody's face.
-• Recording on/off without leaving the call: pause capture, then resume where you
-  left off. Whatever was captured before the pause is still saved.
-• Wipe what was captured in the current meeting, in two clicks. A meeting left with
-  nothing captured writes no file at all.
-• Per-meeting privacy toggle: private meetings save to a separate folder you can
-  keep out of cloud sync.
-• A local, searchable history of your recent meetings, with re-download, and an
-  undo on delete.
-• Works alongside another meeting-recorder extension in the same tab, and tells you
-  if speech is not reaching it.
+• A floating, scrollable transcript panel inside the meeting window, searchable, with notes you can type as the call happens.
+• Fourteen caption languages. Pin the two or three you actually meet in and each gets its own button in the call, so switching mid-meeting is one click.
+• One recording pill in the meeting, showing that it is recording and for how long. Everything else is a click away in a menu, not a toolbar over somebody's face.
+• Recording on/off without leaving the call: pause capture, then resume where you left off. Whatever was captured before the pause is still saved.
+• Wipe what was captured in the current meeting, in two clicks. A meeting left with nothing captured writes no file at all.
+• Per-meeting privacy toggle: private meetings save to a separate folder you can keep out of cloud sync.
+• A local, searchable history of your recent meetings, with re-download, and an undo on delete.
+• Works alongside another meeting-recorder extension in the same tab, and tells you if speech is not reaching it.
 • Zero network: nothing is ever uploaded anywhere.
 
-Google Meet is a trademark of Google LLC. Plática Notes is not created by,
-affiliated with, or endorsed by Google.
+Google Meet is a trademark of Google LLC. Plática Notes is not created by, affiliated with, or endorsed by Google.
 
-Note: recording a meeting may require the consent of other participants depending
-on your jurisdiction. Please inform participants and obtain any consent required.
+Note: recording a meeting may require the consent of other participants depending on your jurisdiction. Please inform participants and obtain any consent required.
 ```
 
 ## Single purpose (required)
 
 ```
-Plática Notes has one purpose: to locally record and export a Google Meet
-meeting's transcript and chat to the user's own computer.
+Plática Notes has one purpose: to locally record and export a Google Meet meeting's transcript and chat to the user's own computer.
 ```
 
 ## Permission justifications (required, per item)
@@ -122,7 +113,11 @@ before each submission.
 - **Sold to third parties?** No.
 - **Used or transferred for purposes unrelated to the single purpose?** No.
 - **Used or transferred to determine creditworthiness / for lending?** No.
-- **Privacy policy URL:** `https://docs.google.com/document/d/e/2PACX-1vRC_V6otNoK1nCt_2Up6aJ9ZfEFtaW-1scov-Tyj5FscnreqYB-shdXYw5Xo-gyAOJpzbNhWkgcFjSm/pub`
+- **Privacy policy URL:** `https://coder0techs.github.io/platica-notes/privacy.html`
+  This is the page the `Pages` workflow rebuilds from `PRIVACY.md` on every push to
+  `main`, so the published policy cannot go stale again the way the hand-maintained
+  Google Doc did between 1.13.0 and 1.14.0. If the dashboard still holds that Doc
+  URL, replace it.
 - **Limited Use:** certify compliance — all data stays on-device and is used only
   for the single purpose above.
 
