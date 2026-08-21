@@ -264,6 +264,17 @@ try {
   const extensionId = new URL(worker.url()).host
   console.log("extension id:", extensionId)
 
+  // Pin two languages before anything opens.
+  //
+  // The pinned-language buttons only exist for languages the user chose, so a
+  // default profile shoots the in-meeting bar with that feature switched off —
+  // and the same shot is the manual's figure for it. Two rather than the maximum
+  // three: at the cap the remaining chips on the settings page go correctly
+  // inert, which is right in use and reads as broken in a still.
+  await worker.evaluate(() =>
+    chrome.storage.sync.set({ settings: { favouriteLanguages: ["en-US", "es-MX"] } }),
+  )
+
   await context.route("https://meet.google.com/**", (route) =>
     route.fulfill({ contentType: "text/html", body: STAGE }),
   )

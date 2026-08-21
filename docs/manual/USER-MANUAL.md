@@ -6,7 +6,7 @@ Plática Notes records your Google Meet transcript and in-meeting chat and saves
 as a Markdown file on your own computer. No servers, no accounts, no network
 requests: the extension has nowhere to send anything, by design.
 
-This manual covers version 1.14.0, the version published on the Chrome Web Store.
+This manual covers version 1.16.0, the version published on the Chrome Web Store.
 
 ---
 
@@ -35,13 +35,14 @@ up: no sign-in, no bot joining your call, no third participant for anyone to see
 ## 2. Quick start
 
 1. Install from the Chrome Web Store and open a Google Meet call.
-2. Check the language pill at the top of the meeting (`🌐 English (US)`). **It must
-   match the language actually being spoken**, otherwise the transcript comes out
-   empty. Set your usual language once in Settings; use the pill to override a
-   single call.
+2. Check the language. A `● Recording` pill appears at the top of the call with a
+   running clock, and beside it a button for each language you pinned (`🇺🇸 US`,
+   `🇲🇽 MX`), the current one lit. **The language must match what is actually being
+   spoken**, otherwise the transcript comes out empty. Set your usual one once in
+   Settings; a pinned button, or the full list under `⋯`, overrides a single call.
 3. Talk. Capture runs from the moment you join; there is nothing to press. Meet's
    own on-screen caption band does not need to be turned on.
-4. Click `📄 Transcript` to watch the transcript build up live, if you want to.
+4. `⋯` then **Show transcript** to watch it build up live, if you want to.
 5. Leave the call. The file is written to
    `Downloads/meetings/platica-notes/<meeting title> <date>.md`.
 
@@ -51,71 +52,100 @@ If a meeting produced nothing (nobody spoke, or you wiped it), no file is writte
 
 ## 3. The controls inside the meeting
 
-A row of pills sits at the top of the meeting window.
+Two controls sit at the top of the meeting window, plus one button per language you
+pinned. Everything else lives a click away behind `⋯`, so what covers somebody's
+face during a call is the state of the recording, not a row of settings.
 
 ![The in-meeting controls and the live transcript panel](panel.png)
 
-| Control | What it does |
+| Always on screen | What it does |
 |---|---|
-| `🌐 English (US)` | Caption language **for this meeting only**. Changing it here does not change your default, and the next meeting starts from your Settings value again. |
-| `📄 Transcript` | Shows and hides the live transcript panel. |
-| `● Rec` / `⏸ Rec off` | Pauses and resumes capture. Red means recording. |
-| `🗑 Wipe` | Erases everything captured in this meeting so far. |
-| `🔒 Private` / `☁️ Normal` | Marks this meeting private, so its file goes to the private folder. |
+| `● Recording 00:12:35` | Capture is running, and for how long. Click to pause, click again to resume. Paused, it goes grey and reads `Paused`. It also carries a `🔒` while the meeting is marked private, so that state is visible without opening anything. |
+| `🇺🇸 US` `🇲🇽 MX` | One button per language you pinned in Settings, up to three, the current one lit. A click switches the recording language **for this meeting only**. |
+| `⋯` | Everything else. |
+
+| Behind `⋯` | What it does |
+|---|---|
+| `🌐 English (US)` | The full language list, for the meeting you did not see coming. |
+| `📄 Show transcript` / `Hide transcript` | The live transcript panel (section 4). |
+| `🔒 Mark private` `off` | Writes this meeting to the private folder instead. |
+| `🗑 Wipe what was captured` | Throws away everything captured so far. Asks first. |
+| `⌥⇧B` `⌥⇧H` | The two keyboard shortcuts, named where the question comes up. |
+
+The menu opens with the mouse or with the arrow keys, walks its rows with them, and
+closes with Escape, which puts the focus back where it was. Choosing something
+closes it.
 
 ### Language
 
 The single most common cause of an empty transcript is a language mismatch. Google
-generates captions for one language at a time, and if the pill says English while the
-call is in Russian, there is simply nothing to capture. Switching the pill
+generates captions for one language at a time, and if the extension is listening in
+English while the call is in Spanish, there is simply nothing to capture. Switching
 mid-sentence is fine: capture re-subscribes to the new language and keeps going.
 
-If you regularly move between languages, turn on **Ask language at meeting start** in
-Settings. Each meeting then opens with a small prompt: keep the current language,
-pick another, or dismiss it. It never blocks recording.
+If you move between the same two or three languages, pin them in Settings. Each one
+gets its own flag button in the call, so switching is a single click rather than a
+trip through a list of fourteen. Nothing is hidden by pinning: the full list stays
+under `⋯`.
+
+If your calls are less predictable than that, turn on **Ask language at meeting
+start** in Settings. Each meeting then opens with a small prompt: keep the current
+language, pick another, or dismiss it. It never blocks recording, and capture is
+already running while it waits.
 
 ### Recording on and off
 
-`● Rec` is on when you join. Click it and everything new stops: transcript, chat,
-join/leave markers, notes. Whatever was already captured is kept and still saved when
-the meeting ends, and the off state survives a page reload, so an accidental refresh
-does not silently start recording you again.
+`● Recording` is on when you join. Click the pill and everything new stops:
+transcript, chat, join/leave markers, notes. Whatever was already captured is kept
+and still saved when the meeting ends, and the off state survives a page reload, so
+an accidental refresh does not silently start recording you again.
 
 Use it for the part of the call that should not exist in writing.
 
-![Capture paused, and Wipe armed and waiting for confirmation](recording.png)
+The clock on the pill is there to be glanced at. A clock that has stopped moving
+tells you something is wrong sooner than any warning could.
+
+![Capture paused, and Wipe waiting for confirmation](recording.png)
 
 ### Wipe
 
-`🗑 Wipe` throws away everything captured in the current meeting so far. Click once
-to arm it (it turns yellow and reads `🗑 Wipe? confirm`), click again to confirm; if
-you do nothing it disarms itself. If nothing is left afterwards, leaving the meeting
-writes no file at all.
+**Wipe what was captured**, under `⋯`, throws away everything captured in the
+current meeting so far. Click once to arm it (the row turns amber and reads `Click
+again to wipe · cannot be undone`), click again to confirm; if you do nothing it
+disarms itself. If nothing is left afterwards, leaving the meeting writes no file at
+all.
+
+It sits in the menu rather than on the bar deliberately. It is the one control that
+destroys what has been captured, and it has no business one stray click away from
+the language buttons.
 
 Wipe is per-meeting and immediate. It does not touch files already saved from earlier
 meetings; delete those from Downloads or from the history page.
 
 ### Private meetings
 
-`🔒 Private` routes this meeting's file to a separate folder
+**Mark private**, under `⋯`, routes this meeting's file to a separate folder
 (`meetings/platica-notes-private` by default) so you can keep it out of whatever you
 sync to the cloud. A private meeting is also excluded from the diagnostic log
-entirely, even when that log is switched on.
+entirely, even when that log is switched on. While it is on, the recording pill
+carries a `🔒`, so the menu does not have to be open for you to know.
 
 If most of your calls are sensitive, set **Private by default** in Settings and use
-the pill for the exceptions.
+the menu for the exceptions.
 
 ### Hiding everything
 
-**Alt+Shift+H** (**⌥⇧H** on macOS) hides every element the extension draws: pills,
-panel, toasts. Recording keeps running. The same toggle lives in the toolbar popup.
-Use it before you share your screen. Press it again to bring the controls back.
+**Alt+Shift+H** (**⌥⇧H** on macOS) hides every element the extension draws: the
+pill, the buttons, the panel, the confirmations. Recording keeps running. The same
+toggle lives in the toolbar popup, and the shortcut is named in the `⋯` menu. Use it
+before you share your screen. Press it again to bring the controls back.
 
 ---
 
 ## 4. The live transcript panel
 
-`📄 Transcript` opens a floating card with the meeting timeline as it fills.
+**Show transcript**, under `⋯`, opens a floating card with the meeting timeline as it
+fills.
 
 - **Speaker turns** appear on the left, each speaker in their own colour.
 - **Chat messages** are aligned to the right, so a written message never looks like
@@ -140,6 +170,10 @@ Things worth knowing:
 - **Bookmarks.** **Alt+Shift+B** (**⌥⇧B**) drops a bookmark with no text: a marked
   moment, for when you have no time to type. It becomes a `### Bookmark` block in the
   file, so an assistant can be told to pay attention to what was said around it.
+- **Links are clickable.** A link somebody pastes into the meeting chat opens in a
+  new tab, never the current one, which would end the call. Only `http` and `https`
+  links become clickable, nothing is prefetched or previewed, and the site you open
+  is not told which meeting you came from.
 
 Closing the panel with `✕` only hides it. Capture is unaffected.
 
@@ -147,66 +181,107 @@ Closing the panel with `✕` only hides it. Capture is unaffected.
 
 ## 5. Settings
 
-Open the toolbar popup and click **⚙ Settings**. The popup itself keeps only the
-in-the-moment control (hide on-screen controls) plus links to the history and this
-page.
+### The toolbar popup first
+
+Click the extension's toolbar icon during a call and it answers the question you
+opened it to ask: whether capture is running and for how long, the meeting's title,
+the language, whether it is marked private, and the exact folder the file will land
+in. Between calls it names the last meeting it saved. It also carries the one control
+worth having in the moment, **Hide the on-screen controls**, and the way through to
+**Meeting history**, **Settings** and **Help**.
+
+Everything configured once rather than mid-call lives in Settings.
 
 ![The settings page](settings.png)
+
+Each group on that page shows its current value on its own heading, so the whole
+configuration can be read without opening a single control, and every change says
+that it saved.
 
 ### Recording
 
 - **Default caption language.** Seeds every new meeting. Fourteen languages are
-  available, including Russian, English (US/UK), Spanish (Spain/Mexico), Portuguese
-  (Brazil/Portugal), French, German, Italian, Dutch, Polish, Ukrainian and Kazakh.
-  Fresh installs default to English (US).
+  available: Dutch, English (US/UK), French, German, Italian, Kazakh, Polish,
+  Portuguese (Brazil/Portugal), Russian, Spanish (Mexico/Spain) and Ukrainian, listed
+  in the same order Google Meet's own caption settings use. Fresh installs default to
+  English (US). An in-meeting switch never writes back
+  here, so a one-off cannot leak into your next call.
 - **Mark meetings private by default.** New meetings start private.
+- **Ask which language at the start of each meeting** (off by default). See
+  section 3.
 
-### Folders
+### Languages you switch between
 
-Three paths, all relative to your browser's Downloads folder. Nested paths such as
-`work/meetings` are allowed.
+Pin up to three, and each one gets its own flag button inside the meeting. This is
+the setting that makes the in-meeting bar worth having, and it is also offered on the
+first-run page. Pinning hides nothing: the full list of fourteen stays under `⋯`.
+
+### Where files go
+
+Three paths, all relative to your browser's Downloads folder, the only place a
+browser extension may write. Nested paths such as `work/meetings` are allowed, and
+files are filed by month inside them. Each field previews the exact path the download
+will use as you type, including when what you typed has to be rewritten, which used
+to surface hours later as a file in an unexpected place.
 
 | Setting | Default | Contents |
 |---|---|---|
-| Public folder | `meetings/platica-notes` | Normal meeting transcripts |
-| Private folder | `meetings/platica-notes-private` | Transcripts of meetings marked private |
-| Debug-log folder | `meetings/platica-notes-logs` | Diagnostic logs, only when the debug log is on |
+| Meetings | `meetings/platica-notes` | Normal meeting transcripts |
+| Private meetings | `meetings/platica-notes-private` | Transcripts of meetings marked private |
+| Diagnostic logs | `meetings/platica-notes-logs` | Diagnostic logs, only when the debug log is on |
 
-If you sync transcripts to the cloud, sync the public folder only. The private folder
-holds the meetings you deliberately kept out, and debug logs embed the full
-transcript.
+If you sync transcripts to the cloud, sync the meetings folder only. The private
+folder holds the meetings you deliberately kept out, and diagnostic logs embed the
+full transcript.
 
-### Advanced
+### What lands in the file
 
-- **Caption alternatives in the saved file** (on by default). Google rewrites its
-  captions as it hears more, and the final version sometimes drops words that an
-  earlier version had. With this on, each turn also carries those earlier versions as
-  `↳ _alt:_` lines, so a word lost from the final caption can still be recovered
-  later, by you or by an assistant. Turn it off for a shorter, cleaner file.
-- **Merge rejoined visits into one file** (on by default). If you drop out and rejoin
+- **Keep the caption alternatives** (on by default). Google rewrites its captions as
+  it hears more, and the final version sometimes drops words that an earlier version
+  had. With this on, each turn also carries those earlier versions as `↳ _alt:_`
+  lines, so a word lost from the final caption can still be recovered later, by you
+  or by an assistant. Turn it off for a shorter, cleaner file.
+- **Merge a rejoin into the same file** (on by default). If you drop out and rejoin
   the same meeting within 40 minutes, both visits end up in one file (with a
   `## Visit 2 · rejoined …` heading) instead of two. A daily recurring call is never
   merged across days, and a private visit is never folded into a public file.
-- **Ask language at meeting start** (off by default). See section 3.
-- **Debug log** (off by default). Writes a `.jsonl` diagnostic file per meeting,
-  containing the full transcript plus decoding details. Only useful when reporting a
-  capture problem. Private meetings are never logged. Turn it off when you are done.
+
+### Meeting history
+
+- **Meetings kept in the extension** (30 by default). How many meetings the history
+  page remembers. Once the list is full the oldest entry drops off, and what you lose
+  is the ability to re-download that meeting from the extension. The `.md` files
+  already in your Downloads folder are never touched.
+
+### Troubleshooting
+
+- **Write a diagnostic log per meeting** (off by default). Writes a `.jsonl` file per
+  meeting beside the transcript, containing everything that was said plus decoding
+  details. Only useful when reporting a capture problem. Private meetings are never
+  logged. Turn it off when you are done.
 
 ---
 
 ## 6. Meeting history
 
-The popup's **Meeting history** button opens a local list of your recent meetings
-(the last 30; older ones fall off as new ones arrive).
+The popup's **Meeting history** button opens a local list of your recent meetings,
+grouped by month, newest first.
 
 ![The meeting history page](history.png)
 
-Each row shows when the meeting started, its title, how many turns were captured, and
-whether it was private. **Download** writes the `.md` again, which is the fix for a
-file you deleted by accident or a download you dismissed. **Delete** removes the
-meeting from this local history; it does not delete a file already in Downloads.
+Each row shows when the meeting started, its title, how many turns were captured, the
+caption language, and a marker if it was private. The filter box at the top matches
+titles as you type, and **Open Downloads folder** takes you to the files themselves.
 
-Everything on this page lives in your browser profile on this machine.
+**Download** writes the `.md` again, which is the fix for a file you deleted by
+accident or a download you dismissed, and it tells you where the file landed.
+**Delete** removes the meeting from this local history; it does not delete a file
+already in Downloads. The row goes immediately and an **Undo** stays available for
+ten seconds, because a transcript that exists nowhere else in the extension deserves
+a way back.
+
+How many meetings the list keeps is a setting (section 5), 30 by default. Everything
+on this page lives in your browser profile on this machine.
 
 ---
 
@@ -261,8 +336,9 @@ particular model or vendor.
   history in your browser profile.
 - **The privacy flag is honoured on every output path**: a meeting marked private
   goes to the private folder and is excluded from the diagnostic log.
-- **You can stop and erase**: `⏸ Rec off` stops capture mid-call, `🗑 Wipe` throws
-  away what has been captured, and a meeting with nothing captured produces no file.
+- **You can stop and erase**: clicking the recording pill stops capture mid-call,
+  **Wipe what was captured** throws away what has been captured, and a meeting with
+  nothing captured produces no file.
 - Uninstalling the extension removes its stored data. Files already in Downloads are
   yours and stay.
 
@@ -275,8 +351,15 @@ participants, depending on where you are. Tell them.
 
 ## 9. When something looks wrong
 
+**A notice says the extension is not recording speech.**
+It appears when a meeting has been running for a while with speech arriving nowhere,
+which is worth knowing while there is still time to fix it rather than afterwards.
+The usual cause is a second meeting-recorder extension in the same tab: only one of
+them can read Meet's captions. It does not appear on a quiet call where nobody has
+spoken yet, and it takes itself back if recording turns out to be fine.
+
 **The file is empty, or there is no file at all.**
-The caption language did not match what was spoken. Check the language pill during
+The caption language did not match what was spoken. Check the language buttons during
 the next call. Also check that somebody actually spoke: a meeting with no captured
 content writes no file by design.
 
@@ -299,11 +382,11 @@ Capture resumes and the meeting stays one file. A paused recording stays paused.
 
 **Two transcripts appeared for one meeting.**
 Either you left and rejoined more than 40 minutes apart (they are separate meetings
-by then), or **Merge rejoined visits** is off, or you have two copies of the extension
+by then), or **Merge a rejoin into the same file** is off, or you have two copies of the extension
 installed: one from the store and one loaded unpacked. Two copies capture
 independently and both write files; remove one.
 
-**Reporting a problem.** Turn on the **Debug log** in Settings, reproduce the
+**Reporting a problem.** Turn on **Write a diagnostic log per meeting** in Settings, reproduce the
 problem, and send the `.jsonl` file from `meetings/platica-notes-logs`. It contains
 the full transcript of that meeting, so use a meeting you do not mind sharing, and
 turn the setting off afterwards. Private meetings are never logged.
