@@ -611,6 +611,18 @@ async function runMeeting(tabId: number): Promise<void> {
         "read Meet's captions. Turn the other one off and reload the tab.",
     )
   }, CAPTURE_HEALTH_TICK_MS)
+
+  // Ask the MAIN world to re-announce whether capture is armed, now that the
+  // listener above exists.
+  //
+  // It announces once, when the subscription goes out, and Meet can accept that
+  // subscription within a second of page load — well before this point. Making
+  // the announcement sticky and replaying it on a config push was not enough on
+  // its own: runMeeting pushes config a hundred lines earlier than it installs
+  // this listener, so the replay landed in the same void as the original. The
+  // request has to come from *after* the listener, which is here.
+  pushRtcConfig(activeLanguage, debugEnabled)
+
   const controls = mountMeetingControls({
     initialLanguage: session.captionLanguage ?? settings.captionLanguage,
     favouriteLanguages: settings.favouriteLanguages,
