@@ -9,7 +9,7 @@
 //
 // Run after `npm run build`, via `npm run site`. Output goes to site/.
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 
 const REPO = "https://github.com/coder0techs/platica-notes"
 const OUT = "site"
@@ -17,7 +17,9 @@ const OUT = "site"
 // The privacy policy is the one page with an outside contract: the Chrome Web
 // Store listing points its policy URL here, so this file name must stay stable.
 const PAGES = [
-  { from: "dist/help.html", to: "index.html", label: "Overview" },
+  { from: "dist/readme.html", to: "index.html", label: "Overview" },
+  // The manual used to exist only as a PDF and as pages inside the extension.
+  { from: "dist/help.html", to: "manual.html", label: "User manual" },
   { from: "dist/privacy.html", to: "privacy.html", label: "Privacy policy" },
   { from: "dist/changelog.html", to: "changelog.html", label: "Release notes" },
 ]
@@ -57,7 +59,12 @@ const absolutiseRepoLinks = (html) =>
 
 rmSync(OUT, { recursive: true, force: true })
 mkdirSync(OUT, { recursive: true })
+// Both stylesheets: docs.css carries no colours of its own any more, it reads
+// the token layer in ui.css.
+copyFileSync("dist/ui.css", `${OUT}/ui.css`)
 copyFileSync("dist/docs.css", `${OUT}/docs.css`)
+// The manual's figures travel with it.
+cpSync("dist/manual", `${OUT}/manual`, { recursive: true })
 // Plain static HTML; no Jekyll processing wanted.
 writeFileSync(`${OUT}/.nojekyll`, "")
 
@@ -65,9 +72,17 @@ for (const page of PAGES) {
   let html = readFileSync(page.from, "utf8")
   html = absolutiseRepoLinks(html)
   html = html.replace("</head>", `${NAV_STYLE}\n</head>`)
-  html = html.replace("<body>\n", `<body>\n${nav(page.to)}\n`)
+  // The built page already carries the in-extension nav (build.mjs stamps it with
+  // data-doc-nav). Its links point at options.html / history.html, which do not
+  // exist on the website, so it is REPLACED rather than joined by a second nav.
+  const inExtensionNav = /<nav class="doc-nav" data-doc-nav[\s\S]*?<\/nav>\n/
+  if (!inExtensionNav.test(html)) {
+    console.error(`${page.from} has no data-doc-nav block. build.mjs and site.mjs have drifted.`)
+    process.exit(1)
+  }
+  html = html.replace(inExtensionNav, `${nav(page.to)}\n`)
   writeFileSync(`${OUT}/${page.to}`, html)
   console.log(`  ${page.from} → ${OUT}/${page.to}`)
 }
 
-console.log(`\nSite assembled in ${OUT}/ (${PAGES.length} pages + docs.css).`)
+console.log(`\nSite assembled in ${OUT}/ (${PAGES.length} pages + ui.css + docs.css).`)

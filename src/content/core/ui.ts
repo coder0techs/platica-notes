@@ -1,4 +1,5 @@
 import { CAPTION_LANGUAGES, isDivider, MAX_FAVOURITE_LANGUAGES, orderedLanguages } from "../../shared/languages"
+import { ensureStyles } from "./styles"
 
 const PULSE_ID = "platica-pulse"
 
@@ -12,8 +13,10 @@ const UI_EL_CLASS = "platica-ui-el"
 let uiHidden = false
 
 /** Tag a root extension element and apply the current visibility immediately, so
- * an element created while the UI is hidden is born hidden. */
+ * an element created while the UI is hidden is born hidden. Also guarantees the
+ * scoped stylesheet is present before anything is drawn. */
 export function registerUiEl(el: HTMLElement): void {
+  ensureStyles()
   el.classList.add(UI_EL_CLASS)
   el.style.visibility = uiHidden ? "hidden" : ""
 }
@@ -32,27 +35,37 @@ export function isUiHidden(): boolean {
 }
 // -------------------------------------------------------------------------------
 
+/** The chords are the same physical keys everywhere; only the label differs. */
+const isMac = /Mac|iPhone|iPad/i.test(navigator.platform) || /Mac/i.test(navigator.userAgent)
+const HIDE_CHORD = isMac ? "⌥⇧H" : "Alt+Shift+H"
+const BOOKMARK_CHORD = isMac ? "⌥⇧B" : "Alt+Shift+B"
+
 /** Brief top-bar flash confirming a storage write happened. */
 export function pulseActivity(): void {
   let bar = document.getElementById(PULSE_ID)
   if (!bar) {
     bar = document.createElement("div")
     bar.id = PULSE_ID
-    bar.style.cssText =
-      "position:fixed;top:0;left:0;width:100%;height:3px;z-index:2147483647;" +
-      "pointer-events:none;transition:background-color .3s ease-in;background-color:transparent;"
+    bar.className = "pn-pulse"
     registerUiEl(bar)
     document.documentElement.appendChild(bar)
   }
-  bar.style.backgroundColor = "#6750a4"
+  bar.style.backgroundColor = "#c58af9"
   setTimeout(() => { bar.style.backgroundColor = "transparent" }, 1500)
 }
 
-// Soft purple fill so a notice reads as the extension's own UI (matching the
-// purple pulse bar / transcript pill) rather than a plain black tooltip —
-// noticeable without shouting.
-const TOAST_BG = "#433b66"
 const TOAST_ID = "platica-toast"
+const NOTICE_ID = "platica-notice"
+
+function closeButton(onClick: () => void, label: string): HTMLButtonElement {
+  const close = document.createElement("button")
+  close.type = "button"
+  close.className = "pn-close"
+  close.textContent = "✕"
+  close.setAttribute("aria-label", label)
+  close.addEventListener("click", onClick)
+  return close
+}
 
 export function showToast(message: string, durationMs = 8000): void {
   // Single toast at a time: a new one replaces any still on screen, so two toasts
@@ -61,22 +74,23 @@ export function showToast(message: string, durationMs = 8000): void {
   document.getElementById(TOAST_ID)?.remove()
   const toast = document.createElement("div")
   toast.id = TOAST_ID
-  toast.textContent = message
-  // Sits just below the persistent top-center controls (top:12px).
-  toast.style.cssText =
-    "position:fixed;top:64px;left:50%;transform:translateX(-50%);color:#fff;" +
-    `background:${TOAST_BG};` +
-    "padding:10px 16px;border-radius:8px;font:14px system-ui;z-index:2147483647;" +
-    "box-shadow:0 4px 16px rgba(0,0,0,.35);"
+  toast.className = "pn-toast"
+
+  const text = document.createElement("span")
+  text.className = "pn-msg-text"
+  text.textContent = message
+
+  // Dismissable, because it sits over a live meeting: eight seconds is a long
+  // time for a confirmation to cover somebody's face.
+  const timer = setTimeout(() => toast.remove(), durationMs)
+  toast.append(text, closeButton(() => {
+    clearTimeout(timer)
+    toast.remove()
+  }, "Dismiss"))
+
   registerUiEl(toast)
   document.documentElement.appendChild(toast)
-  setTimeout(() => toast.remove(), durationMs)
 }
-
-// Amber, so a notice that needs action reads distinctly from the on-brand purple
-// toast (which just confirms things are fine).
-const NOTICE_BG = "#7a4b00"
-const NOTICE_ID = "platica-notice"
 
 /**
  * A persistent, dismissible banner for a state the user must act on (e.g. the
@@ -88,57 +102,41 @@ export function showPersistentNotice(message: string): { dismiss: () => void } {
   document.getElementById(NOTICE_ID)?.remove()
   const notice = document.createElement("div")
   notice.id = NOTICE_ID
-  // Sits below the top-center controls row, same lane as the toast.
-  notice.style.cssText =
-    "position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
-    "box-sizing:border-box;max-width:min(460px,calc(100vw - 24px));display:flex;align-items:center;gap:10px;" +
-    `background:${NOTICE_BG};color:#fff;padding:11px 14px;border-radius:8px;` +
-    "font:14px system-ui;box-shadow:0 4px 16px rgba(0,0,0,.35);"
+  notice.className = "pn-notice"
+  notice.setAttribute("role", "alert")
 
   const text = document.createElement("span")
+  text.className = "pn-msg-text"
   text.textContent = message
-  text.style.cssText = "flex:1;line-height:1.35;"
 
-  const close = document.createElement("button")
-  close.type = "button"
-  close.textContent = "✕"
-  close.setAttribute("aria-label", "Dismiss")
-  close.style.cssText =
-    "flex:none;background:none;border:none;color:rgba(255,255,255,.8);cursor:pointer;" +
-    "font:16px system-ui;line-height:1;padding:0 2px;"
-  const dismiss = () => notice.remove()
-  close.addEventListener("click", dismiss)
-
-  notice.append(text, close)
+  const dismiss = (): void => notice.remove()
+  notice.append(text, closeButton(dismiss, "Dismiss"))
   registerUiEl(notice)
   document.documentElement.appendChild(notice)
   return { dismiss }
 }
 
-// Shared Google-Meet-native dark pill style so the language select and privacy
-// toggle read as one native control group.
-const PILL_BASE =
-  "box-sizing:border-box;height:34px;display:flex;align-items:center;gap:6px;" +
-  "background:rgba(32,33,36,.92);color:#e8eaed;border:1px solid rgba(255,255,255,.14);" +
-  "border-radius:18px;padding:0 14px;" +
-  'font:500 13px "Google Sans",Roboto,system-ui,sans-serif;cursor:pointer;'
-const PILL_BG = "rgba(32,33,36,.92)"
-const PILL_BG_HOVER = "rgba(60,64,67,.95)"
-// Meet's own blue, used for the language button that is currently recording. The
-// other active states here are purple (panel open) and red (private), so blue
-// stays unambiguous.
-const LANG_BG_ACTIVE = "rgba(26,115,232,.95)"
+const pad2 = (n: number): string => String(n).padStart(2, "0")
+
+/** HH:MM:SS since `iso`, fixed width so the pill never resizes as it counts. */
+function elapsed(iso: string): string {
+  const secs = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000))
+  return `${pad2(Math.floor(secs / 3600))}:${pad2(Math.floor((secs % 3600) / 60))}:${pad2(secs % 60)}`
+}
 
 /**
- * Per-meeting on-screen controls, mounted top-center as one cohesive native-looking
- * group: a caption-language select, a transcript-panel toggle, and a privacy
- * toggle. Returns `unmount` plus `setTranscriptActive` so the caller can mirror the
- * panel's open/closed state on the toggle pill.
+ * Per-meeting on-screen controls, mounted top-center as one cohesive group: a
+ * recording pill carrying the elapsed clock, one button per pinned language, and
+ * an overflow menu holding the caption-language list, the transcript-panel
+ * toggle, the privacy toggle and the wipe action. Returns `unmount` plus
+ * `setTranscriptActive` / `setLanguage` so the caller can mirror state onto it.
  */
 export function mountMeetingControls(opts: {
   initialLanguage: string
   initialPrivate: boolean
   initialRecording: boolean
+  /** Meeting start, for the elapsed clock on the recording pill. */
+  startedAt?: string
   onLanguageChange: (language: string) => void
   /** Up to three tags pinned to the top of the language list. */
   favouriteLanguages?: string[]
@@ -148,37 +146,30 @@ export function mountMeetingControls(opts: {
   onPurge: () => void
 }): { unmount: () => void; setTranscriptActive: (active: boolean) => void; setLanguage: (language: string) => void } {
   const container = document.createElement("div")
-  container.style.cssText =
-    "position:fixed;top:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:2147483647;"
+  container.className = "pn-bar"
   registerUiEl(container)
 
-  // --- language pill: a visual layer (glyph + label + caret) with a transparent
-  // native <select> stretched over the WHOLE pill, so a click anywhere on the pill
-  // opens the OS dropdown (not just the narrow text zone). ---
-  const langPill = document.createElement("div")
-  langPill.style.cssText = PILL_BASE + "position:relative;"
-  langPill.title = "Plática Notes: caption language for this meeting (resets to your default next time)"
-  langPill.addEventListener("mouseenter", () => { langPill.style.background = PILL_BG_HOVER })
-  langPill.addEventListener("mouseleave", () => { langPill.style.background = PILL_BG })
+  // --- language row: a visual layer (glyph + label + caret) with a transparent
+  // native <select> stretched over the WHOLE row, so a click anywhere on it opens
+  // the OS dropdown (not just the narrow text zone). ---
+  const langRow = document.createElement("div")
+  langRow.className = "pn-row"
+  langRow.title = "Plática Notes: caption language for this meeting (resets to your default next time)"
 
-  const langVisual = document.createElement("span")
-  langVisual.style.cssText = "display:flex;align-items:center;gap:6px;pointer-events:none;"
   const langGlyph = document.createElement("span")
   langGlyph.textContent = "🌐"
   const langText = document.createElement("span")
   const caret = document.createElement("span")
+  caret.className = "pn-row-end"
   caret.textContent = "▾"
-  caret.style.cssText = "opacity:.7;margin-left:2px;"
-  langVisual.append(langGlyph, langText, caret)
 
   const select = document.createElement("select")
-  // Transparent, covers the whole pill so the entire pill is the click target.
-  select.style.cssText =
-    "position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:none;margin:0;"
+  select.className = "pn-row-select"
+  select.setAttribute("aria-label", "Caption language for this meeting")
   // Flat list, no header row. The native dropdown renders an optgroup/disabled
   // header in low-contrast grey (hard to read on the dark menu) and scrolls it out
   // of view once a lower item is selected, so a header here is both unreadable and
-  // useless. The per-meeting scope is conveyed by the pill tooltip, the post-change
+  // useless. The per-meeting scope is conveyed by the row tooltip, the post-change
   // toast ("· only this meeting"), and the start-of-meeting language prompt instead.
   // Pinned languages first, then a disabled divider, then the rest. The order is
   // the whole signal: a divider is a line, not a header row, so it dodges the
@@ -200,25 +191,26 @@ export function mountMeetingControls(opts: {
     select.appendChild(opt)
     select.value = opts.initialLanguage
   }
-  const syncLangText = () => {
+  const syncLangText = (): void => {
     langText.textContent = select.selectedOptions[0]?.textContent ?? select.value
   }
   select.addEventListener("change", () => {
     syncLangText()
     syncLangButtons()
     opts.onLanguageChange(select.value)
+    setMenu(false)
     // Confirm the change and reinforce that it is scoped to this meeting only.
     // Shorter than the default — it's a quick confirmation, not an onboarding cue.
     showToast(`🌐 ${langText.textContent} · only this meeting`, 4000)
   })
   syncLangText()
 
-  langPill.append(langVisual, select)
+  langRow.append(langGlyph, langText, caret, select)
 
-  // --- favourite-language buttons -------------------------------------------
+  // --- pinned-language buttons ------------------------------------------------
   // A dropdown is the wrong shape for the thing people actually do in a call:
   // switch between the two or three languages they meet in. Those get a button
-  // each, one click, current one lit. The pill above stays for everything else,
+  // each, one click, current one lit. The row above stays for everything else,
   // so an unexpected language is never unreachable — a picker that can only
   // offer three is a picker that fails the meeting it did not predict.
   const favourites = (opts.favouriteLanguages ?? [])
@@ -227,27 +219,24 @@ export function mountMeetingControls(opts: {
     .slice(0, MAX_FAVOURITE_LANGUAGES)
 
   const langButtons = new Map<string, HTMLButtonElement>()
-  const syncLangButtons = () => {
+  const syncLangButtons = (): void => {
     for (const [value, button] of langButtons) {
-      const active = value === select.value
-      button.style.background = active ? LANG_BG_ACTIVE : PILL_BG
-      button.style.opacity = active ? "1" : ".75"
-      button.setAttribute("aria-pressed", String(active))
+      button.setAttribute("aria-pressed", String(value === select.value))
     }
   }
 
   for (const lang of favourites) {
     const button = document.createElement("button")
     button.type = "button"
-    button.style.cssText = PILL_BASE + "gap:5px;border:none;cursor:pointer;"
+    button.className = "pn-pill pn-lang"
     button.title = `Plática Notes: record this meeting in ${lang.label}`
     // Flag AND code together: Windows renders no flag for a regional-indicator
     // pair, so the code is the label there and a nicety here.
     const flag = document.createElement("span")
     flag.textContent = lang.flag
     const code = document.createElement("span")
+    code.className = "pn-lang-code"
     code.textContent = lang.code
-    code.style.cssText = "font-size:11px;letter-spacing:.02em;"
     button.append(flag, code)
     button.addEventListener("click", () => {
       if (select.value === lang.value) return
@@ -264,110 +253,125 @@ export function mountMeetingControls(opts: {
   // go rather than colouring itself; the caller keeps it in sync via
   // setTranscriptActive. ---
   let transcriptActive = false
-  const transcriptPill = document.createElement("button")
-  transcriptPill.type = "button"
-  transcriptPill.style.cssText = PILL_BASE
-  transcriptPill.textContent = "📄 Transcript"
-  transcriptPill.title = "Plática Notes: show/hide the live transcript panel"
-  const renderTranscript = () => {
-    transcriptPill.textContent = transcriptActive ? "📄 Hide transcript" : "📄 Show transcript"
+  const transcriptRow = document.createElement("button")
+  transcriptRow.type = "button"
+  transcriptRow.className = "pn-row"
+  transcriptRow.title = "Plática Notes: show/hide the live transcript panel"
+  const transcriptGlyph = document.createElement("span")
+  transcriptGlyph.textContent = "📄"
+  const transcriptLabel = document.createElement("span")
+  transcriptRow.append(transcriptGlyph, transcriptLabel)
+  const renderTranscript = (): void => {
+    transcriptLabel.textContent = transcriptActive ? "Hide transcript" : "Show transcript"
   }
-  transcriptPill.addEventListener("mouseenter", () => {
-    if (!transcriptActive) transcriptPill.style.background = PILL_BG_HOVER
+  transcriptRow.addEventListener("click", () => {
+    opts.onToggleTranscript()
+    // A menu that stays open after its row has done its job is a menu the user
+    // has to dismiss by hand before they can see what they just changed.
+    setMenu(false)
   })
-  transcriptPill.addEventListener("mouseleave", renderTranscript)
-  transcriptPill.addEventListener("click", () => { opts.onToggleTranscript() })
   renderTranscript()
 
   // --- privacy row: the toggle lives in the menu, but the state it sets shows on
   // the recording pill (the lock), so a private meeting is never quietly private. ---
   let isPrivate = opts.initialPrivate
-  const privacyPill = document.createElement("button")
-  privacyPill.type = "button"
-  privacyPill.style.cssText = PILL_BASE
-  privacyPill.title = "Plática Notes: mark this meeting private (local-only folder)"
-  const renderPrivacy = () => {
-    // A menu row cannot say "on" by filling itself red without shouting, so it
-    // says it in words instead.
-    privacyPill.textContent = isPrivate ? "🔒 Private · on" : "🔒 Mark private"
+  const privacyRow = document.createElement("button")
+  privacyRow.type = "button"
+  privacyRow.className = "pn-row"
+  privacyRow.title = "Plática Notes: mark this meeting private (local-only folder)"
+  const privacyGlyph = document.createElement("span")
+  privacyGlyph.textContent = "🔒"
+  const privacyLabel = document.createElement("span")
+  privacyLabel.textContent = "Mark private"
+  const privacyState = document.createElement("span")
+  privacyState.className = "pn-row-state"
+  privacyRow.append(privacyGlyph, privacyLabel, privacyState)
+  const renderPrivacy = (): void => {
+    privacyState.textContent = isPrivate ? "on" : "off"
+    privacyRow.classList.toggle("is-on", isPrivate)
+    privacyRow.setAttribute("aria-pressed", String(isPrivate))
   }
-  privacyPill.addEventListener("mouseenter", () => {
-    if (!isPrivate) privacyPill.style.background = PILL_BG_HOVER
-  })
-  privacyPill.addEventListener("mouseleave", renderPrivacy)
-  privacyPill.addEventListener("click", () => {
+  privacyRow.addEventListener("click", () => {
     isPrivate = !isPrivate
     renderPrivacy()
     // The lock lives on the recording pill; keep it in step. Safe to call here —
     // by click time both renderers exist.
     renderRecording()
     opts.onPrivateChange(isPrivate)
+    setMenu(false)
   })
   renderPrivacy()
 
   // --- recording pill: On FILLS the pill red — the universal "recording live"
-  // indicator, same active-by-background idiom as the privacy pill; Off fills it
-  // grey (muted/stopped). A stopped recording is impossible to miss. Toggling flips
-  // the flag via onRecordingChange. ---
-  const RECORDING_BG_ON = "rgba(217,48,37,.95)" // red fill while recording (Meet-native red)
-  const RECORDING_BG_OFF = "rgba(95,99,104,.95)" // grey fill while stopped
+  // indicator; Off fills it grey (muted/stopped). A stopped recording is
+  // impossible to miss. The elapsed clock rides along as the liveness signal: a
+  // clock that has stopped moving says something is wrong before any warning can.
+  // Toggling flips the flag via onRecordingChange. ---
   let recording = opts.initialRecording
   const recordingPill = document.createElement("button")
   recordingPill.type = "button"
-  recordingPill.style.cssText = PILL_BASE
+  recordingPill.className = "pn-pill pn-rec"
   recordingPill.title = "Plática Notes: pause/resume capturing this meeting"
-  const renderRecording = () => {
+  const recDot = document.createElement("span")
+  recDot.className = "pn-rec-dot"
+  const recLabel = document.createElement("span")
+  const recClock = document.createElement("span")
+  recClock.className = "pn-clock"
+  const recLock = document.createElement("span")
+  recLock.className = "pn-lock"
+  recordingPill.append(recDot, recLabel, recClock, recLock)
+
+  const renderRecording = (): void => {
+    recLabel.textContent = recording ? "Recording" : "Paused"
+    recordingPill.classList.toggle("is-paused", !recording)
     // Carries the privacy state too, now that the toggle itself lives in the
     // menu: hiding a control is fine, hiding what it is currently doing is not.
-    recordingPill.textContent = (recording ? "● Recording" : "⏸ Paused") + (isPrivate ? " 🔒" : "")
-    recordingPill.style.background = recording ? RECORDING_BG_ON : RECORDING_BG_OFF
+    recLock.textContent = isPrivate ? "🔒" : ""
+    recClock.textContent = opts.startedAt ? elapsed(opts.startedAt) : ""
   }
-  recordingPill.addEventListener("mouseenter", () => {
-    if (!recording) recordingPill.style.background = PILL_BG_HOVER
-  })
-  recordingPill.addEventListener("mouseleave", renderRecording)
   recordingPill.addEventListener("click", () => {
     recording = !recording
     renderRecording()
     opts.onRecordingChange(recording)
   })
   renderRecording()
+  // One second is the resolution of the clock, and the only thing that repaints.
+  const clockTimer = opts.startedAt ? setInterval(renderRecording, 1000) : undefined
 
-  // --- wipe pill: destructive clean-slate for the current meeting. Two-click
+  // --- wipe row: destructive clean-slate for the current meeting. Two-click
   // confirm inline (no native dialog): first click arms for 4s, second click within
   // the window fires onPurge. Reverts on timeout. ---
-  const WIPE_BG_ARMED = "rgba(249,171,0,.95)" // yellow while armed (caution before confirm)
   let wipeArmed = false
   let wipeTimer: ReturnType<typeof setTimeout> | undefined
-  const wipePill = document.createElement("button")
-  wipePill.type = "button"
-  wipePill.style.cssText = PILL_BASE
-  wipePill.title = "Plática Notes: wipe everything captured in this meeting so far"
-  const disarmWipe = () => {
+  const wipeRow = document.createElement("button")
+  wipeRow.type = "button"
+  wipeRow.className = "pn-row pn-row-danger"
+  wipeRow.title = "Plática Notes: wipe everything captured in this meeting so far"
+  const wipeGlyph = document.createElement("span")
+  wipeGlyph.textContent = "🗑"
+  const wipeLabel = document.createElement("span")
+  wipeRow.append(wipeGlyph, wipeLabel)
+  const disarmWipe = (): void => {
     wipeArmed = false
     if (wipeTimer) clearTimeout(wipeTimer)
     wipeTimer = undefined
-    wipePill.textContent = "🗑 Wipe what was captured"
-    wipePill.style.background = "transparent"
+    wipeLabel.textContent = "Wipe what was captured"
+    wipeRow.classList.remove("is-armed")
   }
-  wipePill.addEventListener("mouseenter", () => {
-    if (!wipeArmed) wipePill.style.background = PILL_BG_HOVER
-  })
-  wipePill.addEventListener("mouseleave", () => {
-    if (!wipeArmed) wipePill.style.background = "transparent"
-  })
-  wipePill.addEventListener("click", () => {
+  wipeRow.addEventListener("click", () => {
     if (!wipeArmed) {
       wipeArmed = true
-      wipePill.textContent = "🗑 Wipe — click again to confirm"
-      wipePill.style.background = WIPE_BG_ARMED
+      wipeLabel.textContent = "Click again to wipe · cannot be undone"
+      wipeRow.classList.add("is-armed")
       wipeTimer = setTimeout(disarmWipe, 4000)
       return
     }
     disarmWipe()
     opts.onPurge()
+    setMenu(false)
+    showToast("Wiped everything captured in this meeting so far.", 5000)
   })
-  wipePill.textContent = "🗑 Wipe what was captured"
+  disarmWipe()
 
   // --- overflow menu ---------------------------------------------------------
   // The bar sits on top of somebody's meeting, so every pill has to earn its
@@ -378,67 +382,88 @@ export function mountMeetingControls(opts: {
   // Wipe is the strongest case, and not on grounds of tidiness: it is the only
   // control here that destroys what has been captured, and it sat one stray
   // elbow away from the language buttons. Its two-click confirm still applies.
-  const MENU_ROW =
-    "box-sizing:border-box;width:100%;height:36px;display:flex;align-items:center;gap:8px;" +
-    "background:transparent;color:#e8eaed;border:none;border-radius:8px;padding:0 10px;text-align:left;" +
-    'font:400 13px "Google Sans",Roboto,system-ui,sans-serif;cursor:pointer;position:relative;'
-
   const menu = document.createElement("div")
-  menu.style.cssText =
-    "position:absolute;top:42px;right:0;min-width:250px;display:none;flex-direction:column;gap:2px;" +
-    "background:rgba(41,42,45,.98);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:6px;" +
-    "box-shadow:0 8px 24px rgba(0,0,0,.35);"
+  menu.className = "pn-menu"
   menu.setAttribute("role", "menu")
 
-  // Restyle the moved controls as rows. Their behaviour is untouched — only where
-  // they live and how wide they are.
-  for (const pill of [langPill, transcriptPill, privacyPill, wipePill]) {
-    pill.style.cssText = MENU_ROW
-    pill.addEventListener("mouseenter", () => { pill.style.background = "rgba(255,255,255,.08)" })
-    pill.addEventListener("mouseleave", () => { pill.style.background = "transparent" })
-  }
-  // The language row keeps its transparent <select> stretched over it, so the row
-  // opens the full list exactly as the pill did.
-  caret.style.marginLeft = "auto"
-  wipePill.style.color = "#f28b82"
+  // The chords were documented only in the popup and in Settings, which is not
+  // where the question comes up.
+  const foot = document.createElement("p")
+  foot.className = "pn-menu-foot"
+  const bookmarkKey = document.createElement("span")
+  bookmarkKey.className = "pn-key"
+  bookmarkKey.textContent = BOOKMARK_CHORD
+  const hideKey = document.createElement("span")
+  hideKey.className = "pn-key"
+  hideKey.textContent = HIDE_CHORD
+  foot.append(
+    bookmarkKey,
+    document.createTextNode(" marks a moment · "),
+    hideKey,
+    document.createTextNode(" hides the controls"),
+  )
 
-  menu.append(langPill, transcriptPill, privacyPill, wipePill)
+  menu.append(langRow, transcriptRow, privacyRow, wipeRow, foot)
 
   const moreButton = document.createElement("button")
   moreButton.type = "button"
+  moreButton.className = "pn-pill pn-more"
   moreButton.setAttribute("aria-haspopup", "menu")
   moreButton.setAttribute("aria-expanded", "false")
   moreButton.setAttribute("aria-label", "Plática Notes: more options")
   moreButton.title = "Plática Notes: more options"
-  moreButton.style.cssText = PILL_BASE + "width:38px;justify-content:center;border:none;"
   moreButton.textContent = "⋯"
 
+  // Arrow keys walk the menu, so it is usable without a mouse. The language row's
+  // focusable element is its transparent <select>, which is also what opens the
+  // list, so it takes that row's place in the sequence.
+  const menuItems = (): HTMLElement[] => [select, transcriptRow, privacyRow, wipeRow]
+
   let menuOpen = false
-  const setMenu = (open: boolean) => {
+  function setMenu(open: boolean, focusFirst = false): void {
     menuOpen = open
-    menu.style.display = open ? "flex" : "none"
+    menu.classList.toggle("is-open", open)
     moreButton.setAttribute("aria-expanded", String(open))
-    moreButton.style.background = open ? PILL_BG_HOVER : PILL_BG
+    if (!open) disarmWipe()
+    if (open && focusFirst) menuItems()[0]?.focus()
   }
   moreButton.addEventListener("click", (event) => {
     event.stopPropagation()
     setMenu(!menuOpen)
   })
+  moreButton.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault()
+      setMenu(true, true)
+    }
+  })
+  menu.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
+    // A <select> owns the arrow keys when its list is open; when it is closed the
+    // browser would change the selection instead of moving focus, which would
+    // silently resubscribe capture. Moving focus is the safer reading here.
+    event.preventDefault()
+    const items = menuItems()
+    const at = items.indexOf(document.activeElement as HTMLElement)
+    const step = event.key === "ArrowDown" ? 1 : -1
+    items[(at + step + items.length) % items.length]?.focus()
+  })
   // Any click outside closes it, as does Escape. Both listeners are removed with
   // the container on unmount.
-  const onDocClick = (event: MouseEvent) => {
+  const onDocClick = (event: MouseEvent): void => {
     if (menuOpen && !container.contains(event.target as Node)) setMenu(false)
   }
-  const onKey = (event: KeyboardEvent) => {
-    if (menuOpen && event.key === "Escape") setMenu(false)
+  const onKey = (event: KeyboardEvent): void => {
+    if (menuOpen && event.key === "Escape") {
+      setMenu(false)
+      moreButton.focus()
+    }
   }
   document.addEventListener("click", onDocClick, true)
   document.addEventListener("keydown", onKey, true)
 
-  // The menu hangs off the bar, so the bar is the positioning context.
-  container.style.position = "fixed"
   const moreWrap = document.createElement("div")
-  moreWrap.style.cssText = "position:relative;display:flex;"
+  moreWrap.className = "pn-more-wrap"
   moreWrap.append(moreButton, menu)
 
   syncLangButtons()
@@ -448,14 +473,16 @@ export function mountMeetingControls(opts: {
     unmount: () => {
       document.removeEventListener("click", onDocClick, true)
       document.removeEventListener("keydown", onKey, true)
+      if (clockTimer) clearInterval(clockTimer)
+      if (wipeTimer) clearTimeout(wipeTimer)
       container.remove()
     },
     setTranscriptActive: (active: boolean) => {
       transcriptActive = active
       renderTranscript()
     },
-    // Set the pill's language without firing its change event — used when the
-    // start-of-meeting prompt drives the change, so the pill stays in sync without
+    // Set the row's language without firing its change event, for when the
+    // start-of-meeting prompt drives the change, so the row stays in sync without
     // re-applying (no double resubscribe).
     setLanguage: (language: string) => {
       if (![...select.options].some(o => o.value === language)) {
@@ -466,6 +493,7 @@ export function mountMeetingControls(opts: {
       }
       select.value = language
       syncLangText()
+      syncLangButtons()
     },
   }
 }
@@ -481,31 +509,32 @@ export function mountLanguagePrompt(opts: {
   /** Up to three tags pinned to the top of the language list. */
   favouriteLanguages?: string[]
 }): { unmount: () => void } {
-  const labelFor = (value: string) => CAPTION_LANGUAGES.find(l => l.value === value)?.label ?? value
+  const labelFor = (value: string): string =>
+    CAPTION_LANGUAGES.find(l => l.value === value)?.label ?? value
 
   const card = document.createElement("div")
-  // Sits just below the controls row (top:12px, height 34px) so both stay visible.
-  card.style.cssText =
-    "position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
-    "box-sizing:border-box;width:min(380px,calc(100vw - 24px));background:#433b66;color:#fff;" +
-    "border-radius:12px;padding:14px 16px;box-shadow:0 6px 24px rgba(0,0,0,.4);" +
-    "font:14px system-ui;display:flex;flex-direction:column;gap:10px;"
+  card.className = "pn-prompt"
+  card.setAttribute("role", "dialog")
+  // Non-modal, and it deliberately does NOT take focus. It appears the moment a
+  // call is joined, where stealing focus would fight Meet's own controls and
+  // could swallow a keystroke aimed at the mic.
+  card.setAttribute("aria-modal", "false")
+  card.setAttribute("aria-label", "Recording language")
   registerUiEl(card)
 
-  const title = document.createElement("div")
+  const title = document.createElement("p")
+  title.className = "pn-prompt-title"
   title.textContent = "Recording language"
-  title.style.cssText = "font-weight:600;font-size:15px;"
 
-  const body = document.createElement("div")
-  body.style.cssText = "opacity:.92;line-height:1.35;"
+  const body = document.createElement("p")
+  body.className = "pn-prompt-body"
   body.textContent =
     `This meeting is being recorded in ${labelFor(opts.initialLanguage)}. ` +
     "If it's in another language, switch now — otherwise the captions come out garbled."
 
   const select = document.createElement("select")
-  select.style.cssText =
-    "width:100%;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.25);" +
-    "background:rgba(0,0,0,.25);color:#fff;padding:0 8px;font:14px system-ui;cursor:pointer;"
+  select.className = "pn-select"
+  select.setAttribute("aria-label", "Caption language for this meeting")
   // Pinned languages first, then a disabled divider, then the rest. The order is
   // the whole signal: a divider is a line, not a header row, so it dodges the
   // unreadable-grey problem described above while still showing where the
@@ -525,7 +554,7 @@ export function mountLanguagePrompt(opts: {
   }
   select.value = opts.initialLanguage
 
-  const dismiss = () => card.remove()
+  const dismiss = (): void => card.remove()
   // Picking a language in the dropdown applies it and closes the prompt in one
   // step — `change` only fires on a real switch, so no separate confirm click is
   // needed. Capture resubscribes via onPick.
@@ -535,18 +564,14 @@ export function mountLanguagePrompt(opts: {
   // the language is already right — confirm and close, no resubscribe.
   const keep = document.createElement("button")
   keep.type = "button"
-  keep.style.cssText =
-    "height:36px;border:none;border-radius:8px;background:#6750a4;color:#fff;cursor:pointer;" +
-    'font:600 14px system-ui;'
+  keep.className = "pn-btn"
   keep.textContent = `Keep ${labelFor(opts.initialLanguage)}`
   keep.addEventListener("click", dismiss)
 
   const noAsk = document.createElement("button")
   noAsk.type = "button"
+  noAsk.className = "pn-btn-quiet"
   noAsk.textContent = "Don't ask again"
-  noAsk.style.cssText =
-    "background:none;border:none;color:rgba(255,255,255,.7);cursor:pointer;" +
-    "font:13px system-ui;text-decoration:underline;align-self:flex-start;padding:0;"
   noAsk.addEventListener("click", () => { opts.onDisableAsking(); dismiss() })
 
   card.append(title, body, select, keep, noAsk)

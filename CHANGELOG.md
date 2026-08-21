@@ -4,6 +4,78 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+- **Every screen has been redesigned.** One visual language now runs through the
+  popup, settings, history, the first-run page, the documentation pages and the
+  in-meeting overlay, and it is taken from what the extension produces: a saved
+  meeting is a sequence of speaker-attributed turns (a coloured name, a
+  monospace clock, a body), so every group on every screen is drawn the same way,
+  and the colours are the ones the live transcript panel already used for
+  speakers. Times, counts, folder paths and language tags are set in monospace
+  throughout, because they are data. Red now means exactly two things and nothing
+  else: capture is live, or this control destroys something.
+
+- **The toolbar popup finally answers the question you opened it to ask.** It
+  showed a screen-sharing toggle and a link. It now leads with the meeting: whether
+  capture is running, how long it has been running, the title, the language, whether
+  the meeting is private, and the exact folder the file will land in. Between calls
+  it names the last meeting it saved. Hiding the on-screen controls is still one
+  click, just no longer the most prominent thing on the surface.
+
+- **Deleting a meeting can be taken back.** It used to be a browser confirmation
+  box and then gone for good, on a transcript that exists nowhere else in the
+  extension. The row now goes immediately and an **Undo** stays available for ten
+  seconds, which is the protection the dialog was pretending to be. Re-downloading
+  a meeting also reports where the file landed instead of succeeding in silence.
+
+- **Meeting history is a list you can search.** Titles no longer get squeezed into
+  a table column: meetings are grouped by month, newest first, with a filter box, a
+  private-or-not marker, the turn count and the caption language on each row, and a
+  button that opens your Downloads folder. Its empty state now says what to do
+  instead of showing an empty table header.
+
+- **You can see how many meetings history keeps, and change it.** The limit was
+  fixed at thirty and mentioned nowhere, so the thirty-first meeting silently
+  pushed the oldest out of the list. It is now a setting, and both the history page
+  and the setting say plainly that the `.md` files already in your Downloads folder
+  are never touched.
+
+- **Settings tells you it saved, and shows you the path before you commit to it.**
+  Eight controls wrote to storage without a word of acknowledgement. Each group now
+  also carries its own current value on its heading, so the whole configuration can
+  be read without opening a control, and each folder field previews the exact path
+  the download will use, including when what you typed would be rewritten, which
+  previously only surfaced as a file in an unexpected place hours later.
+
+- **Help is the user manual.** The Help link opened the project's README: install
+  from source, architecture notes, contributor instructions. It now opens the actual
+  manual, with its figures, and the manual, release notes and privacy policy can
+  reach each other and get back to the extension.
+
+- **The first-run page explains the product instead of asking one question.** It
+  now says what happens in three steps (join a call, watch or annotate the
+  transcript, find the file in Downloads), and lets you pin the two or three
+  languages you meet in, which is the setting that makes the in-meeting controls
+  worth using and which was previously buried.
+
+- **The confirmation on Wipe can be read.** Armed, it was red text on an amber
+  fill, at the one moment it had to be legible, and it did not say what the next
+  click would do. It is now dark ink on amber and says so.
+
+- **The in-meeting controls work from the keyboard, and say what the keys are.**
+  The overflow menu opens with the arrow keys, walks its rows with them and closes
+  with Escape, giving focus back where it came from; every control everywhere now
+  has a visible focus ring, which the overlay had nowhere at all. The menu also
+  names the two shortcuts (mark this moment, hide the controls) where the
+  question actually comes up rather than only in Settings. Choosing something in
+  the menu now closes it.
+
+- **The recording pill carries the elapsed time.** A clock that has stopped moving
+  says something is wrong sooner than any warning can.
+
+- **Anything that moves respects "reduce motion", and the language picker works in
+  dark mode.** The pinned-language chips were hard-coded white on white text, so on
+  a dark settings page they were an unreadable stripe of foreign UI.
+
 - **Recording now survives another meeting recorder in the same tab.** With a
   second recording extension installed, Plática Notes captured nothing at all —
   no speech, no participants, nothing. It saw one of the fourteen channels Google

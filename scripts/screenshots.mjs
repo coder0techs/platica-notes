@@ -275,10 +275,13 @@ try {
   const page = await context.newPage()
   await page.goto(MEETING_URL)
 
-  // The pill group appears once the adapter has detected the call.
-  const transcriptPill = page.getByTitle("Plática Notes: show/hide the live transcript panel")
-  await transcriptPill.waitFor({ timeout: 15000 })
-  await transcriptPill.click()
+  // The pill group appears once the adapter has detected the call. The transcript
+  // row lives behind the overflow menu, so open that first; activating a row
+  // closes the menu on its own, so there is nothing to close afterwards.
+  const moreButton = page.getByTitle("Plática Notes: more options")
+  await moreButton.waitFor({ timeout: 15000 })
+  await moreButton.click()
+  await page.getByTitle("Plática Notes: show/hide the live transcript panel").click()
 
   for (const [deviceId, deviceName] of DEVICES) {
     await feed(page, { type: "device", deviceId, deviceName })
@@ -305,6 +308,8 @@ try {
   const noteInput = page.getByPlaceholder("Add a note…")
   await noteInput.fill(NOTE_TEXT)
   await noteInput.press("Enter")
+  // Leave nothing focused: a lit focus ring in a listing shot reads as a form.
+  await noteInput.blur()
 
   // Past the join-settle window a roster arrival is a genuine mid-meeting join,
   // and a state-6 leaf is a departure — both render as timeline markers.
@@ -319,6 +324,8 @@ try {
   // Framed like shot 1 deliberately: same call, only the pills differ. (Zooming
   // the page to enlarge them re-flows the pill group and wraps its labels.)
   await page.getByTitle("Plática Notes: pause/resume capturing this meeting").click()
+  await moreButton.click()
+  // First click arms the two-click confirm; the shot is of the armed state.
   await page.getByTitle("Plática Notes: wipe everything captured in this meeting so far").click()
   await page.waitForTimeout(400)
   await page.screenshot({ path: join(OUT, "02-recording-controls.png") })

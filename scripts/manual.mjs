@@ -10,6 +10,7 @@ import { chromium } from "playwright"
 import { marked } from "marked"
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { MANUAL_FIGURES as FIGURES } from "./lib/manual-figures.mjs"
 
 const ROOT = process.cwd()
 const SOURCE = join(ROOT, "docs/manual/USER-MANUAL.md")
@@ -17,14 +18,6 @@ const SHOTS = join(ROOT, "docs/store/screenshots")
 const version = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version
 const OUT = join(ROOT, `platica-notes-manual-${version}.pdf`)
 
-// Figure names used in the Markdown -> the store screenshots they resolve to.
-const FIGURES = {
-  "panel.png": "01-in-meeting-panel.png",
-  "recording.png": "02-recording-controls.png",
-  "saved-file.png": "03-saved-file.png",
-  "history.png": "04-history.png",
-  "settings.png": "05-settings.png",
-}
 
 const dataUri = (file) =>
   `data:image/png;base64,${readFileSync(join(SHOTS, file)).toString("base64")}`

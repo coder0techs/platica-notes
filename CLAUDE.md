@@ -91,13 +91,19 @@ Three contexts, split by responsibility:
 2. **Isolated adapter** (`src/content/platforms/meet.ts`). Owns the meeting
    lifecycle: join/leave detection, soft-nav loop, reload-resume, the privacy
    pill, and the caption-tail flush on leave. Pure decision logic is extracted
-   into `meet-lifecycle.ts` so it can be unit-tested.
+   into `meet-lifecycle.ts` so it can be unit-tested. Everything the extension
+   draws inside Meet is styled by one injected stylesheet
+   (`src/content/core/styles.ts`), every selector scoped under `.platica-ui-el`:
+   an inline style cannot express `:focus-visible` or `prefers-reduced-motion`,
+   and the overlay must never inherit from, or match, the host page.
 3. **Background service worker** (`src/background/`). Session store with
    retention, finalize on meeting end or tab close (crash-resumable), and `.md`
    export via `chrome.downloads`.
 
-`src/shared/` holds the domain types, storage helpers, and the
-content-to-background message contract.
+`src/shared/` holds the domain types, storage helpers, the download-path rules
+(`paths.ts`: the downloader, the popup and the settings page all build a
+destination through it, so none of them can promise a path another one does not
+use), and the content-to-background message contract.
 
 ## Invariants (do not regress)
 
@@ -123,6 +129,15 @@ content-to-background message contract.
   - Channel labels in `meet-rtc/main.ts` (`media-session`, `captions`,
     `collections`, `meet_messages`) still route; the debug log's `channel` phases
     list what Meet actually opened, and `meet-build` records the Meet build tested.
+- **One token layer.** `public/ui.css` owns every colour, radius, spacing step
+  and font size for the popup, settings, history, the first-run page and the
+  rendered doc pages; each page adds only layout on top. `public/docs.css`
+  defines no colours of its own. The in-meeting overlay has its own dark,
+  fixed palette in `src/content/core/styles.ts` (it lives on someone else's
+  page), and its speaker colours are the same six values `ui.css` uses for its
+  dark theme. That shared palette is what makes the app and the file it writes
+  look like one product. Two hues are reserved and never decorative: red means
+  live capture, and red means a control that destroys data.
 - **The saved-file format is structured.** `src/background/format.ts` emits the
   v2 format (YAML front matter plus a turn grid). Body text is newline-collapsed
   via `inlineText`, and front-matter scalars go through `yamlScalar`, to prevent

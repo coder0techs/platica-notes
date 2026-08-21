@@ -2,26 +2,42 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <title>Plática Notes</title>
   <link rel="stylesheet" href="ui.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <header><h1>Plática Notes</h1></header>
+  <!-- The subject of this surface is the meeting, not the settings. It is filled
+       from the live session in popup.ts and re-announced when it changes. -->
+  <section class="now" id="now" aria-live="polite" aria-busy="true">
+    <div class="turn">
+      <div class="turn-body">
+        <p class="now-state"><span class="rec-dot is-idle"></span>Checking…</p>
+      </div>
+    </div>
+  </section>
 
-  <label class="row">
-    <span>Hide all on-screen controls</span>
-    <input type="checkbox" id="hide-ui">
-  </label>
-  <p class="hint">Hides the in-meeting controls, transcript panel, and toasts (for screen-sharing or demos). Recording keeps running. Toggle here or with <span class="key" id="hide-ui-shortcut">Alt+Shift+H</span> during a meeting.</p>
+  <main>
+    <a class="btn btn-primary btn-block" id="open-history" href="history.html" target="_blank">
+      Meeting history
+    </a>
 
-  <a class="btn-primary" id="open-history" href="history.html" target="_blank">Meeting history</a>
+    <label class="row" for="hide-ui">
+      <span class="row-text">
+        <span class="row-label">Hide the on-screen controls</span>
+        <span class="hint">Recording keeps going. Also <span class="key" id="hide-ui-shortcut">Alt+Shift+H</span> during a call.</span>
+      </span>
+      <input type="checkbox" id="hide-ui">
+    </label>
+  </main>
 
-  <nav class="links">
-    <a class="link" href="options.html" target="_blank">⚙ Settings</a>
-    <a class="link" href="help.html" target="_blank">Help</a>
-  </nav>
-
-  <p class="hint build" id="build-info"></p>
+  <footer>
+    <nav class="links" aria-label="More">
+      <a class="link" href="options.html" target="_blank">Settings</a>
+      <a class="link" href="help.html" target="_blank">Help</a>
+    </nav>
+    <p class="build" id="build-info"></p>
+  </footer>
   <script src="popup.js"></script>
 </body>
 </html>

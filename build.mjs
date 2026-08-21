@@ -1,7 +1,8 @@
 import * as esbuild from "esbuild"
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { execSync } from "node:child_process"
 import { marked } from "marked"
+import { MANUAL_FIGURES } from "./scripts/lib/manual-figures.mjs"
 
 const watch = process.argv.includes("--watch")
 
@@ -41,17 +42,53 @@ writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n")
 // pages are plain HTML+CSS served from chrome-extension://). The popup links to
 // them. Content is the project's own docs, so rendering is trusted.
 const DOC_PAGES = [
-  { md: "README.md", out: "help.html", title: "Help" },
-  { md: "CHANGELOG.md", out: "changelog.html", title: "Release notes" },
-  { md: "PRIVACY.md", out: "privacy.html", title: "Privacy policy" },
+  // Help is the USER MANUAL, not README.md. README is a contributor document:
+  // it opens with how to install from source and how the capture pipeline is
+  // wired, and shipping it behind a "Help" link answered nobody's question.
+  { md: "docs/manual/USER-MANUAL.md", out: "help.html", title: "User manual", label: "User manual" },
+  // Kept for the website only: it is the project overview the Pages site lands
+  // on, and it is a contributor document, so it stays out of the extension nav.
+  { md: "README.md", out: "readme.html", title: "Overview", label: "Overview", siteOnly: true },
+  { md: "CHANGELOG.md", out: "changelog.html", title: "Release notes", label: "What's new" },
+  { md: "PRIVACY.md", out: "privacy.html", title: "Privacy policy", label: "Privacy policy" },
 ]
+
+// Inside the extension these three pages are dead ends: opened from the popup,
+// with no way to each other and no way back. The nav is stamped in here and
+// swapped for the website's own by scripts/site.mjs (it keys off `data-doc-nav`).
+const docNav = (current) => {
+  const links = DOC_PAGES.filter(p => !p.siteOnly).map(p =>
+    p.out === current
+      ? `<a href="${p.out}" aria-current="page">${p.label}</a>`
+      : `<a href="${p.out}">${p.label}</a>`,
+  ).join("\n    ")
+  return (
+    '<nav class="doc-nav" data-doc-nav aria-label="Documentation">\n' +
+    `  <div class="doc-nav-inner">\n    <a class="doc-nav-home" href="history.html">Pl\u00e1tica Notes</a>\n    ${links}\n` +
+    '    <a class="doc-nav-end" href="options.html">Settings</a>\n  </div>\n</nav>'
+  )
+}
+// The manual's figures are the store screenshots. Copy them next to the page and
+// rewrite the Markdown's short names, so the in-extension manual shows the same
+// pictures the PDF does instead of five broken images.
+mkdirSync("dist/manual", { recursive: true })
+for (const [figure, shot] of Object.entries(MANUAL_FIGURES)) {
+  const from = `docs/store/screenshots/${shot}`
+  if (existsSync(from)) cpSync(from, `dist/manual/${figure}`)
+}
+
 for (const doc of DOC_PAGES) {
-  const body = marked.parse(readFileSync(doc.md, "utf8"))
+  const body = marked
+    .parse(readFileSync(doc.md, "utf8"))
+    .replace(/src="([^"/:]+\.png)"/g, (match, name) =>
+      Object.hasOwn(MANUAL_FIGURES, name) ? `src="manual/${name}" loading="lazy"` : match,
+    )
   const page =
     '<!doctype html>\n<html lang="en">\n<head>\n' +
     '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
-    `<title>${doc.title} — Plática Notes</title>\n<link rel="stylesheet" href="docs.css">\n</head>\n` +
-    `<body>\n<main class="doc">\n${body}\n</main>\n</body>\n</html>\n`
+    `<title>${doc.title} · Plática Notes</title>\n` +
+    '<link rel="stylesheet" href="ui.css">\n<link rel="stylesheet" href="docs.css">\n</head>\n' +
+    `<body>\n${docNav(doc.out)}\n<main class="doc">\n${body}\n</main>\n</body>\n</html>\n`
   writeFileSync(`dist/${doc.out}`, page)
 }
 
