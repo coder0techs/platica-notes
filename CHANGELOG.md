@@ -76,6 +76,11 @@ All notable changes to Plática Notes, newest first.
   dark mode.** The pinned-language chips were hard-coded white on white text, so on
   a dark settings page they were an unreadable stripe of foreign UI.
 
+- **The "not recording speech" notice no longer cries wolf.** It could appear on a
+  meeting that was recording perfectly, and once shown it stayed on screen into
+  the next meeting in that tab. It now goes away by itself if recording turns out
+  to be fine, and never outlives the meeting it belongs to.
+
 - **Recording now survives another meeting recorder in the same tab.** With a
   second recording extension installed, Plática Notes captured nothing at all —
   no speech, no participants, nothing. It saw one of the fourteen channels Google

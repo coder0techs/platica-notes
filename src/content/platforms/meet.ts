@@ -566,11 +566,26 @@ async function runMeeting(tabId: number): Promise<void> {
   // why, and it never fires on a quiet meeting — see shouldWarnCaptureIdle.
   let captureArmed = false
   let captureWarned = false
+  // The notice never auto-dismisses, so it has to be taken down deliberately:
+  // once if capture turns out to be fine after all, and again at the end of the
+  // meeting. Without the second one it outlived its meeting and hung over the
+  // next one in the same tab — which is how a meeting that was recording
+  // perfectly came to be sitting under a warning that it was not.
+  let captureNotice: { dismiss: () => void } | null = null
+  const clearCaptureNotice = () => {
+    captureNotice?.dismiss()
+    captureNotice = null
+  }
   const meetingStartedAt = Date.now()
   onCaptureArmed = () => {
     if (captureArmed) return
     captureArmed = true
     dlog("capture armed")
+    // Armed late is still armed: retract a warning that has been overtaken.
+    if (captureWarned) {
+      dlog("capture health warning retracted")
+      clearCaptureNotice()
+    }
   }
   const captureHealthTimer = setInterval(() => {
     if (
@@ -590,7 +605,7 @@ async function runMeeting(tabId: number): Promise<void> {
     // the one failure we have reproduced, so "nothing has been captured" would be
     // wrong — and the earlier draft went on to promise that whatever had been
     // captured was safe, which contradicted the sentence before it.
-    showPersistentNotice(
+    captureNotice = showPersistentNotice(
       "Plática Notes is not recording speech in this meeting. The usual cause is a " +
         "second meeting-recorder extension running in this tab — only one of them can " +
         "read Meet's captions. Turn the other one off and reload the tab.",
@@ -836,6 +851,7 @@ async function runMeeting(tabId: number): Promise<void> {
     // residual leave click can re-enter during the flush wait below.
     clearInterval(endWatcher)
     clearInterval(captureHealthTimer)
+    clearCaptureNotice()
     clearTimeout(titleTimer)
     document.removeEventListener("click", onDocumentClick, true)
     onCaptureArmed = null
