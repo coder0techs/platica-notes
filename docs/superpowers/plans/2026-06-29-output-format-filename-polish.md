@@ -210,8 +210,8 @@ describe("formatMeetingText (v3)", () => {
   })
 
   it("includes language and recorder when present, omits them when absent", () => {
-    const withMeta = frontMatter(formatMeetingText(makeMeeting({ language: "ru-RU", recorder: "Alex" })))
-    expect(withMeta).toContain('language: "ru-RU"')
+    const withMeta = frontMatter(formatMeetingText(makeMeeting({ language: "es-MX", recorder: "Alex" })))
+    expect(withMeta).toContain('language: "es-MX"')
     expect(withMeta).toContain('recorder: "Alex"')
     const without = frontMatter(formatMeetingText(makeMeeting()))
     expect(without).not.toContain("language:")

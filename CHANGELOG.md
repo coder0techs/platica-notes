@@ -118,9 +118,8 @@ All notable changes to Plática Notes, newest first.
   is not passed to the site you open.
 - **A button per language you actually use.** Pick up to three in Settings and each
   one gets its own flag button in the meeting, so switching the recording language
-  is a single click instead of a trip through a dropdown of fourteen. Nothing is
-  hidden — the full list stays in the language pill for the meeting you did not see
-  coming.
+  is a single click instead of a trip through a list of fourteen. Nothing is hidden:
+  the full list stays in the meeting's menu, for the call you did not see coming.
 - **The debug log now says what produced it.** Each log starts with the extension
   version and build, the browser, and the settings that decide what capture does.
   Diagnostic events from the first moments of a meeting are no longer dropped
@@ -129,6 +128,13 @@ All notable changes to Plática Notes, newest first.
   decoder could read, and how many were saved. A gap between those numbers is
   the difference between "nobody spoke" and "something is broken", which until
   now nothing recorded.
+
+- **The language list is in Google Meet's own order.** It used to open with whichever
+  language happened to have been typed into the list first, which is no way to decide
+  what fourteen people from fourteen places see at the top. It now follows the order
+  Meet's own caption settings use, so a language is where you already expect it and no
+  one market leads by accident. Pinning is how a language gets to the top, per
+  profile, and the default for a fresh install is unchanged.
 
 ## 1.15.0 - 2026-08-20
 

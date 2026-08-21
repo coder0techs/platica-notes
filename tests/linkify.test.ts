@@ -46,7 +46,7 @@ describe("linkify", () => {
       "https://a.test/1 https://b.test/2",
       "trailing https://example.com/x.",
       "(https://example.com/x)",
-      "ссылка https://пример.рф/страница вот",
+      "enlace https://ejemplo.es/página aquí",
     ]) {
       expect(text(linkify(input))).toBe(input)
     }

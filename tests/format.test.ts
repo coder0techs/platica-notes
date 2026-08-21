@@ -75,8 +75,8 @@ describe("formatMeetingText (v3)", () => {
   })
 
   it("includes language and recorder when present, omits them when absent", () => {
-    const withMeta = frontMatter(formatMeetingText(makeMeeting({ language: "ru-RU", recorder: "Alex" })))
-    expect(withMeta).toContain('language: "ru-RU"')
+    const withMeta = frontMatter(formatMeetingText(makeMeeting({ language: "es-MX", recorder: "Alex" })))
+    expect(withMeta).toContain('language: "es-MX"')
     expect(withMeta).toContain('recorder: "Alex"')
     const without = frontMatter(formatMeetingText(makeMeeting()))
     expect(without).not.toContain("language:")
@@ -357,7 +357,7 @@ describe("formatMeetingText (v3)", () => {
 
 describe("collapseVersions", () => {
   it("drops frames that are a pure prefix of the next (left-to-right typing)", () => {
-    expect(collapseVersions(["за", "запи", "записи всех"])).toEqual(["записи всех"])
+    expect(collapseVersions(["fac", "factu", "facturación anual"])).toEqual(["facturación anual"])
   })
 
   it("keeps a frame the next one shortened (truncation point)", () => {
@@ -369,29 +369,29 @@ describe("collapseVersions", () => {
   })
 
   it("collapses pure case flicker, keeping the later casing", () => {
-    expect(collapseVersions(["так", "Так"])).toEqual(["Так"])
+    expect(collapseVersions(["sí", "Sí"])).toEqual(["Sí"])
   })
 
   it("collapses a back-and-forth case flicker run to the final frame", () => {
-    expect(collapseVersions(["да", "Да", "да", "Да"])).toEqual(["Да"])
+    expect(collapseVersions(["sí", "Sí", "sí", "Sí"])).toEqual(["Sí"])
   })
 
   it("collapses punctuation-only churn (punctuation is ignored in the comparison)", () => {
     // Meet repunctuates the same words between frames; the trailing "." is not a
-    // real revision, so "зашла." folds into the next frame that extends those words.
-    expect(collapseVersions(["зашла.", "зашла в"])).toEqual(["зашла в"])
+    // real revision, so "entró." folds into the next frame that extends those words.
+    expect(collapseVersions(["entró.", "entró en"])).toEqual(["entró en"])
   })
 
   it("collapses a combined case+punctuation flip, keeping the final frame verbatim", () => {
-    expect(collapseVersions(["так", "Так."])).toEqual(["Так."])
+    expect(collapseVersions(["sí", "Sí."])).toEqual(["Sí."])
   })
 
   it("preserves a genuine divergence (a replaced word) as a kept frame", () => {
-    // A real ASR self-correction ("вина" vs "бинах") is not a normalized prefix of
-    // the next frame, so both survive (this is what an alt: line should capture).
-    expect(collapseVersions(["по картам на вина", "по картам на бинах"])).toEqual([
-      "по картам на вина",
-      "по картам на бинах",
+    // A real ASR self-correction ("crédito" vs "débito") is not a normalized prefix
+    // of the next frame, so both survive (this is what an alt: line should capture).
+    expect(collapseVersions(["en tarjetas de crédito", "en tarjetas de débito"])).toEqual([
+      "en tarjetas de crédito",
+      "en tarjetas de débito",
     ])
   })
 
@@ -422,11 +422,13 @@ describe("collapseVersions", () => {
   })
 
   it("collapses a case+punctuation+growth chain to only the final element (acceptance)", () => {
-    expect(collapseVersions(["зашла.", "зашла в", "зашла в аккаунт уже"])).toEqual(["зашла в аккаунт уже"])
+    expect(collapseVersions(["entró.", "entró en", "entró en la cuenta ya"])).toEqual([
+      "entró en la cuenta ya",
+    ])
   })
 
   it("keeps both frames when the only change is a replaced word (acceptance)", () => {
-    expect(collapseVersions(["вина", "бинах"])).toEqual(["вина", "бинах"])
+    expect(collapseVersions(["crédito", "débito"])).toEqual(["crédito", "débito"])
   })
 })
 
@@ -659,8 +661,8 @@ describe("formatDebugLog", () => {
       {
         t: "2026-06-10T10:02:00.000Z",
         ctx: "bg",
-        nested: { count: 3, labels: ["a", "б", "в"] },
-        text: "Привет мир 🌍",
+        nested: { count: 3, labels: ["a", "ñ", "é"] },
+        text: "Hola mundo 🌍",
       },
     ]
     const line = formatDebugLog(events)

@@ -29,15 +29,22 @@ works with Google Meet.
   has to be turned on and capture keeps working in background tabs.
 • Speaker-attributed transcript plus in-meeting chat, interleaved chronologically.
 • Inline join and leave markers, so you can see who was in the room when.
-• A floating, scrollable transcript panel inside the meeting window, with notes you
-  can type as the call happens.
+• A floating, scrollable transcript panel inside the meeting window, searchable,
+  with notes you can type as the call happens.
+• Fourteen caption languages. Pin the two or three you actually meet in and each
+  gets its own button in the call, so switching mid-meeting is one click.
+• One recording pill in the meeting, showing that it is recording and for how long.
+  Everything else is a click away in a menu, not a toolbar over somebody's face.
 • Recording on/off without leaving the call: pause capture, then resume where you
   left off. Whatever was captured before the pause is still saved.
 • Wipe what was captured in the current meeting, in two clicks. A meeting left with
   nothing captured writes no file at all.
 • Per-meeting privacy toggle: private meetings save to a separate folder you can
   keep out of cloud sync.
-• Local history of your recent meetings, with re-download and delete.
+• A local, searchable history of your recent meetings, with re-download, and an
+  undo on delete.
+• Works alongside another meeting-recorder extension in the same tab, and tells you
+  if speech is not reaching it.
 • Zero network: nothing is ever uploaded anywhere.
 
 Google Meet is a trademark of Google LLC. Plática Notes is not created by,
@@ -169,14 +176,14 @@ Upload in this order, with these captions:
 
 1. `01-in-meeting-panel.png` — "The live transcript panel: speakers, chat, join and
    leave markers, and your own notes, as the call happens."
-2. `02-recording-controls.png` — "Pause capture or wipe everything recorded so far,
-   without leaving the call."
+2. `02-recording-controls.png` — "Switch language, show the transcript, mark the call
+   private, or wipe what was captured, without leaving the call."
 3. `03-saved-file.png` — "Every meeting is saved as a Markdown file on your own
    computer. No servers, no accounts."
-4. `04-history.png` — "A local history of recent meetings; re-download or delete any
-   of them."
-5. `05-settings.png` — "Caption language, a private-by-default toggle, and the
-   folders your meetings are written to."
+4. `04-history.png` — "A local, searchable history of recent meetings; re-download any
+   of them, or delete one and undo it."
+5. `05-settings.png` — "Caption language, the languages you switch between, a
+   private-by-default toggle, and the folders your meetings are written to."
 
 ## Hosting the privacy policy
 
