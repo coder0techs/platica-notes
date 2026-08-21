@@ -20,22 +20,32 @@ export interface LanguageOption {
 // The code travels with the flag everywhere it is shown. Windows does not render
 // regional-indicator pairs as flags — Chrome there shows the bare letters — so a
 // flag alone would degrade into something unreadable on a platform we do ship to.
-// "RU" beside the flag costs nothing on macOS and is the whole label on Windows.
+// "US" beside the flag costs nothing on macOS and is the whole label on Windows.
+//
+// ORDER: this is Google Meet's own caption-language order, narrowed to the tags we
+// offer. Meet sorts by the English name of the language and keeps regional
+// variants together in its own sequence (es-MX before es-ES, en-US before en-GB),
+// so a user who has ever opened Meet's caption settings finds the list where they
+// expect it. That is the only reason the order is what it is: do not resort it
+// alphabetically by tag, do not float anyone's favourite to the top, and do not
+// let the maintainer's own language lead the list. Pinning (see orderedLanguages)
+// is how a person puts their languages first, per profile, without the default
+// order saying anything about who wrote this.
 export const CAPTION_LANGUAGES: LanguageOption[] = [
-  { value: "ru-RU", label: "Russian", flag: "🇷🇺", code: "RU" },
+  { value: "nl-NL", label: "Dutch", flag: "🇳🇱", code: "NL" },
   { value: "en-US", label: "English (US)", flag: "🇺🇸", code: "US" },
   { value: "en-GB", label: "English (UK)", flag: "🇬🇧", code: "GB" },
-  { value: "es-ES", label: "Spanish (Spain)", flag: "🇪🇸", code: "ES" },
-  { value: "es-MX", label: "Spanish (Mexico)", flag: "🇲🇽", code: "MX" },
-  { value: "pt-BR", label: "Portuguese (Brazil)", flag: "🇧🇷", code: "BR" },
-  { value: "pt-PT", label: "Portuguese (Portugal)", flag: "🇵🇹", code: "PT" },
   { value: "fr-FR", label: "French", flag: "🇫🇷", code: "FR" },
   { value: "de-DE", label: "German", flag: "🇩🇪", code: "DE" },
   { value: "it-IT", label: "Italian", flag: "🇮🇹", code: "IT" },
-  { value: "nl-NL", label: "Dutch", flag: "🇳🇱", code: "NL" },
-  { value: "pl-PL", label: "Polish", flag: "🇵🇱", code: "PL" },
-  { value: "uk-UA", label: "Ukrainian", flag: "🇺🇦", code: "UA" },
   { value: "kk-KZ", label: "Kazakh", flag: "🇰🇿", code: "KZ" },
+  { value: "pl-PL", label: "Polish", flag: "🇵🇱", code: "PL" },
+  { value: "pt-BR", label: "Portuguese (Brazil)", flag: "🇧🇷", code: "BR" },
+  { value: "pt-PT", label: "Portuguese (Portugal)", flag: "🇵🇹", code: "PT" },
+  { value: "ru-RU", label: "Russian", flag: "🇷🇺", code: "RU" },
+  { value: "es-MX", label: "Spanish (Mexico)", flag: "🇲🇽", code: "MX" },
+  { value: "es-ES", label: "Spanish (Spain)", flag: "🇪🇸", code: "ES" },
+  { value: "uk-UA", label: "Ukrainian", flag: "🇺🇦", code: "UA" },
 ]
 
 /** How many languages may be pinned. Three keeps the top of the list short. */

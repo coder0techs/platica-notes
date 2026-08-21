@@ -6,8 +6,42 @@ import {
   MAX_FAVOURITE_LANGUAGES,
   orderedLanguages,
 } from "../src/shared/languages"
+import { DEFAULT_SETTINGS } from "../src/shared/types"
 
 const values = (rows: { value: string }[]) => rows.map((r) => r.value)
+
+describe("CAPTION_LANGUAGES", () => {
+  it("is in Google Meet's own caption-language order", () => {
+    // Meet sorts by the English name of the language and keeps the regional
+    // variants in its own sequence. Pinned as a literal because the ordering is a
+    // deliberate product decision, not an accident of how the list grew: the
+    // default order must match what Meet's caption settings show, and must not put
+    // any one market, or the maintainer's own language, first.
+    expect(values(CAPTION_LANGUAGES)).toEqual([
+      "nl-NL",
+      "en-US",
+      "en-GB",
+      "fr-FR",
+      "de-DE",
+      "it-IT",
+      "kk-KZ",
+      "pl-PL",
+      "pt-BR",
+      "pt-PT",
+      "ru-RU",
+      "es-MX",
+      "es-ES",
+      "uk-UA",
+    ])
+  })
+
+  it("starts every fresh profile on the default language, wherever it sits in the list", () => {
+    // The list order is Meet's; the default is ours. A reorder must not quietly
+    // change which language a new install records in.
+    expect(CAPTION_LANGUAGES.some((l) => l.value === DEFAULT_SETTINGS.captionLanguage)).toBe(true)
+    expect(DEFAULT_SETTINGS.captionLanguage).toBe("en-US")
+  })
+})
 
 describe("orderedLanguages", () => {
   it("is the untouched list when nothing is pinned", () => {

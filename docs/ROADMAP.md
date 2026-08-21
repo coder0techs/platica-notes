@@ -94,9 +94,10 @@ notes), **`format.ts` (render)** — *blocked on the parallel format change*.
 - **Per-meeting (active) language** — the in-meeting pill. Changing it
   resubscribes **only the current meeting** and is **ephemeral**: it does **not**
   overwrite the persisted default.
-- **Fresh-install default = English** (`en-US`), not the current `ru-RU`. English
-  is the right out-of-box default for a store audience; a user can still pick
-  Russian or any other supported language.
+- **Fresh-install default = English** (`en-US`). English is the right out-of-box
+  default for a store audience; a user can still pick any other supported language.
+  (Shipped: `DEFAULT_SETTINGS.captionLanguage` is `en-US`, and the picker follows
+  Meet's own language order rather than putting any one market first.)
 
 **Why.** Current behaviour conflates the two: the pill/popup value is the single
 `Settings.captionLanguage`, so a manual mid-meeting switch sticks to the next
