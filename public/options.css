@@ -51,11 +51,23 @@ main { max-width: 760px; margin: 0 auto; padding: 22px 24px 44px; }
 }
 
 .page-foot {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+  display: grid; gap: 14px;
   padding-top: 18px; margin-top: 6px; border-top: 1px solid var(--rule);
 }
+.foot-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+}
+/* A reference line, so the key caps are readable rather than fine print. */
+.shortcuts {
+  display: grid; justify-items: start; gap: 7px;
+  margin: 0; font-size: 12.5px; color: var(--ink-2);
+}
+/* Each chord and its label is one atomic unit, so a wrap never separates a key
+   cap from the words it belongs to. */
+.shortcuts .chord { display: inline-flex; align-items: baseline; gap: 6px; }
 
 @media (max-width: 700px) {
+  .foot-row { flex-direction: column; align-items: flex-start; gap: 10px; }
   .head-inner, main { padding-left: 16px; padding-right: 16px; }
   .head-sub { display: none; }
   .setting-toggle, .setting-head { gap: 14px; }

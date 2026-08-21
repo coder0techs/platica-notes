@@ -67,7 +67,15 @@ function closeButton(onClick: () => void, label: string): HTMLButtonElement {
   return close
 }
 
-export function showToast(message: string, durationMs = 8000): void {
+// Three seconds. A toast here only ever confirms something: capture started, the
+// language switched, the wipe went through. It sits over someone's face on a video
+// call, the state it reports is also on the permanent recording pill, and it has a
+// dismiss button for the impatient. Anything that needs acting on is a
+// showPersistentNotice instead, which never auto-dismisses. One duration, so no
+// call site has to argue about its own.
+const TOAST_MS = 3000
+
+export function showToast(message: string, durationMs = TOAST_MS): void {
   // Single toast at a time: a new one replaces any still on screen, so two toasts
   // (e.g. the start notice and a language-change confirmation) can never stack on
   // the same spot.
@@ -154,7 +162,8 @@ export function mountMeetingControls(opts: {
   // the OS dropdown (not just the narrow text zone). ---
   const langRow = document.createElement("div")
   langRow.className = "pn-row"
-  langRow.title = "Plática Notes: caption language for this meeting (resets to your default next time)"
+  langRow.dataset.pn = "language"
+  langRow.title = "Caption language for this meeting (resets to your default next time)"
 
   const langGlyph = document.createElement("span")
   langGlyph.textContent = "🌐"
@@ -200,8 +209,7 @@ export function mountMeetingControls(opts: {
     opts.onLanguageChange(select.value)
     setMenu(false)
     // Confirm the change and reinforce that it is scoped to this meeting only.
-    // Shorter than the default — it's a quick confirmation, not an onboarding cue.
-    showToast(`🌐 ${langText.textContent} · only this meeting`, 4000)
+    showToast(`🌐 ${langText.textContent} · only this meeting`)
   })
   syncLangText()
 
@@ -229,6 +237,7 @@ export function mountMeetingControls(opts: {
     const button = document.createElement("button")
     button.type = "button"
     button.className = "pn-pill pn-lang"
+    button.dataset.pn = `lang-${lang.value}`
     button.title = `Plática Notes: record this meeting in ${lang.label}`
     // Flag AND code together: Windows renders no flag for a regional-indicator
     // pair, so the code is the label there and a nicety here.
@@ -244,7 +253,7 @@ export function mountMeetingControls(opts: {
       syncLangText()
       syncLangButtons()
       opts.onLanguageChange(lang.value)
-      showToast(`${lang.flag} ${lang.label} · only this meeting`, 4000)
+      showToast(`${lang.flag} ${lang.label} · only this meeting`)
     })
     langButtons.set(lang.value, button)
   }
@@ -256,7 +265,8 @@ export function mountMeetingControls(opts: {
   const transcriptRow = document.createElement("button")
   transcriptRow.type = "button"
   transcriptRow.className = "pn-row"
-  transcriptRow.title = "Plática Notes: show/hide the live transcript panel"
+  transcriptRow.dataset.pn = "transcript"
+  transcriptRow.title = "Show or hide the live transcript panel"
   const transcriptGlyph = document.createElement("span")
   transcriptGlyph.textContent = "📄"
   const transcriptLabel = document.createElement("span")
@@ -278,7 +288,8 @@ export function mountMeetingControls(opts: {
   const privacyRow = document.createElement("button")
   privacyRow.type = "button"
   privacyRow.className = "pn-row"
-  privacyRow.title = "Plática Notes: mark this meeting private (local-only folder)"
+  privacyRow.dataset.pn = "private"
+  privacyRow.title = "Write this meeting to your private folder instead"
   const privacyGlyph = document.createElement("span")
   privacyGlyph.textContent = "🔒"
   const privacyLabel = document.createElement("span")
@@ -311,7 +322,8 @@ export function mountMeetingControls(opts: {
   const recordingPill = document.createElement("button")
   recordingPill.type = "button"
   recordingPill.className = "pn-pill pn-rec"
-  recordingPill.title = "Plática Notes: pause/resume capturing this meeting"
+  recordingPill.dataset.pn = "recording"
+  recordingPill.title = "Plática Notes: pause or resume capturing this meeting"
   const recDot = document.createElement("span")
   recDot.className = "pn-rec-dot"
   const recLabel = document.createElement("span")
@@ -346,7 +358,8 @@ export function mountMeetingControls(opts: {
   const wipeRow = document.createElement("button")
   wipeRow.type = "button"
   wipeRow.className = "pn-row pn-row-danger"
-  wipeRow.title = "Plática Notes: wipe everything captured in this meeting so far"
+  wipeRow.dataset.pn = "wipe"
+  wipeRow.title = "Wipe everything captured in this meeting so far"
   const wipeGlyph = document.createElement("span")
   wipeGlyph.textContent = "🗑"
   const wipeLabel = document.createElement("span")
@@ -369,7 +382,7 @@ export function mountMeetingControls(opts: {
     disarmWipe()
     opts.onPurge()
     setMenu(false)
-    showToast("Wiped everything captured in this meeting so far.", 5000)
+    showToast("Wiped everything captured in this meeting so far.")
   })
   disarmWipe()
 
@@ -390,24 +403,28 @@ export function mountMeetingControls(opts: {
   // where the question comes up.
   const foot = document.createElement("p")
   foot.className = "pn-menu-foot"
-  const bookmarkKey = document.createElement("span")
-  bookmarkKey.className = "pn-key"
-  bookmarkKey.textContent = BOOKMARK_CHORD
-  const hideKey = document.createElement("span")
-  hideKey.className = "pn-key"
-  hideKey.textContent = HIDE_CHORD
-  foot.append(
-    bookmarkKey,
-    document.createTextNode(" marks a moment · "),
-    hideKey,
-    document.createTextNode(" hides the controls"),
-  )
+  // Each chord and its label is one atomic unit: the footer wraps on a narrow
+  // window, and a wrap that lands between a key cap and the words it belongs to
+  // reads as a different sentence.
+  const chord = (keys: string, what: string): HTMLSpanElement => {
+    const unit = document.createElement("span")
+    unit.className = "pn-chord"
+    const cap = document.createElement("span")
+    cap.className = "pn-key"
+    cap.textContent = keys
+    const label = document.createElement("span")
+    label.textContent = what
+    unit.append(cap, label)
+    return unit
+  }
+  foot.append(chord(BOOKMARK_CHORD, "marks a moment"), chord(HIDE_CHORD, "hides the controls"))
 
   menu.append(langRow, transcriptRow, privacyRow, wipeRow, foot)
 
   const moreButton = document.createElement("button")
   moreButton.type = "button"
   moreButton.className = "pn-pill pn-more"
+  moreButton.dataset.pn = "more"
   moreButton.setAttribute("aria-haspopup", "menu")
   moreButton.setAttribute("aria-expanded", "false")
   moreButton.setAttribute("aria-label", "Plática Notes: more options")

@@ -156,22 +156,28 @@
           <input type="checkbox" id="debug-log">
         </label>
 
-        <div class="setting">
-          <p class="hint">During a meeting, <span class="key" id="bookmark-shortcut">Alt+Shift+B</span>
-            drops a bookmark into the transcript at that moment, and
-            <span class="key" id="hide-shortcut">Alt+Shift+H</span> hides every on-screen control
-            without stopping the recording.</p>
-        </div>
       </div>
     </section>
 
     <footer class="page-foot">
+      <!-- The chords are a reference, not a setting, and they were sitting at the
+           bottom of Troubleshooting where they had nothing to do with the
+           diagnostic log. They are taught in context by the in-meeting menu; this
+           line is where someone browsing the page comes across them. -->
+      <p class="shortcuts">
+        <span class="chord"><span class="key" id="bookmark-shortcut">Alt+Shift+B</span>
+          marks the moment in the transcript</span>
+        <span class="chord"><span class="key" id="hide-shortcut">Alt+Shift+H</span>
+          hides every on-screen control</span>
+      </p>
+      <div class="foot-row">
       <nav class="links" aria-label="About">
         <a class="link" href="help.html" target="_blank">User manual</a>
         <a class="link" href="changelog.html" target="_blank">What's new</a>
         <a class="link" href="privacy.html" target="_blank">Privacy policy</a>
       </nav>
       <p class="build" id="build-info"></p>
+      </div>
     </footer>
   </main>
   <script src="options.js"></script>

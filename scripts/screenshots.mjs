@@ -278,10 +278,10 @@ try {
   // The pill group appears once the adapter has detected the call. The transcript
   // row lives behind the overflow menu, so open that first; activating a row
   // closes the menu on its own, so there is nothing to close afterwards.
-  const moreButton = page.getByTitle("Plática Notes: more options")
+  const moreButton = page.locator('[data-pn="more"]')
   await moreButton.waitFor({ timeout: 15000 })
   await moreButton.click()
-  await page.getByTitle("Plática Notes: show/hide the live transcript panel").click()
+  await page.locator('[data-pn="transcript"]').click()
 
   for (const [deviceId, deviceName] of DEVICES) {
     await feed(page, { type: "device", deviceId, deviceName })
@@ -323,10 +323,10 @@ try {
   // --- 2. the same call with capture paused and Wipe armed ------------------
   // Framed like shot 1 deliberately: same call, only the pills differ. (Zooming
   // the page to enlarge them re-flows the pill group and wraps its labels.)
-  await page.getByTitle("Plática Notes: pause/resume capturing this meeting").click()
+  await page.locator('[data-pn="recording"]').click()
   await moreButton.click()
   // First click arms the two-click confirm; the shot is of the armed state.
-  await page.getByTitle("Plática Notes: wipe everything captured in this meeting so far").click()
+  await page.locator('[data-pn="wipe"]').click()
   await page.waitForTimeout(400)
   await page.screenshot({ path: join(OUT, "02-recording-controls.png") })
   await page.close()

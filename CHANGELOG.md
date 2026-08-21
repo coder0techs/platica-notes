@@ -69,6 +69,12 @@ All notable changes to Plática Notes, newest first.
   question actually comes up rather than only in Settings. Choosing something in
   the menu now closes it.
 
+- **On-screen confirmations get out of the way in three seconds.** They used to sit
+  there for eight, four or five depending on which one it was, over somebody's face
+  on a live call, repeating what the permanent recording pill already says. One
+  duration now, and anything that actually needs acting on is a notice that does not
+  auto-dismiss at all rather than a toast that vanishes.
+
 - **The recording pill carries the elapsed time.** A clock that has stopped moving
   says something is wrong sooner than any warning can.
 

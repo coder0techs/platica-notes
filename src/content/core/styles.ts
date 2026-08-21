@@ -128,15 +128,21 @@ const CSS = `
   background: var(--pn-amber); color: #241a00; font-weight: 600;
 }
 .pn-row-danger.is-armed:hover { background: var(--pn-amber); filter: brightness(1.04); }
+/* This was 11.5px prose around 10.5px key caps, which is unreadable on a video
+   call at arm's length. It is a reference line, not fine print. */
 .pn-menu-foot {
-  margin: 4px 2px 2px; padding-top: 7px;
+  display: grid; justify-items: start; gap: 6px;
+  margin: 5px 2px 2px; padding-top: 9px;
   border-top: 1px solid var(--pn-line);
-  color: var(--pn-text-2); font: 400 11.5px/1.5 var(--pn-sans);
+  color: var(--pn-text-2); font: 400 12.5px/1.6 var(--pn-sans);
+}
+.pn-chord {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
 }
 .pn-key {
-  font: 500 10.5px/1.5 var(--pn-mono); color: var(--pn-text);
-  background: rgba(255, 255, 255, .1); border: 1px solid var(--pn-line);
-  border-radius: 4px; padding: 1px 4px; white-space: nowrap;
+  font: 500 12px/1 var(--pn-mono); color: var(--pn-text);
+  background: rgba(255, 255, 255, .12); border: 1px solid var(--pn-line);
+  border-radius: 5px; padding: 4px 6px; white-space: nowrap;
 }
 
 /* The language row keeps a transparent native <select> stretched across it, so
