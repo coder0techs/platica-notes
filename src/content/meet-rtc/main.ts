@@ -179,6 +179,10 @@ document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
       debugEnabled = false
       debugBacklog.length = 0
     }
+    // A config push comes from the adapter's runMeeting, so by now its listener
+    // exists. Re-announce an armed capture rather than trusting that the original
+    // one-shot event found a listener.
+    if (captureArmed) dispatch({ type: "capture-armed" })
     const changed = cfg.captionLanguage !== captionLanguage
     captionLanguage = cfg.captionLanguage
     record({ phase: "config", lang: captionLanguage, changed })
@@ -263,6 +267,7 @@ function sendSubscribe(s: MediaSession): void {
     s.subscribed = true
     // Tell the adapter capture is armed, so its watchdog stands down. Not
     // debug-gated: this is a health signal, not diagnostics.
+    captureArmed = true
     dispatch({ type: "capture-armed" })
     log("subscribe-sent", { op, lang: s.lang })
     record({ phase: "subscribe-sent", op, lang: s.lang })
@@ -644,6 +649,13 @@ function hookThisConnectionsCreateDataChannel(pc: RTCPeerConnection): void {
 // it is still the one Meet would call. Another extension assigning the same
 // global after us is the whole failure mode, and this measures it instead of
 // inferring it from absences.
+// Sticky, because the adapter's listener may not exist yet when the subscription
+// goes out. Meet can route media-session and accept a subscribe within a second
+// of page load, while the adapter is still awaiting getSettings() on its way to
+// runMeeting — and the one-shot event went nowhere. Observed on a meeting that
+// captured 15,005 caption frames and still raised "not recording speech".
+let captureArmed = false
+
 let ourPeerConnection: unknown
 // Our replacement for the prototype's createDataChannel, and the prototype a real
 // connection actually has. Comparing them says whether the startup patch landed
