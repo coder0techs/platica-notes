@@ -52,7 +52,7 @@ describe("isCreateTopicUrl", () => {
 
 describe("parseCreateTopicBody", () => {
   it("extracts the message text from field [1]", () => {
-    expect(parseCreateTopicBody(JSON.stringify([null, "привет", 12345]))).toBe("привет")
+    expect(parseCreateTopicBody(JSON.stringify([null, "buenos días", 12345]))).toBe("buenos días")
   })
 
   it("returns text verbatim (no trimming of inner content)", () => {

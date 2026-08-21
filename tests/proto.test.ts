@@ -292,10 +292,10 @@ function buildOutgoingChat(opts: { text?: string; sentAt?: number }): Uint8Array
 
 describe("decodeOutgoingChat", () => {
   it("extracts the text and client timestamp from an outgoing send", () => {
-    const buf = buildOutgoingChat({ text: "чат сообщение от меня", sentAt: 1783415260661 })
+    const buf = buildOutgoingChat({ text: "mensaje de chat mío", sentAt: 1783415260661 })
     const r = decodeOutgoingChat(buf)
     expect(r).not.toBeNull()
-    expect(r!.text).toBe("чат сообщение от меня")
+    expect(r!.text).toBe("mensaje de chat mío")
     expect(r!.sentAt).toBe(1783415260661)
   })
 

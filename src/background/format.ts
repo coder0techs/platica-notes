@@ -83,10 +83,10 @@ function isUnresolved(speaker: string): boolean {
 
 // Normalize a frame for COMPARISON ONLY: lowercase, then collapse every run of
 // non-letter / non-number characters to a single space and trim. Google Meet flips
-// the first letter's case ("за" vs "За") and churns punctuation between frames
-// ("зашла." then "зашла в"), which would otherwise defeat the prefix check below and
+// the first letter's case ("sí" vs "Sí") and churns punctuation between frames
+// ("entró." then "entró en"), which would otherwise defeat the prefix check below and
 // leak redundant frames as alt: noise. The \p{L}\p{N} unicode escapes need the `u`
-// flag so Cyrillic (and other scripts) match.
+// flag so accented Latin, and every non-Latin script, match.
 const normFrame = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
 
 // Strips noise from a caption's version history, keeping only the revision points.

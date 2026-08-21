@@ -30,7 +30,7 @@ describe("default caption language", () => {
   it("preserves an existing user's stored language (upgrade migration)", () => {
     // withDefaults overlays stored over defaults, so a user who had picked
     // Russian keeps it after the default flips to English — no silent reset.
-    expect(withDefaults({ captionLanguage: "ru-RU" }).captionLanguage).toBe("ru-RU")
+    expect(withDefaults({ captionLanguage: "es-MX" }).captionLanguage).toBe("es-MX")
   })
 })
 
