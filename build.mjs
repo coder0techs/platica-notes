@@ -72,9 +72,24 @@ const docNav = (current) => {
 // rewrite the Markdown's short names, so the in-extension manual shows the same
 // pictures the PDF does instead of five broken images.
 mkdirSync("dist/manual", { recursive: true })
+// Every mapped figure must exist. Skipping a missing one silently was the whole
+// point of the map, inverted: the manual's HTML still points at the file, so the
+// help page inside the extension ships an image that does not load, and nothing
+// says so. Caught for real when a build overlapped `npm run screenshots`, which
+// deletes the shots before it rewrites them: dist/manual/ came out with four of
+// five figures and a clean exit code. The shots are tracked, so on any real
+// checkout this cannot fail; if it does, the build is the right place to stop.
 for (const [figure, shot] of Object.entries(MANUAL_FIGURES)) {
   const from = `docs/store/screenshots/${shot}`
-  if (existsSync(from)) cpSync(from, `dist/manual/${figure}`)
+  if (!existsSync(from)) {
+    console.error(
+      `Manual figure ${figure} maps to ${from}, which is missing.\n` +
+        `The help page links it, so the build would ship a broken image.\n` +
+        `Run \`npm run screenshots\` (and let it finish) or restore the file.`,
+    )
+    process.exit(1)
+  }
+  cpSync(from, `dist/manual/${figure}`)
 }
 
 for (const doc of DOC_PAGES) {
