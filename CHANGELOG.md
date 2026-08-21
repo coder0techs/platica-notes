@@ -4,6 +4,8 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+## 1.16.0 - 2026-08-21
+
 - **Every screen has been redesigned.** One visual language now runs through the
   popup, settings, history, the first-run page, the documentation pages and the
   in-meeting overlay, and it is taken from what the extension produces: a saved
