@@ -1,87 +1,291 @@
-/* Shared theme + base controls for the popup and the settings page.
-   Direction A — Meet-native: Google blue accent, high-contrast text, system
-   font. Both surfaces link this first, then their own page stylesheet, so the
-   theme lives in exactly one place. */
+/* The one token layer and control set for every surface Plática Notes owns: the
+   popup, settings, history, the first-run page and the rendered doc pages. Each
+   page adds a small layout file on top and nothing else: a new colour, radius,
+   spacing step or font size belongs here or nowhere.
+
+   The design language comes from the product's own output. A saved meeting is a
+   sequence of speaker-attributed turns: a coloured name, a monospace clock, a
+   body. So is the live transcript panel. Every group on every page is therefore
+   drawn as a turn (a colour rail, a heading in that colour, content beside it),
+   and the dark palette below is literally the panel's SPEAKER_COLORS. The app
+   and the file it writes look like the same thing because they are.
+
+   Two colours are reserved and never used for decoration:
+     --rec     live capture, and nothing else
+     --danger  a control that destroys data, and nothing else */
 :root {
   color-scheme: light dark;
-  --bg: #ffffff;
-  --surface: #ffffff;
-  --section: #f8f9fa;
-  --fg: #202124;
-  --muted: #5f6368;
-  --accent: #1a73e8;
-  --accent-hover: #1765cc;
+
+  /* ground */
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --sunken: #f1f3f7;
+  --ink: #171a20;
+  --ink-2: #5b6474;
+  --rule: #e5e8ee;
+  --rule-2: #ccd2dc;
+
+  /* the speaker palette, light-mode equivalents (see below for the originals) */
+  --s-blue: #2f6fd0;
+  --s-green: #1f7a4d;
+  --s-amber: #8f6300;
+  --s-coral: #bf3a30;
+  --s-violet: #6d43c8;
+  --s-teal: #0b7484;
+
+  --accent: var(--s-violet);
+  --accent-strong: #5a35ab;
+  --accent-wash: #f2edfd;
   --on-accent: #ffffff;
-  --border: #dadce0;
+
+  --rec: #c5221f;
+  --rec-wash: #fdecea;
+  --danger: #b3261e;
+  --danger-wash: #fdeceb;
   --knob: #ffffff;
+
+  --r-sm: 4px;
+  --r: 8px;
+  --r-card: 12px;
+  --r-pill: 999px;
+  --rail: 3px;
+
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+  /* Every datum (clock, count, path, language tag, key chord) is set in mono.
+     It is the second half of the identity and it is also just more readable for
+     the things this product deals in. */
+  --mono: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #202124;
-    --surface: #28292c;
-    --section: #2a2b2e;
-    --fg: #e8eaed;
-    --muted: #9aa0a6;
-    --accent: #8ab4f8;
-    --accent-hover: #aecbfa;
-    --on-accent: #202124;
-    --border: #3c4043;
-    --knob: #e8eaed;
+    --bg: #17191e;
+    --card: #1e2128;
+    --sunken: #24272f;
+    --ink: #e8eaf0;
+    --ink-2: #a3aaba;
+    --rule: #2b2f38;
+    --rule-2: #3d434f;
+
+    /* transcript-panel.ts's SPEAKER_COLORS, verbatim */
+    --s-blue: #8ab4f8;
+    --s-green: #81c995;
+    --s-amber: #fdd663;
+    --s-coral: #f28b82;
+    --s-violet: #c58af9;
+    --s-teal: #78d9ec;
+
+    --accent: var(--s-violet);
+    --accent-strong: #d5a8fb;
+    --accent-wash: #291f38;
+    --on-accent: #17191e;
+
+    --rec: #ff7b73;
+    --rec-wash: #2c1a18;
+    --danger: #ff8a80;
+    --danger-wash: #2c1a18;
+    --knob: #e8eaf0;
   }
 }
 
+* { box-sizing: border-box; }
+
 body {
-  font: 14px/1.5 -apple-system, "Google Sans", system-ui, sans-serif;
+  font: 14px/1.55 var(--sans);
   background: var(--bg);
-  color: var(--fg);
+  color: var(--ink);
   margin: 0;
+  -webkit-font-smoothing: antialiased;
 }
 
-h1 { font-size: 16px; font-weight: 600; margin: 0; }
+h1 { font: 600 16px/1.3 var(--sans); letter-spacing: -.01em; margin: 0; }
+h2 { font: 600 15px/1.3 var(--sans); margin: 0; }
 
-.hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
-.hint kbd, .hint .key {
-  font: inherit; color: var(--fg);
-  background: var(--section); border: 1px solid var(--border);
-  border-radius: 4px; padding: 0 4px;
+/* --- the turn: one rail, one heading, one body. Used on every surface. ------ */
+.turn {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  gap: 0 14px;
+  align-items: stretch;
+}
+.turn::before {
+  content: "";
+  border-radius: var(--r-pill);
+  background: var(--turn-color, var(--rule-2));
+}
+.turn-body { min-width: 0; }
+/* The heading line takes the turn's colour, exactly as a speaker's name does in
+   the panel and in the saved file. */
+.turn-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font: 500 12px/1.35 var(--sans); letter-spacing: .02em;
+  color: var(--turn-color, var(--ink-2));
+  margin: 0 0 10px;
 }
 
-/* Toggle switch (styled checkbox) */
+/* --- text ------------------------------------------------------------------ */
+.hint { font-size: 12.5px; line-height: 1.5; color: var(--ink-2); margin: 6px 0 0; }
+.data { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.key {
+  font: 500 11.5px/1.5 var(--mono); color: var(--ink);
+  background: var(--sunken); border: 1px solid var(--rule-2);
+  border-radius: var(--r-sm); padding: 2px 6px; white-space: nowrap;
+}
+
+/* --- focus: one treatment, every control, every surface -------------------- */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline-offset: 1px; }
+
+/* --- switch: 44x24, so the pointer target clears 24px in both axes --------- */
 input[type="checkbox"] {
-  appearance: none; width: 36px; height: 20px; border-radius: 999px;
-  background: var(--border); position: relative; cursor: pointer;
-  transition: background .2s; flex-shrink: 0; margin: 0;
+  appearance: none; width: 44px; height: 24px; border-radius: var(--r-pill);
+  background: var(--rule-2); position: relative; cursor: pointer;
+  transition: background .16s ease; flex: none; margin: 0;
 }
 input[type="checkbox"]::after {
-  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
-  border-radius: 50%; background: var(--knob); transition: transform .2s;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+  content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+  border-radius: 50%; background: var(--knob); transition: transform .16s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .25);
 }
 input[type="checkbox"]:checked { background: var(--accent); }
-input[type="checkbox"]:checked::after { transform: translateX(16px); }
-input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type="checkbox"]:checked::after { transform: translateX(20px); }
+input[type="checkbox"]:hover { background: var(--ink-2); }
+input[type="checkbox"]:checked:hover { background: var(--accent-strong); }
+input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; }
 
-select, input[type="text"] {
-  font: inherit; color: var(--fg); background: var(--bg);
-  border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px;
+/* --- fields ---------------------------------------------------------------- */
+select, input[type="text"], input[type="search"], input[type="number"] {
+  font: 14px/1.4 var(--sans); color: var(--ink); background: var(--card);
+  border: 1px solid var(--rule-2); border-radius: var(--r);
+  padding: 8px 10px; min-height: 36px;
 }
-select { flex-shrink: 0; cursor: pointer; }
-input[type="text"] { flex: 1 1 auto; min-width: 0; }
-select:hover, input[type="text"]:hover { border-color: var(--accent); }
-select:focus, input[type="text"]:focus { outline: none; border-color: var(--accent); }
+/* A folder path is a datum, not prose. */
+input[type="text"] { font: 13px/1.4 var(--mono); }
+input[type="number"] { font-family: var(--mono); width: 6em; }
+select { flex: none; cursor: pointer; max-width: 100%; }
+select:hover, input:hover:not(:disabled) { border-color: var(--ink-2); }
+/* A path that would be rewritten before it is used says so while it is typed. */
+input[aria-invalid="true"] { border-color: var(--danger); }
 
-/* Filled primary button / link */
-.btn-primary {
-  display: block; width: 100%; box-sizing: border-box;
-  padding: 9px 12px; border: none; border-radius: 8px;
-  background: var(--accent); color: var(--on-accent);
-  font: 600 13px/1 -apple-system, "Google Sans", system-ui, sans-serif;
-  text-align: center; text-decoration: none; cursor: pointer;
+/* --- buttons: one filled action per surface, everything else outlined ------ */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 38px; padding: 9px 15px; border-radius: var(--r);
+  font: 600 13px/1 var(--sans); text-decoration: none; cursor: pointer;
+  border: 1px solid var(--rule-2); background: var(--card); color: var(--ink);
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
 }
-.btn-primary:hover { background: var(--accent-hover); }
+.btn:hover:not(:disabled) { background: var(--sunken); border-color: var(--ink-2); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); }
+/* Destructive: never filled, and quiet until it is aimed at. A list of ten rows
+   with ten red buttons trains people to ignore red; a button that reddens the
+   moment the pointer lands on it does the opposite. */
+.btn-danger { color: var(--ink-2); }
+.btn-danger:hover:not(:disabled), .btn-danger:focus-visible {
+  color: var(--danger); background: var(--danger-wash); border-color: var(--danger);
+}
+.btn-sm { min-height: 30px; padding: 6px 11px; font-size: 12.5px; }
+.btn-block { display: flex; width: 100%; }
 
-/* Text link */
-a.link {
-  color: var(--accent); text-decoration: none; cursor: pointer;
-}
+a.link { color: var(--accent-strong); text-decoration: none; cursor: pointer; }
+@media (prefers-color-scheme: dark) { a.link { color: var(--accent); } }
 a.link:hover { text-decoration: underline; }
+.links { display: flex; flex-wrap: wrap; gap: 18px; }
+.links a { font-size: 13px; padding: 3px 0; }
+.build { margin: 0; font: 400 10.5px/1.4 var(--mono); color: var(--ink-2); }
+
+/* --- tags: a small fact about something, never a control ------------------- */
+.tag {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 22px;
+  padding: 3px 9px; border-radius: var(--r-pill);
+  border: 1px solid var(--rule-2); background: var(--sunken);
+  font: 500 11px/1 var(--mono); letter-spacing: .04em; color: var(--ink-2);
+}
+.tag-private { color: var(--accent-strong); border-color: var(--accent); background: var(--accent-wash); }
+@media (prefers-color-scheme: dark) { .tag-private { color: var(--accent); } }
+.tag-rec { color: var(--rec); border-color: var(--rec); background: var(--rec-wash); }
+
+/* --- live capture indicator ------------------------------------------------ */
+.rec-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--rec); flex: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rec) 20%, transparent);
+}
+.rec-dot.is-idle { background: var(--rule-2); box-shadow: none; }
+
+/* --- cards ---------------------------------------------------------------- */
+.card {
+  background: var(--card); border: 1px solid var(--rule);
+  border-radius: var(--r-card); padding: 16px;
+}
+
+/* --- the empty / first-run state: an invitation, not a shrug -------------- */
+.empty {
+  border: 1px dashed var(--rule-2); border-radius: var(--r-card);
+  padding: 28px 24px; text-align: center; background: var(--card);
+}
+.empty h2 { margin-bottom: 6px; }
+.empty p { color: var(--ink-2); margin: 0 auto; max-width: 46ch; font-size: 13.5px; }
+.empty .btn { margin-top: 16px; }
+
+/* --- language chips: the same flag + code the in-meeting buttons show, so the
+   setting looks like the control it configures. ----------------------------- */
+.checks { display: flex; flex-wrap: wrap; gap: 8px; }
+.lang-chip {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 32px;
+  padding: 6px 13px 6px 11px;
+  border: 1px solid var(--rule-2); border-radius: var(--r-pill);
+  background: var(--card); color: var(--ink);
+  font: 500 13px/1 var(--sans); cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+.lang-chip:hover:not(:disabled) { border-color: var(--ink-2); background: var(--sunken); }
+.lang-chip-flag { font-size: 14px; line-height: 1; }
+.lang-chip-code { font: 500 10.5px/1 var(--mono); letter-spacing: .08em; color: var(--ink-2); }
+.lang-chip-name { font-weight: 400; }
+.lang-chip.is-on {
+  border-color: var(--accent); background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.lang-chip.is-on .lang-chip-code, .lang-chip.is-on .lang-chip-name { color: var(--ink); }
+/* At the three-language cap the rest go visibly inert rather than failing on click. */
+.lang-chip:disabled { opacity: .45; cursor: not-allowed; }
+
+/* --- a written-to-storage acknowledgement. Every surface that saves silently
+   needs one; it fades rather than shifting layout. ------------------------- */
+.saved {
+  display: inline-flex; align-items: center; min-height: 24px;
+  font: 500 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-2); opacity: 0; transition: opacity .18s ease;
+}
+.saved.is-on { opacity: 1; }
+
+/* --- undo bar: how a destructive action is survivable -------------------- */
+.undo {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 14px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px 10px 16px; border-radius: var(--r-card);
+  background: var(--ink); color: var(--bg);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .28);
+  font-size: 13px;
+}
+.undo[hidden] { display: none; }
+.undo-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.undo button {
+  flex: none; min-height: 30px; padding: 5px 12px; border-radius: var(--r);
+  border: 1px solid color-mix(in srgb, var(--bg) 40%, transparent);
+  background: transparent; color: var(--bg);
+  font: 600 12.5px/1 var(--sans); cursor: pointer;
+}
+.undo button:hover { background: color-mix(in srgb, var(--bg) 16%, transparent); }
+.undo button:focus-visible { outline-color: var(--bg); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

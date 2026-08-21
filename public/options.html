@@ -3,84 +3,182 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Settings — Plática Notes</title>
+  <title>Settings · Plática Notes</title>
   <link rel="stylesheet" href="ui.css">
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
+  <header class="head">
+    <div class="head-inner">
+      <h1>Plática Notes</h1>
+      <span class="head-sub">Settings</span>
+      <!-- Eight controls used to write to storage with no acknowledgement at all. -->
+      <span class="saved" id="saved-flag" role="status">Saved</span>
+      <a class="btn btn-sm" href="history.html">Meeting history</a>
+    </div>
+  </header>
+
   <main>
-    <header><h1>Plática Notes — Settings</h1></header>
+    <!-- Each group is a turn: a colour rail, a heading in that colour carrying the
+         group's current value, and the controls beside it. -->
+    <section class="turn card" style="--turn-color: var(--s-blue)" aria-labelledby="h-recording">
+      <div class="turn-body">
+        <h2 class="turn-head" id="h-recording">Recording<span class="turn-value data" id="v-recording"></span></h2>
 
-    <section>
-      <p class="label">Recording</p>
-      <label class="row">
-        <span>Default caption language</span>
-        <select id="caption-language"></select>
-      </label>
-      <p class="hint">New meetings start in this language. You can switch it just for the current meeting from the in-meeting language pill; that choice is not saved.</p>
-      <div class="field">
-        <label for="favourite-languages">Languages you actually use</label>
-        <div id="favourite-languages" class="checks"></div>
+        <div class="setting">
+          <div class="setting-head">
+            <label class="setting-label" for="caption-language">Default caption language</label>
+            <select id="caption-language"></select>
+          </div>
+          <p class="hint">Every new meeting starts here. The in-meeting language pill overrides just
+            that meeting and is never saved back, so a one-off switch cannot leak into the next call.</p>
+          <p class="hint note-active" id="active-meeting-note" hidden>A meeting is recording right now.
+            This change applies to the next one. To switch the live meeting, use its in-meeting
+            language pill.</p>
+        </div>
+
+        <label class="setting setting-toggle">
+          <span class="setting-text">
+            <span class="setting-label">Mark meetings private by default</span>
+            <span class="hint">Private meetings are written to the private folder and are never
+              included in a diagnostic log.</span>
+          </span>
+          <input type="checkbox" id="private-default">
+        </label>
+
+        <label class="setting setting-toggle">
+          <span class="setting-text">
+            <span class="setting-label">Ask which language at the start of each meeting</span>
+            <span class="hint">A prompt when you join, so a call never records in the wrong language
+              unnoticed. Capture is already running while it waits.</span>
+          </span>
+          <input type="checkbox" id="ask-language">
+        </label>
       </div>
-      <p class="hint">Pick up to three. Each one gets its own button in the meeting, so switching is a single click instead of a trip through the dropdown. Nothing is hidden — the full list stays in the language pill for the meeting you did not see coming.</p>
-      <p class="hint note-active" id="active-meeting-note" hidden>A meeting is being recorded right now — this change applies to new meetings. To change the current one, use its in-meeting language pill.</p>
-      <label class="row">
-        <span>Mark meetings private by default</span>
-        <input type="checkbox" id="private-default">
-      </label>
-      <p class="hint">Private meetings download to the Private folder below — keep that folder out of your cloud sync.</p>
-      <p class="hint">During a meeting, press <span class="key" id="bookmark-shortcut">Alt+Shift+B</span> to drop a bookmark into the transcript at that moment.</p>
     </section>
 
-    <section>
-      <p class="label">Folders</p>
-      <div class="field">
-        <label for="folder-public">Public folder</label>
-        <input type="text" id="folder-public">
+    <section class="turn card" style="--turn-color: var(--s-teal)" aria-labelledby="h-languages">
+      <div class="turn-body">
+        <h2 class="turn-head" id="h-languages">Languages you switch between<span class="turn-value data" id="v-languages"></span></h2>
+        <div class="setting">
+          <div id="favourite-languages" class="checks"></div>
+          <p class="hint">Pick up to three. Each one gets its own button in the meeting, so switching
+            is a single click instead of a trip through the dropdown. Nothing is hidden: the full
+            list stays in the language pill for the meeting you did not see coming.</p>
+        </div>
       </div>
-      <div class="field">
-        <label for="folder-private">Private folder</label>
-        <input type="text" id="folder-private">
-      </div>
-      <div class="field">
-        <label for="folder-debug">Debug-log folder</label>
-        <input type="text" id="folder-debug">
-      </div>
-      <p class="hint">Folders are relative to your Downloads folder; nested paths like "meetings/work" are allowed. Files are filed by month inside them, e.g. "meetings/work/2026-08".</p>
     </section>
 
-    <section>
-      <p class="label">Advanced</p>
-      <label class="row">
-        <span>Caption alternatives in the saved file</span>
-        <input type="checkbox" id="caption-alternatives">
-      </label>
-      <p class="hint">On by default. Adds the raw caption versions Google revised under each turn — for recovering words the final caption dropped, or for an AI to reconstruct the exact wording later. Turn off for a cleaner file.</p>
-      <label class="row">
-        <span>Merge rejoined visits into one file</span>
-        <input type="checkbox" id="merge-rejoins">
-      </label>
-      <p class="hint">On by default. If you accidentally leave and rejoin the same meeting within about 40 minutes, the visits are folded into a single .md instead of one file per visit. Turn off to keep one file per visit.</p>
-      <label class="row">
-        <span>Ask which language to use at the start of each meeting</span>
-        <input type="checkbox" id="ask-language">
-      </label>
-      <p class="hint">Off by default. For meetings in different languages: shows a prompt at the start so you can confirm or switch the caption language before it records in the wrong one.</p>
-      <label class="row">
-        <span>Debug log (writes a full .jsonl per meeting)</span>
-        <input type="checkbox" id="debug-log">
-      </label>
-      <p class="hint">Off by default. Saved to the Debug-log folder above — keep it out of your cloud sync (it contains the full transcript). Private meetings are never logged.</p>
+    <section class="turn card" style="--turn-color: var(--s-green)" aria-labelledby="h-files">
+      <div class="turn-body">
+        <h2 class="turn-head" id="h-files">Where files go<span class="turn-value data" id="v-files"></span></h2>
+
+        <div class="setting">
+          <label class="setting-label" for="folder-public">Meetings</label>
+          <input type="text" id="folder-public" spellcheck="false" autocapitalize="off"
+                 aria-describedby="preview-public">
+          <p class="hint path" id="preview-public"></p>
+        </div>
+        <div class="setting">
+          <label class="setting-label" for="folder-private">Private meetings</label>
+          <input type="text" id="folder-private" spellcheck="false" autocapitalize="off"
+                 aria-describedby="preview-private">
+          <p class="hint path" id="preview-private"></p>
+          <p class="hint">Keep this folder out of your cloud sync.</p>
+        </div>
+        <div class="setting">
+          <label class="setting-label" for="folder-debug">Diagnostic logs</label>
+          <input type="text" id="folder-debug" spellcheck="false" autocapitalize="off"
+                 aria-describedby="preview-debug">
+          <p class="hint path" id="preview-debug"></p>
+        </div>
+        <p class="hint">Paths are relative to your Downloads folder, the only place a browser
+          extension may write. Nested paths like <span class="data">meetings/work</span> are fine, and
+          files are filed by month inside them.</p>
+      </div>
     </section>
 
-    <section>
-      <p class="label">About</p>
-      <nav class="links">
+    <section class="turn card" style="--turn-color: var(--s-amber)" aria-labelledby="h-file">
+      <div class="turn-body">
+        <h2 class="turn-head" id="h-file">What lands in the file<span class="turn-value data" id="v-file"></span></h2>
+
+        <label class="setting setting-toggle">
+          <span class="setting-text">
+            <span class="setting-label">Keep the caption alternatives</span>
+            <span class="hint">Google revises a caption as it hears more, and the final version drops
+              words. Keeping the earlier versions under each turn is how those words survive, for you
+              or for an assistant reconstructing the exact wording later. Turn it off for a cleaner
+              file.</span>
+          </span>
+          <input type="checkbox" id="caption-alternatives">
+        </label>
+
+        <label class="setting setting-toggle">
+          <span class="setting-text">
+            <span class="setting-label">Merge a rejoin into the same file</span>
+            <span class="hint">Leaving and rejoining the same meeting within about 40 minutes folds
+              the visits into one <span class="data">.md</span> instead of one file per visit.</span>
+          </span>
+          <input type="checkbox" id="merge-rejoins">
+        </label>
+      </div>
+    </section>
+
+    <section class="turn card" style="--turn-color: var(--s-violet)" aria-labelledby="h-history">
+      <div class="turn-body">
+        <h2 class="turn-head" id="h-history">Meeting history<span class="turn-value data" id="v-history"></span></h2>
+        <div class="setting">
+          <div class="setting-head">
+            <label class="setting-label" for="retention">Meetings kept in the extension</label>
+            <input type="number" id="retention" min="1" max="500" step="1" inputmode="numeric">
+          </div>
+          <p class="hint">Once the list is full, the oldest entry drops off. The
+            <span class="data">.md</span> files already in your Downloads folder are never touched.
+            What you lose is the ability to download that meeting again from this extension.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Deliberately not one of the speaker hues: red is reserved for live capture
+         and for destroying data, and this group is neither. A neutral rail also
+         reads right for the section you only open when something is wrong. -->
+    <section class="turn card" style="--turn-color: var(--ink-2)" aria-labelledby="h-trouble">
+      <div class="turn-body">
+        <h2 class="turn-head" id="h-trouble">Troubleshooting<span class="turn-value data" id="v-trouble"></span></h2>
+
+        <label class="setting setting-toggle">
+          <span class="setting-text">
+            <span class="setting-label">Write a diagnostic log per meeting</span>
+            <span class="hint">A full <span class="data">.jsonl</span> beside the transcript, for
+              working out why a meeting came out wrong. It contains everything that was said, so keep
+              its folder out of your cloud sync. Private meetings are never logged.</span>
+          </span>
+          <input type="checkbox" id="debug-log">
+        </label>
+
+      </div>
+    </section>
+
+    <footer class="page-foot">
+      <!-- The chords are a reference, not a setting, and they were sitting at the
+           bottom of Troubleshooting where they had nothing to do with the
+           diagnostic log. They are taught in context by the in-meeting menu; this
+           line is where someone browsing the page comes across them. -->
+      <p class="shortcuts">
+        <span class="chord"><span class="key" id="bookmark-shortcut">Alt+Shift+B</span>
+          marks the moment in the transcript</span>
+        <span class="chord"><span class="key" id="hide-shortcut">Alt+Shift+H</span>
+          hides every on-screen control</span>
+      </p>
+      <div class="foot-row">
+      <nav class="links" aria-label="About">
+        <a class="link" href="help.html" target="_blank">User manual</a>
         <a class="link" href="changelog.html" target="_blank">What's new</a>
         <a class="link" href="privacy.html" target="_blank">Privacy policy</a>
       </nav>
-      <p class="hint build" id="build-info"></p>
-    </section>
+      <p class="build" id="build-info"></p>
+      </div>
+    </footer>
   </main>
   <script src="options.js"></script>
 </body>

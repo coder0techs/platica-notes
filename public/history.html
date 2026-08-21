@@ -1,15 +1,44 @@
 <!doctype html>
-<html>
-<head><meta charset="utf-8"><title>Plática Notes — History</title><link rel="stylesheet" href="ui.css"><link rel="stylesheet" href="history.css"></head>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Meeting history · Plática Notes</title>
+  <link rel="stylesheet" href="ui.css">
+  <link rel="stylesheet" href="history.css">
+</head>
 <body>
-  <h1>Plática Notes — Meeting history</h1>
-  <table id="meetings">
-    <thead>
-      <tr><th>Started</th><th>Title</th><th>Utterances</th><th>Privacy</th><th>Actions</th></tr>
-    </thead>
-    <tbody></tbody>
-  </table>
-  <p id="empty" hidden>No meetings recorded yet.</p>
+  <header class="head">
+    <div class="head-inner">
+      <h1>Plática Notes</h1>
+      <span class="head-sub">Meeting history</span>
+      <a class="btn btn-sm" href="options.html">Settings</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="toolbar">
+      <label class="search">
+        <span class="visually-hidden" id="search-label">Filter meetings by title</span>
+        <input type="search" id="search" placeholder="Filter by title…" aria-labelledby="search-label"
+               autocomplete="off" spellcheck="false">
+      </label>
+      <p class="count data" id="count" role="status"></p>
+      <button type="button" class="btn btn-sm" id="open-folder">Open Downloads folder</button>
+    </div>
+
+    <div id="list"></div>
+
+    <p class="hint retention" id="retention-note"></p>
+  </main>
+
+  <!-- One transient region for every outcome on this page: a download that
+       landed, a delete that can still be taken back, a request that failed.
+       It replaced a silent success and a native alert(). -->
+  <div class="undo" id="snack" role="status" hidden>
+    <span class="undo-text" id="snack-text"></span>
+    <button type="button" id="snack-action" hidden></button>
+  </div>
   <script src="history.js"></script>
 </body>
 </html>

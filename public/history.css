@@ -1,20 +1,77 @@
-/* History-page layout. Shared theme + base controls live in ui.css. */
-body { max-width: 1000px; margin: 40px auto; padding: 0 24px; }
-h1 { font-size: 20px; font-weight: 600; margin-bottom: 24px; }
-table { border-collapse: collapse; width: 100%; }
-th {
-  text-align: left; font-size: 12px; font-weight: 500;
-  text-transform: uppercase; letter-spacing: .04em;
-  color: var(--muted); padding: 8px 12px; border-bottom: 1px solid var(--border);
+/* History-page layout. Shared tokens and controls live in ui.css.
+   A list of turns rather than a five-column table: the titles are long, real
+   meeting names wrap, and the only column that was ever scanned is the date,
+   which is now a mono gutter, with the months as headings. */
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
 }
-td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
-td a { color: var(--accent); text-decoration: none; }
-td a:hover { text-decoration: underline; }
-td button {
-  margin-right: 6px; padding: 4px 10px;
-  border: 1px solid var(--border); border-radius: 6px;
-  background: transparent; color: var(--fg);
-  font: 12px system-ui; cursor: pointer;
+
+.head {
+  position: sticky; top: 0; z-index: 2;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: saturate(1.4) blur(8px);
+  border-bottom: 1px solid var(--rule);
 }
-td button:hover { border-color: var(--accent); color: var(--accent); }
-#empty { color: var(--muted); }
+.head-inner {
+  max-width: 900px; margin: 0 auto; padding: 12px 24px;
+  display: flex; align-items: center; gap: 10px;
+}
+.head-sub { font: 400 13px/1 var(--sans); color: var(--ink-2); }
+.head .btn { margin-left: auto; }
+
+main { max-width: 900px; margin: 0 auto; padding: 20px 24px 60px; }
+
+.toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.search { flex: 1 1 320px; min-width: 0; display: block; }
+.search input { width: 100%; }
+.count {
+  flex: none; margin: 0; min-height: 24px;
+  display: flex; align-items: center;
+  font-size: 11.5px; color: var(--ink-2);
+}
+
+/* Month heading: the same mono register as every other datum on the page. */
+.month {
+  font: 500 11px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-2); margin: 26px 0 10px;
+  display: flex; align-items: center; gap: 10px;
+}
+.month:first-child { margin-top: 0; }
+.month::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--rule); }
+
+.meeting {
+  gap: 0 14px; padding: 12px 0; border-bottom: 1px solid var(--rule);
+}
+.meeting-body {
+  display: grid; grid-template-columns: 92px minmax(0, 1fr) auto;
+  gap: 4px 16px; align-items: baseline;
+}
+.when {
+  grid-row: span 2; align-self: start; padding-top: 2px;
+  font: 400 11.5px/1.45 var(--mono); color: var(--ink-2);
+}
+.when b { display: block; font-weight: 500; color: var(--ink); }
+.title { font: 500 14.5px/1.4 var(--sans); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.meta { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; }
+.actions {
+  grid-column: 3; grid-row: span 2; align-self: center;
+  /* A gap wide enough that Delete is never the button the pointer slid onto. */
+  display: flex; gap: 16px; flex: none;
+}
+.search[hidden] { display: none; }
+
+.retention { margin-top: 24px; }
+
+@media (max-width: 640px) {
+  .head-inner, main { padding-left: 16px; padding-right: 16px; }
+  .head-sub { display: none; }
+  .toolbar { flex-wrap: wrap; }
+  .toolbar .btn { order: 3; }
+  .meeting-body { grid-template-columns: minmax(0, 1fr); }
+  .when { grid-row: auto; padding-top: 0; }
+  .when b { display: inline; }
+  .meta, .actions { grid-column: 1; grid-row: auto; }
+  .actions { margin-top: 8px; align-self: start; }
+}

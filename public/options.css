@@ -1,68 +1,76 @@
-/* Settings-page layout. Shared theme + controls live in ui.css. */
-main { max-width: 560px; margin: 40px auto; padding: 0 24px; }
-header { margin-bottom: 24px; }
+/* Settings-page layout. Shared tokens and controls live in ui.css.
+   One measured column: this page is mostly explanation, and explanation wants a
+   readable measure more than it wants a second column. */
 
-section {
-  background: var(--section);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 16px;
+.head {
+  position: sticky; top: 0; z-index: 2;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: saturate(1.4) blur(8px);
+  border-bottom: 1px solid var(--rule);
 }
-
-.label {
-  font-size: 12px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: .04em; color: var(--muted);
-  margin: 0 0 12px;
+.head-inner {
+  max-width: 760px; margin: 0 auto; padding: 12px 24px;
+  display: flex; align-items: center; gap: 10px;
 }
+.head-sub { font: 400 13px/1 var(--sans); color: var(--ink-2); }
+.head .saved { margin-left: auto; }
 
-.row {
-  display: flex; justify-content: space-between; align-items: center;
-  gap: 16px; margin: 12px 0 0;
+main { max-width: 760px; margin: 0 auto; padding: 22px 24px 44px; }
+
+.card { margin-bottom: 12px; }
+/* The group's current value rides on its heading, so the whole configuration can
+   be read without opening a single control. */
+.turn-value { margin-left: auto; font-size: 11px; color: var(--ink-2); }
+
+.setting { padding: 13px 0; border-bottom: 1px solid var(--rule); }
+.setting:first-of-type { padding-top: 0; }
+.setting:last-child { border-bottom: 0; padding-bottom: 2px; }
+.setting-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+/* Paired with a control on the same line, so the label is the other half of a
+   36px row: give it the same height rather than a 20px sliver to aim at. */
+.setting-head .setting-label { display: flex; align-items: center; min-height: 24px; }
+.setting-label { display: block; font: 500 14px/1.4 var(--sans); }
+.setting-toggle {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 20px;
+  cursor: pointer;
 }
-.row:first-of-type { margin-top: 0; }
+.setting-text { display: block; max-width: 58ch; }
+.setting-text .hint { display: block; }
+.setting-toggle input[type="checkbox"] { margin-top: 1px; }
 
-.field { margin-top: 12px; }
-.field:first-of-type { margin-top: 0; }
-.field label { display: block; margin-bottom: 4px; }
-.field input[type="text"] { display: block; width: 100%; box-sizing: border-box; }
+.setting input[type="text"] { display: block; width: 100%; margin-top: 6px; }
 
-.links { display: flex; gap: 16px; }
-.links a { font-size: 13px; }
+/* What the path will actually be once the downloader has sanitised it. */
+.path { font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; }
+.path strong { color: var(--ink); font-weight: 500; }
+.path.is-rewritten { color: var(--danger); }
 
-.build { margin-top: 12px; opacity: .8; }
-
-/* Active-meeting callout under the language setting: a soft purple fill (no edge)
-   so it reads as a live note, not just another grey hint. The translucent tint
-   sits fine over both the light and dark section background. */
 .note-active {
-  color: var(--fg);
-  background: rgba(103, 80, 164, .16);
-  border-radius: 6px;
-  padding: 8px 12px;
+  color: var(--ink); background: var(--accent-wash);
+  border-radius: var(--r); padding: 8px 12px; margin-top: 8px;
 }
 
-/* Favourite-language picker: the same flag + code the in-meeting buttons show,
-   so the setting looks like the control it configures. */
-.checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.lang-chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 12px 6px 10px;
-  border: 1px solid var(--line, #e6e8ee); border-radius: 999px;
-  background: #fff; color: var(--ink, #1f2330);
-  font: 500 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
-  cursor: pointer; transition: border-color .12s, background .12s, box-shadow .12s;
+.page-foot {
+  display: grid; gap: 14px;
+  padding-top: 18px; margin-top: 6px; border-top: 1px solid var(--rule);
 }
-.lang-chip:hover:not(:disabled) { border-color: var(--accent, #1a73e8); }
-.lang-chip:focus-visible { outline: 2px solid var(--accent, #1a73e8); outline-offset: 2px; }
-.lang-chip-flag { font-size: 15px; line-height: 1; }
-.lang-chip-code { font-size: 11px; letter-spacing: .03em; opacity: .65; }
-.lang-chip-name { font-weight: 400; }
-.lang-chip.is-on {
-  border-color: var(--accent, #1a73e8);
-  background: color-mix(in srgb, var(--accent, #1a73e8) 10%, #fff);
-  box-shadow: inset 0 0 0 1px var(--accent, #1a73e8);
+.foot-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
 }
-.lang-chip.is-on .lang-chip-code { opacity: .85; }
-/* At the three-language cap the rest go inert rather than failing on click. */
-.lang-chip:disabled { opacity: .4; cursor: not-allowed; }
+/* A reference line, so the key caps are readable rather than fine print. */
+.shortcuts {
+  display: grid; justify-items: start; gap: 7px;
+  margin: 0; font-size: 12.5px; color: var(--ink-2);
+}
+/* Each chord and its label is one atomic unit, so a wrap never separates a key
+   cap from the words it belongs to. */
+.shortcuts .chord { display: inline-flex; align-items: baseline; gap: 6px; }
+
+@media (max-width: 700px) {
+  .foot-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .head-inner, main { padding-left: 16px; padding-right: 16px; }
+  .head-sub { display: none; }
+  .setting-toggle, .setting-head { gap: 14px; }
+  /* A wrapped heading must not push its value onto a line of its own. */
+  .turn-value { margin-left: 0; }
+}

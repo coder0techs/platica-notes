@@ -1,6 +1,12 @@
 import type { DebugEvent, Meeting } from "../shared/types"
 import { flattenTimeline } from "../shared/transcript"
 import { meetCodeFromUrl } from "./merge"
+import { monthFolder, sanitizeFileName, sanitizeFolder } from "../shared/paths"
+
+// Re-exported so the downloader, the pages and the existing tests all reach the
+// path rules through one name. The implementation lives in shared/paths.ts
+// because the popup and the settings page show the user the same path.
+export { monthFolder, sanitizeFileName, sanitizeFolder }
 
 // Injected by esbuild's define at build time; typeof-guarded so vitest (which
 // does not define them) falls back to "dev" instead of throwing ReferenceError.
@@ -195,45 +201,9 @@ export function formatMeetingText(meeting: Meeting, opts: FormatOptions = {}): s
 // Cap the per-segment length so a pathological multi-KB meeting title cannot
 // produce a filename the OS rejects. 120 chars leaves room for the date stamp
 // and extension well under the common ~255-byte filename limit.
-const MAX_NAME_LEN = 120
-
-export function sanitizeFileName(name: string): string {
-  const cleaned = name
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^[.\s]+|[.\s]+$/g, "")
-    .slice(0, MAX_NAME_LEN)
-    .replace(/[.\s]+$/, "") // re-trim: the slice may have ended on a dot/space
-  return cleaned || "Meeting"
-}
-
-// Produces a safe RELATIVE path for chrome.downloads: each "/"-segment is run
-// through sanitizeFileName, and segments that are empty, "." or ".." are
-// dropped. This guarantees no leading "/" (no absolute path), no ".." (no
-// escaping Downloads), and no illegal filename chars per segment. Falls back
-// when nothing survives.
-export function sanitizeFolder(path: string, fallback: string): string {
-  const segments = path
-    .split("/")
-    .filter(seg => {
-      const trimmed = seg.trim()
-      return trimmed !== "" && trimmed !== "." && trimmed !== ".."
-    })
-    .map(sanitizeFileName)
-  return segments.length > 0 ? segments.join("/") : fallback
-}
-
 function fileStamp(iso: string): string {
   const d = new Date(iso)
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}_${pad2(d.getHours())}-${pad2(d.getMinutes())}`
-}
-
-// The YYYY-MM bucket a meeting is filed under. Derived from the START instant, so
-// a call running over midnight into a new month stays with the day it began.
-// Digits and one dash only — never user input, so it needs no sanitising.
-export function monthFolder(iso: string): string {
-  const d = new Date(iso)
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`
 }
 
 // A filename segment with no spaces: the whole name is one shell-friendly token,

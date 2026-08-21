@@ -628,6 +628,9 @@ async function runMeeting(tabId: number): Promise<void> {
     favouriteLanguages: settings.favouriteLanguages,
     initialPrivate: session.isPrivate,
     initialRecording: recording,
+    // Drives the elapsed clock on the recording pill. A resumed session keeps its
+    // original start, so the clock reads the meeting rather than the page load.
+    startedAt: session.startedAt,
     onPrivateChange: (isPrivate) => {
       session.isPrivate = isPrivate
       writer.requestWrite()

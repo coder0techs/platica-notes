@@ -1,5 +1,8 @@
 import { CAPTION_LANGUAGES, MAX_FAVOURITE_LANGUAGES } from "../../shared/languages"
+import { mountLanguageChips } from "../shared/language-chips"
+import { monthFolder, sanitizeFolder } from "../../shared/paths"
 import { ACTIVE_TABS_KEY, getLocal, getSettings, hasActiveMeeting, saveSettings } from "../../shared/storage"
+import { DEFAULT_SETTINGS } from "../../shared/types"
 
 const captionLanguage = document.querySelector<HTMLSelectElement>("#caption-language")!
 const favouriteLanguages = document.querySelector<HTMLDivElement>("#favourite-languages")!
@@ -9,9 +12,11 @@ const debugLog = document.querySelector<HTMLInputElement>("#debug-log")!
 const captionAlternatives = document.querySelector<HTMLInputElement>("#caption-alternatives")!
 const mergeRejoins = document.querySelector<HTMLInputElement>("#merge-rejoins")!
 const askLanguage = document.querySelector<HTMLInputElement>("#ask-language")!
+const retention = document.querySelector<HTMLInputElement>("#retention")!
 const folderPublic = document.querySelector<HTMLInputElement>("#folder-public")!
 const folderPrivate = document.querySelector<HTMLInputElement>("#folder-private")!
 const folderDebug = document.querySelector<HTMLInputElement>("#folder-debug")!
+const savedFlag = document.querySelector<HTMLElement>("#saved-flag")!
 
 // Build stamp shown at the bottom of the page. typeof-guarded so vitest and any
 // non-build eval fall back to "dev" instead of throwing ReferenceError.
@@ -20,11 +25,16 @@ const buildCommit = typeof __BUILD_COMMIT__ === "string" ? __BUILD_COMMIT__ : "d
 const buildInfo = document.querySelector<HTMLParagraphElement>("#build-info")
 if (buildInfo) buildInfo.textContent = `v${buildVersion} (${buildCommit})`
 
-// The bookmark chord is the same physical key everywhere (Alt on Windows/Linux is
-// the Option key on macOS — both set event.altKey), so only the label differs.
+// Both chords are the same physical key everywhere (Alt on Windows/Linux is the
+// Option key on macOS, and both set event.altKey), so only the label differs.
 const isMac = /Mac|iPhone|iPad/i.test(navigator.platform) || /Mac/i.test(navigator.userAgent)
-const bookmarkShortcut = document.querySelector("#bookmark-shortcut")
-if (bookmarkShortcut) bookmarkShortcut.textContent = isMac ? "⌥⇧B" : "Alt+Shift+B"
+for (const [id, mac, other] of [
+  ["#bookmark-shortcut", "⌥⇧B", "Alt+Shift+B"],
+  ["#hide-shortcut", "⌥⇧H", "Alt+Shift+H"],
+] as const) {
+  const node = document.querySelector(id)
+  if (node) node.textContent = isMac ? mac : other
+}
 
 for (const lang of CAPTION_LANGUAGES) {
   const opt = document.createElement("option")
@@ -33,59 +43,76 @@ for (const lang of CAPTION_LANGUAGES) {
   captionLanguage.appendChild(opt)
 }
 
-// A toggle button per language, showing the same flag and code as the in-meeting
-// buttons they turn on — the setting looks like the thing it controls. Chosen
-// order follows this list rather than click order: a stable shortlist beats one
-// that reshuffles when a language is switched off and on again.
-const favouriteButtons: HTMLButtonElement[] = []
-const chosen = new Set<string>()
-
-for (const lang of CAPTION_LANGUAGES) {
-  const button = document.createElement("button")
-  button.type = "button"
-  button.className = "lang-chip"
-  button.value = lang.value
-  button.setAttribute("aria-pressed", "false")
-  button.title = lang.label
-
-  const flag = document.createElement("span")
-  flag.className = "lang-chip-flag"
-  // Flag and code together: Windows renders no flag for a regional-indicator
-  // pair, so the code carries the meaning there.
-  flag.textContent = lang.flag
-  const code = document.createElement("span")
-  code.className = "lang-chip-code"
-  code.textContent = lang.code
-  const name = document.createElement("span")
-  name.className = "lang-chip-name"
-  name.textContent = lang.label
-
-  button.append(flag, code, name)
-  favouriteLanguages.append(button)
-  favouriteButtons.push(button)
-
-  button.addEventListener("click", () => {
-    if (chosen.has(lang.value)) chosen.delete(lang.value)
-    else if (chosen.size < MAX_FAVOURITE_LANGUAGES) chosen.add(lang.value)
-    else return // at the cap: refuse rather than silently evicting someone's choice
-    syncFavourites()
-    void saveSettings({ favouriteLanguages: chosenFavourites() })
+// --- write acknowledgement ---------------------------------------------------
+// Every control here saves the moment it changes, which used to happen in total
+// silence. One shared flash, so "did that take?" is never a question.
+let savedTimer: ReturnType<typeof setTimeout> | undefined
+function save(patch: Parameters<typeof saveSettings>[0]): void {
+  void saveSettings(patch).then(() => {
+    savedFlag.classList.add("is-on")
+    if (savedTimer) clearTimeout(savedTimer)
+    savedTimer = setTimeout(() => savedFlag.classList.remove("is-on"), 1600)
+    syncSummaries()
   })
 }
 
-/** In list order, not click order. */
-const chosenFavourites = (): string[] =>
-  CAPTION_LANGUAGES.filter((l) => chosen.has(l.value)).map((l) => l.value)
+// The chip picker is shared with the first-run page (see pages/shared).
+const chips = mountLanguageChips(favouriteLanguages, (values) => save({ favouriteLanguages: values }))
 
-function syncFavourites(): void {
-  const full = chosen.size >= MAX_FAVOURITE_LANGUAGES
-  for (const button of favouriteButtons) {
-    const on = chosen.has(button.value)
-    button.setAttribute("aria-pressed", String(on))
-    button.classList.toggle("is-on", on)
-    // At the cap the rest go visibly inert rather than failing on click.
-    button.disabled = full && !on
+// --- folder previews ---------------------------------------------------------
+// A folder is not free text: the downloader sanitises every segment and drops
+// "..", so a path can silently become a different path. Showing the result while
+// it is typed is the difference between preventing that and explaining it later.
+const PREVIEWS = [
+  [folderPublic, "#preview-public", DEFAULT_SETTINGS.folderPublic] as const,
+  [folderPrivate, "#preview-private", DEFAULT_SETTINGS.folderPrivate] as const,
+  [folderDebug, "#preview-debug", DEFAULT_SETTINGS.folderDebug] as const,
+]
+
+function renderPreview(input: HTMLInputElement, target: string, fallback: string): void {
+  const node = document.querySelector<HTMLElement>(target)
+  if (!node) return
+  const typed = input.value.trim()
+  const resolved = sanitizeFolder(typed, fallback)
+  const rewritten = typed !== resolved
+
+  const folder = document.createElement("strong")
+  folder.textContent = resolved
+  node.replaceChildren(
+    document.createTextNode("Downloads/"),
+    folder,
+    document.createTextNode(`/${monthFolder(new Date().toISOString())}/`),
+  )
+  if (rewritten) {
+    node.append(document.createTextNode(typed === "" ? "  (empty, so the default is used)" : "  (rewritten)"))
   }
+  node.classList.toggle("is-rewritten", rewritten)
+  input.setAttribute("aria-invalid", String(rewritten))
+}
+
+function renderAllPreviews(): void {
+  for (const [input, target, fallback] of PREVIEWS) renderPreview(input, target, fallback)
+}
+
+// --- group summaries ---------------------------------------------------------
+// Each heading carries its group's current value, so the page can be read as a
+// status board before it is used as a form.
+function syncSummaries(): void {
+  const set = (id: string, text: string): void => {
+    const node = document.querySelector<HTMLElement>(id)
+    if (node) node.textContent = text
+  }
+  set("#v-recording", `${captionLanguage.value} · ${privateDefault.checked ? "private" : "public"}`)
+  set("#v-languages", `${chips.count()} of ${MAX_FAVOURITE_LANGUAGES} pinned`)
+  set("#v-files", sanitizeFolder(folderPublic.value.trim(), DEFAULT_SETTINGS.folderPublic))
+  set(
+    "#v-file",
+    [captionAlternatives.checked ? "alternatives" : null, mergeRejoins.checked ? "merge" : null]
+      .filter(Boolean)
+      .join(" · ") || "plain",
+  )
+  set("#v-history", `keeps ${retention.value}`)
+  set("#v-trouble", debugLog.checked ? "logging on" : "logging off")
 }
 
 async function init(): Promise<void> {
@@ -106,12 +133,13 @@ async function init(): Promise<void> {
   captionAlternatives.checked = settings.captionAlternatives
   mergeRejoins.checked = settings.mergeRejoins
   askLanguage.checked = settings.askLanguageEachMeeting
-  chosen.clear()
-  for (const value of settings.favouriteLanguages.slice(0, MAX_FAVOURITE_LANGUAGES)) chosen.add(value)
-  syncFavourites()
+  retention.value = String(settings.retentionLimit)
+  chips.setChosen(settings.favouriteLanguages)
   folderPublic.value = settings.folderPublic
   folderPrivate.value = settings.folderPrivate
   folderDebug.value = settings.folderDebug
+  renderAllPreviews()
+  syncSummaries()
   await refreshActiveMeetingNote()
 }
 
@@ -127,39 +155,53 @@ chrome.storage.onChanged.addListener((changes, area) => {
 })
 
 captionLanguage.addEventListener("change", () => {
-  void saveSettings({ captionLanguage: captionLanguage.value })
+  save({ captionLanguage: captionLanguage.value })
 })
 
 privateDefault.addEventListener("change", () => {
-  void saveSettings({ privateByDefault: privateDefault.checked })
+  save({ privateByDefault: privateDefault.checked })
 })
 
 debugLog.addEventListener("change", () => {
-  void saveSettings({ debugLog: debugLog.checked })
+  save({ debugLog: debugLog.checked })
 })
 
 captionAlternatives.addEventListener("change", () => {
-  void saveSettings({ captionAlternatives: captionAlternatives.checked })
+  save({ captionAlternatives: captionAlternatives.checked })
 })
 
 mergeRejoins.addEventListener("change", () => {
-  void saveSettings({ mergeRejoins: mergeRejoins.checked })
+  save({ mergeRejoins: mergeRejoins.checked })
 })
 
 askLanguage.addEventListener("change", () => {
-  void saveSettings({ askLanguageEachMeeting: askLanguage.checked })
+  save({ askLanguageEachMeeting: askLanguage.checked })
 })
 
+// Clamped rather than validated-and-refused: a number field is easy to empty by
+// accident, and a retention limit of 0 would throw away every meeting.
+retention.addEventListener("change", () => {
+  const parsed = Number.parseInt(retention.value, 10)
+  const limit = Number.isFinite(parsed) ? Math.min(500, Math.max(1, parsed)) : DEFAULT_SETTINGS.retentionLimit
+  retention.value = String(limit)
+  save({ retentionLimit: limit })
+})
+
+for (const [input] of PREVIEWS) {
+  // Preview on every keystroke; persist once the field is left, as before.
+  input.addEventListener("input", () => renderAllPreviews())
+}
+
 folderPublic.addEventListener("change", () => {
-  void saveSettings({ folderPublic: folderPublic.value.trim() })
+  save({ folderPublic: folderPublic.value.trim() })
 })
 
 folderPrivate.addEventListener("change", () => {
-  void saveSettings({ folderPrivate: folderPrivate.value.trim() })
+  save({ folderPrivate: folderPrivate.value.trim() })
 })
 
 folderDebug.addEventListener("change", () => {
-  void saveSettings({ folderDebug: folderDebug.value.trim() })
+  save({ folderDebug: folderDebug.value.trim() })
 })
 
 void init()

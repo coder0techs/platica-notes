@@ -3,30 +3,76 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Welcome — Plática Notes</title>
+  <title>Welcome · Plática Notes</title>
   <link rel="stylesheet" href="ui.css">
   <link rel="stylesheet" href="welcome.css">
 </head>
 <body>
   <main>
-    <header>
-      <h1>Welcome to Plática Notes</h1>
-      <p class="lead">Everything is saved locally on your computer — no servers, no accounts.</p>
+    <header class="hero">
+      <h1>Plática Notes records your meetings on your own computer</h1>
+      <p class="lead">Google Meet's own live captions and in-meeting chat, saved as one Markdown file
+        per call. No servers, no accounts, no network requests: the extension has nowhere to send
+        anything, by design.</p>
     </header>
 
-    <section>
-      <label class="row">
-        <span>Default caption language</span>
-        <select id="caption-language"></select>
-      </label>
-      <p class="hint">New meetings start in this language. You can switch it just for one meeting from the in-meeting language pill; that choice is not saved.</p>
+    <!-- Numbered because this genuinely is a sequence, and because the first thing
+         a new user needs is to know that there is nothing to press. -->
+    <ol class="steps">
+      <li class="turn" style="--turn-color: var(--s-blue)">
+        <div class="turn-body">
+          <h2 class="step-title">Join a Google Meet call</h2>
+          <p class="hint">Capture starts by itself. A small control group appears at the top of the
+            call showing that it is recording, and in which language.</p>
+        </div>
+      </li>
+      <li class="turn" style="--turn-color: var(--s-teal)">
+        <div class="turn-body">
+          <h2 class="step-title">Talk, and watch the transcript if you want to</h2>
+          <p class="hint">The live panel shows speech and chat on one timeline. You can add your own
+            notes, mark a moment, mark the call private, or pause capture at any point.</p>
+        </div>
+      </li>
+      <li class="turn" style="--turn-color: var(--s-green)">
+        <div class="turn-body">
+          <h2 class="step-title">Leave, and find the file in your Downloads folder</h2>
+          <p class="hint">One <span class="data">.md</span> per meeting, filed by month. Deliberately
+            no summary: you get the raw material and hand it to whichever assistant you already use,
+            with your own prompt. Nothing leaves your machine until you send it.</p>
+        </div>
+      </li>
+    </ol>
+
+    <section class="turn card setup" style="--turn-color: var(--s-violet)" aria-labelledby="h-setup">
+      <div class="turn-body">
+        <h2 class="turn-head" id="h-setup">Two things worth setting now<span class="saved" id="saved-flag" role="status">Saved</span></h2>
+
+        <div class="setting">
+          <div class="setting-head">
+            <label class="setting-label" for="caption-language">Language most of your meetings are in</label>
+            <select id="caption-language"></select>
+          </div>
+          <p class="hint">Every new meeting starts here. Captions recorded in the wrong language come
+            out garbled, so this is the one setting worth getting right up front.</p>
+        </div>
+
+        <div class="setting">
+          <label class="setting-label" for="favourite-languages">Other languages you meet in</label>
+          <div id="favourite-languages" class="checks"></div>
+          <p class="hint">Up to three. Each one gets its own button in the call, so switching mid-meeting
+            is a single click. Skip this if you only ever meet in one language.</p>
+        </div>
+      </div>
     </section>
 
-    <button class="btn-primary" id="start">Start using Plática Notes</button>
-    <nav class="links">
-      <a class="link" href="help.html" target="_blank">Help</a>
-      <a class="link" href="options.html">More settings</a>
-    </nav>
+    <div class="finish">
+      <button class="btn btn-primary" id="start">Take me to my meetings</button>
+      <nav class="links" aria-label="More">
+        <a class="link" href="help.html" target="_blank">User manual</a>
+        <a class="link" href="options.html">All settings</a>
+        <a class="link" href="privacy.html" target="_blank">Privacy policy</a>
+      </nav>
+    </div>
   </main>
   <script src="welcome.js"></script>
 </body>

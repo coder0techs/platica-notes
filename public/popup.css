@@ -1,15 +1,43 @@
-/* Popup-specific layout. Shared theme + controls live in ui.css. */
-body { min-width: 300px; padding: 16px; }
-header { margin-bottom: 14px; }
+/* Popup layout. The status block runs edge to edge because it is the subject of
+   the surface; the controls sit under it on the page ground. Shared tokens and
+   controls live in ui.css. */
+body { width: 340px; }
+
+.now {
+  background: var(--card); border-bottom: 1px solid var(--rule);
+  padding: 15px 16px;
+}
+.now-state {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0; font: 600 12px/1.2 var(--sans); letter-spacing: .02em;
+  color: var(--ink-2);
+}
+/* The rail may be a pale idle grey; the label never is. */
+.now-state.is-live { color: var(--rec); }
+.now-clock { margin-left: auto; font: 400 11.5px/1 var(--mono); color: var(--ink-2); }
+.now-title {
+  margin: 7px 0 0; font: 500 15px/1.35 var(--sans); letter-spacing: -.01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.now-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.now-path {
+  margin: 8px 0 0; font: 400 11.5px/1.45 var(--mono); color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.now-note { margin-top: 7px; }
+
+main { padding: 14px 16px 4px; }
 
 .row {
-  display: flex; justify-content: space-between; align-items: center;
-  gap: 12px; margin: 0;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+  margin: 16px 0 0; cursor: pointer;
 }
+.row-text { display: block; min-width: 0; }
+.row-label { display: block; font-size: 13.5px; }
+.row .hint { display: block; margin-top: 3px; }
+.row input[type="checkbox"] { margin-top: 1px; }
 
-.btn-primary { margin-top: 16px; }
-
-.links { display: flex; gap: 16px; margin-top: 14px; }
-.links a { font-size: 13px; }
-
-.build { margin-top: 16px; opacity: .8; }
+footer {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 12px 16px 14px; margin-top: 14px; border-top: 1px solid var(--rule);
+}

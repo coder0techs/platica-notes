@@ -122,7 +122,7 @@ before each submission.
 ## Test instructions (Access tab)
 
 Leave **Credentials** empty — there is no login to give. "Additional instructions" is
-capped at **500 characters**, so this is written to fit (494) and every sentence earns
+capped at **500 characters**, so this is written to fit (485) and every sentence earns
 its place: the reviewer must know that Meet's on-screen caption band does not need to
 be on (otherwise they conclude capture is broken) and where the file lands.
 
@@ -130,7 +130,7 @@ be on (otherwise they conclude capture is broken) and where the file lands.
 No account, login or backend, so there are no credentials. The extension runs only on a Google Meet meeting page.
 
 1. Open meet.google.com and start a meeting (the account is for Meet, not for us).
-2. Our controls appear at the top: language, Transcript, Rec (pause), Wipe, Private. Click Transcript for the live panel.
+2. Our controls sit top-centre: a red Recording pill and a menu button. Open the menu and click Show transcript.
 3. Speak, or send a chat message: attributed turns appear in the panel. Meet's caption band need not be on.
 4. Leave. The .md file lands in Downloads/meetings/platica-notes/.
 ```
