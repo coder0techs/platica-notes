@@ -4,6 +4,8 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+## 1.16.1 - 2026-08-22
+
 - **The release notes no longer open with an empty heading.** This page carried an
   "Unreleased" heading above the newest version with nothing under it, which reads as
   something that failed to load rather than as the placeholder it is.
