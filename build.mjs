@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import { execSync } from "node:child_process"
 import { marked } from "marked"
 import { MANUAL_FIGURES } from "./scripts/lib/manual-figures.mjs"
+import { dropEmptyUnreleased } from "./scripts/lib/release-lib.mjs"
 
 const watch = process.argv.includes("--watch")
 
@@ -93,8 +94,11 @@ for (const [figure, shot] of Object.entries(MANUAL_FIGURES)) {
 }
 
 for (const doc of DOC_PAGES) {
+  const source = readFileSync(doc.md, "utf8")
   const body = marked
-    .parse(readFileSync(doc.md, "utf8"))
+    // The changelog always carries a `## Unreleased` heading for the next change
+    // to be filed under; empty, it is bookkeeping, not release notes.
+    .parse(doc.md === "CHANGELOG.md" ? dropEmptyUnreleased(source) : source)
     .replace(/src="([^"/:]+\.png)"/g, (match, name) =>
       Object.hasOwn(MANUAL_FIGURES, name) ? `src="manual/${name}" loading="lazy"` : match,
     )

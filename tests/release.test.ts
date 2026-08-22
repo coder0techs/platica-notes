@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   bumpLevel,
   cutChangelog,
+  dropEmptyUnreleased,
   nextVersion,
   replaceVersion,
   sectionFor,
@@ -96,6 +97,43 @@ describe("unreleasedBody", () => {
 
   it("throws when the heading is missing entirely", () => {
     expect(() => unreleasedBody("# T\n\n## 1.0.0 - 2026-01-01\n")).toThrow(/Unreleased/)
+  })
+})
+
+describe("dropEmptyUnreleased", () => {
+  it("removes the heading when nothing is filed under it", () => {
+    const cut = cutChangelog(CHANGELOG, "1.15.0", "2026-08-21")
+    expect(cut).toContain("## Unreleased")
+    const rendered = dropEmptyUnreleased(cut)
+    expect(rendered).not.toContain("## Unreleased")
+    // The release it just cut, and the ones before it, are untouched.
+    expect(rendered).toContain("## 1.15.0 - 2026-08-21")
+    expect(rendered).toContain("**Something visible changed.**")
+    expect(rendered).toContain("## 1.14.0 - 2026-08-10")
+  })
+
+  it("leaves a populated section alone", () => {
+    // Between releases this is the honest answer to "what changed since mine".
+    expect(dropEmptyUnreleased(CHANGELOG)).toBe(CHANGELOG)
+  })
+
+  it("keeps the heading when there is nothing else in the file", () => {
+    // Removing it here would render a changelog with no sections at all.
+    const only = "# Release notes\n\n## Unreleased\n"
+    expect(dropEmptyUnreleased(only)).toBe(only)
+  })
+
+  it("leaves the intro above it intact", () => {
+    const rendered = dropEmptyUnreleased(cutChangelog(CHANGELOG, "1.15.0", "2026-08-21"))
+    expect(rendered.startsWith("# Release notes\n\nAll notable changes")).toBe(true)
+  })
+
+  it("throws when the heading is gone, rather than quietly rendering", () => {
+    // The heading is load-bearing: the release script needs it and so does the
+    // pull-request check. If it has been deleted, failing the build is better
+    // than a page that renders while the next release cannot be cut.
+    const noHeading = "# Notes\n\n## 1.0.0 - 2026-01-01\n\n- old\n"
+    expect(() => dropEmptyUnreleased(noHeading)).toThrow(/Unreleased/)
   })
 })
 

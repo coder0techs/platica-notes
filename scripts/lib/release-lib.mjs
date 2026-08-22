@@ -91,6 +91,32 @@ export function cutChangelog(changelog, version, date) {
 }
 
 /**
+ * Drop the `## Unreleased` heading when nothing is filed under it yet.
+ *
+ * FOR RENDERING ONLY. The heading must stay in the file: `unreleasedBody` throws
+ * without it, so the next release would fail, and the pull-request check counts
+ * the entries beneath it, so the next contributor needs somewhere to write. But a
+ * bare heading with nothing under it, sitting at the top of the release notes a
+ * user reads in the extension and on the website, reads as a rendering fault
+ * rather than as a convention. The file keeps it; the page does not show it.
+ *
+ * A populated `## Unreleased` is left alone: between releases it is the honest
+ * answer to "what changed since the version I have".
+ *
+ * @param {string} changelog
+ * @returns {string}
+ */
+export function dropEmptyUnreleased(changelog) {
+  if (unreleasedBody(changelog) !== "") return changelog
+  const start = changelog.indexOf(`${UNRELEASED}\n`)
+  const next = changelog.indexOf("\n## ", start + UNRELEASED.length)
+  // Nothing released yet either: leave the file as it is rather than return a
+  // changelog with no sections at all.
+  if (next === -1) return changelog
+  return changelog.slice(0, start) + changelog.slice(next + 1)
+}
+
+/**
  * Body of a released section, for use as GitHub release notes.
  *
  * @param {string} changelog
