@@ -6,7 +6,7 @@ Plática Notes records your Google Meet transcript and in-meeting chat and saves
 as a Markdown file on your own computer. No servers, no accounts, no network
 requests: the extension has nowhere to send anything, by design.
 
-This manual covers version 1.16.0, the version published on the Chrome Web Store.
+This manual covers version 1.16.1, the version published on the Chrome Web Store.
 
 ---
 
