@@ -4,6 +4,8 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+## 1.16.2 - 2026-08-23
+
 - **Meetings are saved with their real name again.** With certain other extensions
   installed, Chrome was throwing away the filename this extension asked for, and a
   saved meeting landed in the root of your Downloads folder as `download`,
