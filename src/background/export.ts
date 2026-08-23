@@ -1,7 +1,21 @@
 import { getSettings } from "../shared/storage"
 import { DEFAULT_SETTINGS, type DebugEvent, type Meeting } from "../shared/types"
 import { debugLogFileName, formatDebugLog, formatMeetingText, meetingFileName, monthFolder, sanitizeFolder } from "./format"
+import { type ConflictAction, filenameGuard } from "./filename-guard"
 import { meetingFolderFor } from "../shared/paths"
+
+// Every download goes through here so the name is registered with the guard before
+// Chrome runs its filename-determination round. See filename-guard.ts for why the
+// `filename` below cannot be trusted on its own.
+async function startDownload(url: string, filename: string, conflictAction: ConflictAction): Promise<void> {
+  filenameGuard.expect({ url, filename, conflictAction })
+  try {
+    await chrome.downloads.download({ url, filename, conflictAction })
+  } catch (error) {
+    filenameGuard.forget(url)
+    throw error
+  }
+}
 
 export async function downloadMeeting(meeting: Meeting): Promise<void> {
   const settings = await getSettings()
@@ -14,14 +28,15 @@ export async function downloadMeeting(meeting: Meeting): Promise<void> {
   // directory is unusable after a week of meetings. All paths are relative to
   // Downloads, the only place chrome.downloads can write. meetingFolder is shared
   // with the popup, which shows the user this exact path while a call runs.
-  await chrome.downloads.download({
+  //
+  // A merged meeting (visits > 1) rewrites the same file it produced on the first
+  // visit (startedAt + title are preserved, so the name is identical). A
+  // single-visit meeting still uniquifies so it never clobbers a sibling.
+  await startDownload(
     url,
-    filename: `${meetingFolderFor(settings, meeting)}/${meetingFileName(meeting)}`,
-    // A merged meeting (visits > 1) rewrites the same file it produced on the
-    // first visit (startedAt + title are preserved, so the name is identical).
-    // A single-visit meeting still uniquifies so it never clobbers a sibling.
-    conflictAction: (meeting.visits?.length ?? 0) > 1 ? "overwrite" : "uniquify",
-  })
+    `${meetingFolderFor(settings, meeting)}/${meetingFileName(meeting)}`,
+    (meeting.visits?.length ?? 0) > 1 ? "overwrite" : "uniquify",
+  )
 }
 
 export async function downloadDebugLog(
@@ -41,9 +56,5 @@ export async function downloadDebugLog(
   // meant to be kept out of cloud sync entirely. Relative to Downloads only.
   const settings = await getSettings()
   const folder = sanitizeFolder(settings.folderDebug, DEFAULT_SETTINGS.folderDebug)
-  await chrome.downloads.download({
-    url,
-    filename: `${folder}/${monthFolder(meta.startedAt)}/${debugLogFileName(meta)}`,
-    conflictAction: "uniquify",
-  })
+  await startDownload(url, `${folder}/${monthFolder(meta.startedAt)}/${debugLogFileName(meta)}`, "uniquify")
 }
