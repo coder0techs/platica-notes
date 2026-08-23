@@ -23,7 +23,11 @@ export interface ChromeMock {
   }
   downloads: {
     download(options: { url: string; filename: string; conflictAction?: string }): Promise<number>
+    onDeterminingFilename: {
+      addListener(listener: DeterminerListener): void
+    }
   }
+  runtime: { id: string }
   storageSync: Record<string, unknown>
   _store: Record<string, unknown>
   _aliveTabs: Set<number>
@@ -31,7 +35,15 @@ export interface ChromeMock {
   _transientTabs: Set<number>
   /** Every chrome.downloads.download call, in order. */
   _downloads: Array<{ url: string; filename: string; conflictAction?: string }>
+  /** Determiners registered via downloads.onDeterminingFilename, in order. */
+  _determiners: DeterminerListener[]
 }
+
+/** A downloads.onDeterminingFilename listener, as Chrome calls it. */
+export type DeterminerListener = (
+  item: { url: string; finalUrl?: string; byExtensionId?: string },
+  suggest: (suggestion?: { filename: string; conflictAction?: string }) => void,
+) => void
 
 export function makeChromeMock(initialLocal: Record<string, unknown> = {}): ChromeMock {
   const store: Record<string, unknown> = structuredClone(initialLocal)
@@ -39,6 +51,7 @@ export function makeChromeMock(initialLocal: Record<string, unknown> = {}): Chro
   const aliveTabs = new Set<number>()
   const transientTabs = new Set<number>()
   const downloads: Array<{ url: string; filename: string; conflictAction?: string }> = []
+  const determiners: DeterminerListener[] = []
   let nextDownloadId = 1
 
   const get = async (key: string | string[] | Record<string, unknown> | null): Promise<Record<string, unknown>> => {
@@ -85,11 +98,18 @@ export function makeChromeMock(initialLocal: Record<string, unknown> = {}): Chro
         downloads.push(options)
         return nextDownloadId++
       },
+      onDeterminingFilename: {
+        addListener: (listener) => {
+          determiners.push(listener)
+        },
+      },
     },
+    runtime: { id: "platica-notes-test" },
     storageSync: sync,
     _store: store,
     _aliveTabs: aliveTabs,
     _transientTabs: transientTabs,
     _downloads: downloads,
+    _determiners: determiners,
   }
 }

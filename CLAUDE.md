@@ -117,6 +117,16 @@ use), and the content-to-background message contract.
   `insertAdjacentHTML` / `outerHTML` anywhere in `src/` or `public/`. Keep it so.
 - **The privacy flag is honored on every output path.** Meetings marked private
   route to the private folder and are excluded from the debug log entirely.
+- **The saved filename must be re-asserted, not merely requested.** The `filename`
+  passed to `chrome.downloads.download` is a suggestion Chrome drops as soon as any
+  installed extension holds a `downloads.onDeterminingFilename` listener and fails
+  to answer the round. The file then lands in the Downloads root as a bare
+  `download`: no name, no folder, no extension (observed with Imagus Reborn
+  2026.8.15 and DownThemAll! 4.15.1). Downloads therefore go through
+  `startDownload` in `export.ts`, which registers the name with
+  `filename-guard.ts`, and that guard answers Chrome's round with it. Never call
+  `chrome.downloads.download` directly, and keep the guard's own `suggest()` call
+  exactly-once on every path, foreign downloads included.
 - **The Meet DOM contract is fragile.** `meet.ts` keys off a few Meet selectors
   (the leave icon, the meeting title). Re-verify them on a live meeting before
   each release; they are the most likely thing to break silently. Concrete

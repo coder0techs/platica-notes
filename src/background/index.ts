@@ -1,9 +1,15 @@
 import type { BackgroundRequest, BackgroundResponse } from "../shared/messages"
 import { ACTIVE_TABS_KEY } from "../shared/storage"
 import { downloadDebugLog, downloadMeeting } from "./export"
+import { installFilenameGuard } from "./filename-guard"
 import { shouldOpenWelcome } from "./install"
 import { finalizeSession, recoverOrphanSessions, trackTab, type FinalizeResult } from "./sessions"
 import { clearPendingExport, deleteMeeting, getMeeting, listPendingExports } from "./store"
+
+// Before anything can download: the filename-determination round runs before
+// chrome.downloads.download() resolves, so this listener has to be registered
+// synchronously on every service-worker start.
+installFilenameGuard()
 
 chrome.runtime.onMessage.addListener(
   (message: BackgroundRequest, sender, sendResponse: (response: BackgroundResponse) => void) => {

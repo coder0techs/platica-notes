@@ -4,6 +4,15 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+- **Meetings are saved with their real name again.** With certain other extensions
+  installed, Chrome was throwing away the filename this extension asked for, and a
+  saved meeting landed in the root of your Downloads folder as `download`,
+  `download (1)`, `download (2)` and so on: no title, no date, no folder, not even a
+  `.md` on the end. The transcript inside was always intact, so nothing was ever
+  lost, but you could not tell one file from another without opening it. The name is
+  now re-asserted at the point where Chrome decides it, so it survives a neighbour
+  that stays silent. Files already saved under a wrong name stay as they are.
+
 ## 1.16.1 - 2026-08-22
 
 - **The release notes no longer open with an empty heading.** This page carried an
