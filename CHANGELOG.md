@@ -29,11 +29,13 @@ All notable changes to Plática Notes, newest first.
   it names the last meeting it saved. Hiding the on-screen controls is still one
   click, just no longer the most prominent thing on the surface.
 
-- **Deleting a meeting can be taken back.** It used to be a browser confirmation
-  box and then gone for good, on a transcript that exists nowhere else in the
-  extension. The row now goes immediately and an **Undo** stays available for ten
-  seconds, which is the protection the dialog was pretending to be. Re-downloading
-  a meeting also reports where the file landed instead of succeeding in silence.
+- **Deleting a meeting from the history list can be taken back.** It used to be a
+  browser confirmation box and then gone for good, on a transcript that exists
+  nowhere else in the extension. The row now goes immediately and an **Undo** stays
+  available for ten seconds, which is the protection the dialog was pretending to be.
+  This is the history page, not **Wipe**: wiping a live meeting still cannot be
+  undone, and is still guarded by having to confirm it. Re-downloading a meeting also
+  reports where the file landed instead of succeeding in silence.
 
 - **Meeting history is a list you can search.** Titles no longer get squeezed into
   a table column: meetings are grouped by month, newest first, with a filter box, a
