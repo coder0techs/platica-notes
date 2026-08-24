@@ -5,6 +5,7 @@ export class SessionWriter<T> {
   private pending = false
   private closed = false
   private notifiedInvalidated = false
+  private usingFallback = false
   private chain: Promise<void> = Promise.resolve()
 
   constructor(
@@ -12,9 +13,23 @@ export class SessionWriter<T> {
     private readonly getSnapshot: () => T,
     private readonly intervalMs = 1000,
     // Called once if a write fails because the extension context was invalidated
-    // (reload/update mid-meeting). The writer then seals itself: retrying a dead
-    // chrome.storage is pointless noise, and there is no session left to save.
-    private readonly onInvalidated?: () => void,
+    // (reload/update mid-meeting), AFTER a fallback has been chosen if there is
+    // one. The caller uses it to tell the user what state capture is now in.
+    private readonly onInvalidated?: (recovered: boolean) => void,
+    /**
+     * Where writes go once this context's own chrome.* handle is dead.
+     *
+     * An update mid-meeting severs the content script's handle: chrome.storage
+     * throws from here on. Sealing the writer (what this used to do) meant the
+     * rest of the meeting was simply lost, and the only way back was reloading the
+     * page - which drops the user out of the call and, because Meet does not
+     * re-send the roster afterwards, costs every speaker name for the remainder.
+     *
+     * The capture itself never stopped: the MAIN-world hook holds no chrome.*
+     * handle and keeps decoding. Only the transport died. So writes fail over to a
+     * transport that outlives an update instead, and the writer keeps going.
+     */
+    private readonly fallbackWrite?: (snapshot: T) => Promise<void>,
   ) {}
 
   requestWrite(): void {
@@ -62,20 +77,41 @@ export class SessionWriter<T> {
   /** Writes are serialized so an older snapshot can never overwrite a newer one. */
   private enqueueWrite(): Promise<void> {
     this.chain = this.chain
-      .then(() => this.write(this.getSnapshot()))
+      .then(() => this.active(this.getSnapshot()))
       .catch((error) => {
         if (isContextInvalidatedError(error)) {
-          // Orphaned context: stop retrying and notify once. close() makes every
-          // later requestWrite a no-op, so no retry storm and no stray console noise.
-          if (!this.notifiedInvalidated) {
-            this.notifiedInvalidated = true
-            this.close()
-            this.onInvalidated?.()
-          }
+          this.handleInvalidated()
           return
         }
         console.error("[platica-notes] session write failed:", error)
       })
     return this.chain
+  }
+
+  /** The transport in use: the direct one until it dies, then the fallback. */
+  private get active(): (snapshot: T) => Promise<void> {
+    return this.usingFallback && this.fallbackWrite ? this.fallbackWrite : this.write
+  }
+
+  /**
+   * First invalidation: switch transport and keep writing. Second (the fallback
+   * died too, or there was none): seal, because there is nowhere left to write and
+   * retrying a dead channel is only noise.
+   */
+  private handleInvalidated(): void {
+    if (!this.usingFallback && this.fallbackWrite) {
+      this.usingFallback = true
+      this.onInvalidated?.(true)
+      // Write again straight away rather than waiting for the next caption: the
+      // snapshot that just failed is the newest one, and it is what the
+      // still-arriving captions will be appended to.
+      void this.enqueueWrite()
+      return
+    }
+    if (!this.notifiedInvalidated) {
+      this.notifiedInvalidated = true
+      this.close()
+      this.onInvalidated?.(false)
+    }
   }
 }

@@ -1,5 +1,9 @@
 export type BackgroundRequest =
   | { kind: "getTabId" }
+  // Registers the capability token this tab's MAIN world may later use to persist
+  // a snapshot over the external channel. Sent once per meeting, over the trusted
+  // internal channel, BEFORE any update can orphan this content script.
+  | { kind: "registerRelayToken"; token: string }
   | { kind: "meetingStarted" }
   | { kind: "meetingEnded" }
   | { kind: "downloadMeeting"; meetingId: string }
@@ -11,6 +15,42 @@ export type BackgroundResponse<T = unknown> =
   // extension was reloaded/updated while this content script kept running), so
   // callers can surface a reload notice instead of retrying a dead channel.
   | { ok: false; error: string; invalidated?: boolean }
+
+/**
+ * A session snapshot arriving over `externally_connectable` from the MAIN world,
+ * used only after this tab's content script has been orphaned by an update.
+ *
+ * SECURITY. The external channel is open to every script on the meeting page, so
+ * a message arriving here is NOT trusted by virtue of arriving. Two things gate
+ * it: the sender's origin, and `token`, which the trusted content script minted
+ * and registered over the internal channel while it was still alive. Without a
+ * matching token the snapshot is dropped, which is what keeps another extension's
+ * page script (or Meet's own code) from writing sessions into our storage.
+ *
+ * This does not widen the trust boundary around the transcript itself: the
+ * captions already come from that page's script context via the MAIN-world hook.
+ */
+export interface RelaySnapshotMessage {
+  kind: "relaySnapshot"
+  token: string
+  tabId: number
+  snapshot: unknown
+}
+
+/** Narrow an unknown external message to a relay snapshot. Shape only, no trust. */
+export function isRelaySnapshotMessage(value: unknown): value is RelaySnapshotMessage {
+  const m = value as Partial<RelaySnapshotMessage> | null
+  return (
+    typeof m === "object" &&
+    m !== null &&
+    m.kind === "relaySnapshot" &&
+    typeof m.token === "string" &&
+    m.token.length > 0 &&
+    typeof m.tabId === "number" &&
+    Number.isInteger(m.tabId) &&
+    m.snapshot !== undefined
+  )
+}
 
 // Substrings Chrome uses when a content script's runtime is gone: the context was
 // torn down by a reload/update, or the message channel/receiving end died with it.
