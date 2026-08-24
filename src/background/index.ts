@@ -107,14 +107,19 @@ async function handle(message: BackgroundRequest, sender: chrome.runtime.Message
 
 async function finalizeAndProcess(tabId: number): Promise<string | null> {
   const r = await finalizeSession(tabId)
-  await dropRelayToken(tabId)
   if (!r) return null
   await deliver(r)
   return r.meeting?.id ?? null
 }
 
-// A token is scoped to one meeting in one tab; past that it is only a way in.
-// Dropped on every finalize path, which is also every tab-close path.
+/**
+ * A token is scoped to a TAB, not to a meeting, and it is dropped when the tab
+ * goes. Ending a meeting must not drop it: an orphaned content script cannot ask
+ * for a new one — asking is what the update broke — so a token that died with the
+ * meeting would leave the next call in that tab with no way to save itself. The
+ * token buys nothing beyond writing that one tab's session from that one origin,
+ * which is exactly as long as the tab is worth anything to an attacker.
+ */
 async function dropRelayToken(tabId: number): Promise<void> {
   await enqueue(async () => {
     const tokens = (await getLocal<RelayTokens>(RELAY_TOKENS_KEY)) ?? {}
@@ -148,7 +153,7 @@ async function recoverPendingExports(): Promise<void> {
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  void finalizeAndProcess(tabId)
+  void finalizeAndProcess(tabId).finally(() => dropRelayToken(tabId))
 })
 
 // First run only: open the welcome page so the user picks a default caption

@@ -1,4 +1,4 @@
-import { sendToBackground } from "../../shared/messages"
+import { isContextInvalidatedError, sendToBackground } from "../../shared/messages"
 import type { BackgroundResponse } from "../../shared/messages"
 import { getLocal, getSettings, saveSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
 import { DEFAULT_SETTINGS } from "../../shared/types"
@@ -278,13 +278,63 @@ function relayPersist(snapshot: unknown, final: boolean): Promise<void> {
  */
 async function armRelay(tabId: number): Promise<void> {
   const response = await sendToBackground<string>({ kind: "registerRelayToken" })
-  if (!response.ok || typeof response.data !== "string") {
-    relayCredentials = null
-    dlog("relay not armed", { error: response.ok ? "no token returned" : response.error })
+  if (response.ok && typeof response.data === "string") {
+    relayCredentials = { extensionId: chrome.runtime.id, token: response.data, tabId }
+    dlog("relay armed", { tab: tabId })
     return
   }
-  relayCredentials = { extensionId: chrome.runtime.id, token: response.data, tabId }
-  dlog("relay armed", { tab: tabId })
+  // Asking is exactly what an update breaks, so a second meeting in an orphaned
+  // tab can never be issued a token. Keep the one from the first meeting: it is
+  // scoped to this tab and the background keeps it until the tab closes.
+  if (relayCredentials?.tabId === tabId) {
+    dlog("relay kept from the previous meeting", { tab: tabId })
+    return
+  }
+  relayCredentials = null
+  dlog("relay not armed", { error: response.ok ? "no token returned" : response.error })
+}
+
+/**
+ * Settings, or the last ones we managed to read.
+ *
+ * chrome.storage.sync is gone for good once this script is orphaned, and a
+ * meeting must not fail to start over a preference. What the user last chose is
+ * still true, so it is used; only a change made after the update is missed.
+ */
+let cachedSettings: Settings = DEFAULT_SETTINGS
+async function readSettings(): Promise<Settings> {
+  try {
+    cachedSettings = await getSettings()
+  } catch (error) {
+    if (!isContextInvalidatedError(error)) throw error
+    dlog("settings unreadable, using the last known ones")
+  }
+  return cachedSettings
+}
+
+/**
+ * The session already under this tab's key, or nothing if it cannot be read.
+ * Only used to decide whether a PREVIOUS meeting's session needs finalizing
+ * first; an orphaned context has already relayed its own finalize, so the key it
+ * would have found is normally gone anyway.
+ */
+async function readPreviousSession(tabId: number): Promise<ActiveSession | undefined> {
+  try {
+    return await getLocal<ActiveSession>(sessionKey(tabId))
+  } catch (error) {
+    if (!isContextInvalidatedError(error)) throw error
+    return undefined
+  }
+}
+
+/**
+ * For writes nobody awaits (a setting toggled from a hotkey or a prompt). Losing
+ * one to a dead context is not worth an unhandled rejection in the user's console
+ * — the notice about the update has already been shown by then.
+ */
+function swallowIfOrphaned(error: unknown): void {
+  if (isContextInvalidatedError(error)) return
+  console.error("[platica-notes] settings write failed:", error)
 }
 
 /** Surface the reload notice if a background call failed on an orphaned context. */
@@ -406,7 +456,7 @@ async function main(): Promise<void> {
 
   // The MAIN-world script must know the caption language before its first
   // subscribe, so push the config before any meeting can start.
-  const settings = await getSettings()
+  const settings = await readSettings()
   debugEnabled = settings.debugLog
   settleDebugBacklog(debugEnabled)
   activeLanguage = settings.captionLanguage
@@ -431,7 +481,16 @@ async function main(): Promise<void> {
       await delay(CAPTION_TAIL_GRACE_MS)
       continue
     }
-    await runMeeting(tabId)
+    try {
+      await runMeeting(tabId)
+    } catch (error) {
+      // A raw chrome.* call that got through: it must not take the watch loop
+      // with it, or this tab silently stops capturing for the rest of its life.
+      if (!isContextInvalidatedError(error)) throw error
+      console.warn("[platica-notes] meeting ended on an orphaned context")
+      dlog("meeting ended on an orphaned context", { error: String(error) })
+      onContextInvalidated(relayCredentials !== null)
+    }
     lastMeetingPath = meetingPath
     lastMeetingEndedAt = Date.now()
     // The Leave click fires endMeeting while Meet's toolbar (and the call_end
@@ -462,7 +521,7 @@ async function runMeeting(tabId: number): Promise<void> {
   // backs out of this lobby — and before meetingStarted, so finalize's untrackTab
   // can't drop the tab we are about to re-track. A same-path session is a genuine
   // reload-resume of this meeting (handled below), not stale.
-  const previous = await getLocal<ActiveSession>(sessionKey(tabId))
+  const previous = await readPreviousSession(tabId)
   if (shouldFinalizeStaleSession(previous?.path ?? null, meetingPath)) {
     dlog("finalizing a previous meeting's session before it is overwritten", {
       stalePath: previous!.path,
@@ -485,7 +544,7 @@ async function runMeeting(tabId: number): Promise<void> {
   dlog("meeting started", { tab: tabId })
   noteIfInvalidated(await sendToBackground({ kind: "meetingStarted" }))
 
-  const settings = await getSettings()
+  const settings = await readSettings()
   let ending = false
 
   // This meeting's debug window starts here. Everything before it — including the
@@ -768,7 +827,7 @@ async function runMeeting(tabId: number): Promise<void> {
       initialLanguage: session.captionLanguage ?? settings.captionLanguage,
       favouriteLanguages: settings.favouriteLanguages,
       onPick: (language) => { applyLanguage(language); controls.setLanguage(language) },
-      onDisableAsking: () => void saveSettings({ askLanguageEachMeeting: false }),
+      onDisableAsking: () => void saveSettings({ askLanguageEachMeeting: false }).catch(swallowIfOrphaned),
     })
   }
 
@@ -1032,12 +1091,11 @@ async function runMeeting(tabId: number): Promise<void> {
     writer.close()
     const response = await sendToBackground({ kind: "meetingEnded" })
     if (!response.ok) {
-      console.error("[platica-notes] finalize failed:", response.error)
-      dlog("finalize failed", { error: response.error })
       // An update took the direct channel, but the relay reaches the NEW version,
       // so the meeting can still end the way it always does: file written on
-      // leave, no reload, no rejoin. Only if that fails too is there a reason to
-      // tell the user anything.
+      // leave, no reload, no rejoin. Try that BEFORE reporting anything — a red
+      // error for a failure we then recover from is how a working build looks
+      // broken on chrome://extensions.
       if (response.invalidated && relayCredentials) {
         try {
           await relayPersist(snapshotNow(), true)
@@ -1049,6 +1107,8 @@ async function runMeeting(tabId: number): Promise<void> {
           dlog("relayed finalize failed", { error: String(error) })
         }
       }
+      console.error("[platica-notes] finalize failed:", response.error)
+      dlog("finalize failed", { error: response.error })
       noteIfInvalidated(response)
     }
     meetingDone()
@@ -1101,7 +1161,7 @@ function watchHotkeys(): void {
     if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return
     event.preventDefault()
     if (isHide) {
-      void saveSettings({ hideUi: !isUiHidden() })
+      void saveSettings({ hideUi: !isUiHidden() }).catch(swallowIfOrphaned)
     } else {
       addNoteToActive?.("")
     }
