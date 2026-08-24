@@ -378,7 +378,12 @@ capture off from the part that saves files. Rejoin the meeting so the rest of it
 recorded. What was captured before is not lost.
 
 **I refreshed the page mid-meeting.**
-Capture resumes and the meeting stays one file. A paused recording stays paused.
+Capture resumes and the meeting stays one file, and a paused recording stays paused.
+Two things do not survive the refresh, and neither is the extension's doing: Meet
+drops you out of the call, so you have to rejoin, and it does not re-send the list of
+who is in the room afterwards, so people who speak for the first time after the
+refresh may be named `Speaker 2`, `Speaker 3` and so on rather than by name. Refresh
+a call you are recording only if you have a reason to.
 
 **Two transcripts appeared for one meeting.**
 Either you left and rejoined more than 40 minutes apart (they are separate meetings
