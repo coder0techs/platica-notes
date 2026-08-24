@@ -95,4 +95,42 @@ export type RtcEvent =
 export interface RtcConfig {
   captionLanguage: string
   debug: boolean
+  /**
+   * Credentials the MAIN world needs to persist a snapshot on the isolated
+   * world's behalf once an update has orphaned it. Sent while everything is still
+   * healthy, because after the update there is no way to send them.
+   *
+   * The MAIN world cannot obtain either of these itself: page context gets no
+   * `chrome.runtime.id`, and the token is minted by the isolated world and
+   * registered with the background over the trusted internal channel.
+   */
+  relay?: RelayCredentials
+}
+
+export interface RelayCredentials {
+  extensionId: string
+  token: string
+  tabId: number
+}
+
+// Isolated world -> MAIN world: "persist this snapshot for me, my own handle is
+// dead". detail is a JSON string, same world-boundary constraint as everything
+// else here. The MAIN world holds no session state; it only forwards.
+export const RTC_RELAY_EVENT = "platica-rtc-relay"
+
+// MAIN world -> isolated world: the outcome of that forward, so the writer can
+// tell a working fallback from a dead one and the notice can say which it is.
+export const RTC_RELAY_RESULT_EVENT = "platica-rtc-relay-result"
+
+export interface RtcRelayRequest {
+  /** Correlates the result with the request; a snapshot may be in flight. */
+  id: number
+  /** JSON of the session snapshot, already serialized by the isolated world. */
+  snapshot: string
+}
+
+export interface RtcRelayResult {
+  id: number
+  ok: boolean
+  error?: string
 }
