@@ -187,8 +187,8 @@ function onContextInvalidated(): void {
   if (contextInvalidated) return
   contextInvalidated = true
   showPersistentNotice(
-    "Plática Notes was updated and can't keep recording in this tab. " +
-      "Reload the page (or rejoin the call) to resume recording and save this meeting.",
+    "Plática Notes was updated and can't keep transcribing in this tab. " +
+      "Reload the page (or rejoin the call) to resume and save this meeting.",
   )
 }
 
@@ -606,7 +606,7 @@ async function runMeeting(tabId: number): Promise<void> {
     // wrong — and the earlier draft went on to promise that whatever had been
     // captured was safe, which contradicted the sentence before it.
     captureNotice = showPersistentNotice(
-      "Plática Notes is not recording speech in this meeting. The usual cause is a " +
+      "Plática Notes is not transcribing speech in this meeting. The usual cause is a " +
         "second meeting-recorder extension running in this tab — only one of them can " +
         "read Meet's captions. Turn the other one off and reload the tab.",
     )
@@ -628,9 +628,6 @@ async function runMeeting(tabId: number): Promise<void> {
     favouriteLanguages: settings.favouriteLanguages,
     initialPrivate: session.isPrivate,
     initialRecording: recording,
-    // Drives the elapsed clock on the recording pill. A resumed session keeps its
-    // original start, so the clock reads the meeting rather than the page load.
-    startedAt: session.startedAt,
     onPrivateChange: (isPrivate) => {
       session.isPrivate = isPrivate
       writer.requestWrite()
@@ -722,7 +719,7 @@ async function runMeeting(tabId: number): Promise<void> {
   // Reached from the panel's note input and the global Alt+Shift+B bookmark chord.
   function addNote(text: string): void {
     if (!recording) {
-      showToast("Recording is off")
+      showToast("Transcribing is paused")
       return
     }
     notes.push({ at: new Date().toISOString(), text: text.trim() })
@@ -849,7 +846,7 @@ async function runMeeting(tabId: number): Promise<void> {
 
   // The language prompt already says "recording in X" — skip the generic toast
   // when it's up, so the two don't stack on the same spot.
-  if (!languagePrompt) showToast("Plática Notes is recording this meeting")
+  if (!languagePrompt) showToast("Plática Notes is transcribing this meeting")
   await done
   return
 

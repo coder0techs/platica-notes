@@ -10,9 +10,14 @@
    and the dark palette below is literally the panel's SPEAKER_COLORS. The app
    and the file it writes look like the same thing because they are.
 
-   Two colours are reserved and never used for decoration:
-     --rec     live capture, and nothing else
-     --danger  a control that destroys data, and nothing else */
+   One colour is reserved and never used for decoration:
+     --danger  a control that destroys data, and nothing else
+
+   Live capture used to be reserved red too, and that was a mistake: red plus a dot
+   plus a clock is how every video tool says "this call is being filmed", and that
+   is what people read it as, on a product that captures no video and no audio. It
+   is --live now, the same violet the transcript panel gives a speaker. Do not put
+   red back on it. */
 :root {
   color-scheme: light dark;
 
@@ -38,8 +43,8 @@
   --accent-wash: #f2edfd;
   --on-accent: #ffffff;
 
-  --rec: #c5221f;
-  --rec-wash: #fdecea;
+  --live: var(--s-violet);
+  --live-wash: var(--accent-wash);
   --danger: #b3261e;
   --danger-wash: #fdeceb;
   --knob: #ffffff;
@@ -79,8 +84,8 @@
     --accent-wash: #291f38;
     --on-accent: #17191e;
 
-    --rec: #ff7b73;
-    --rec-wash: #2c1a18;
+    --live: var(--s-violet);
+    --live-wash: var(--accent-wash);
     --danger: #ff8a80;
     --danger-wash: #2c1a18;
     --knob: #e8eaf0;
@@ -204,12 +209,12 @@ a.link:hover { text-decoration: underline; }
 }
 .tag-private { color: var(--accent-strong); border-color: var(--accent); background: var(--accent-wash); }
 @media (prefers-color-scheme: dark) { .tag-private { color: var(--accent); } }
-.tag-rec { color: var(--rec); border-color: var(--rec); background: var(--rec-wash); }
+.tag-rec { color: var(--accent-strong); border-color: var(--live); background: var(--live-wash); }
 
 /* --- live capture indicator ------------------------------------------------ */
 .rec-dot {
-  width: 8px; height: 8px; border-radius: 50%; background: var(--rec); flex: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rec) 20%, transparent);
+  width: 8px; height: 8px; border-radius: 50%; background: var(--live); flex: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--live) 20%, transparent);
 }
 .rec-dot.is-idle { background: var(--rule-2); box-shadow: none; }
 

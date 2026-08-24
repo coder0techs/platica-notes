@@ -4,6 +4,18 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+- **The in-meeting indicator no longer looks like a camera.** It was a red pill with a
+  dot and a running clock, reading `Recording`, which is the visual language every
+  video tool uses for "this call is being filmed". People read it that way and it
+  frightened them. This extension records no video and no audio: it reads the captions
+  Google already generates. The indicator now says `Transcribing`, with a violet dot
+  while it runs and a grey square when paused, and it no longer shouts in red.
+- **The clock left the meeting and went into the popup.** It was there to show that
+  capture was alive, but it never did that: it counted from the moment you joined
+  whether or not a single word was arriving. The elapsed time is still on the toolbar
+  popup, where you ask for it, and what actually watches for silent failure is the
+  notice that says so in as many words.
+
 ## 1.16.2 - 2026-08-23
 
 - **Meetings are saved with their real name again.** With certain other extensions

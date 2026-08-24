@@ -13,7 +13,7 @@ body { width: 340px; }
   color: var(--ink-2);
 }
 /* The rail may be a pale idle grey; the label never is. */
-.now-state.is-live { color: var(--rec); }
+.now-state.is-live { color: var(--accent-strong); }
 .now-clock { margin-left: auto; font: 400 11.5px/1 var(--mono); color: var(--ink-2); }
 .now-title {
   margin: 7px 0 0; font: 500 15px/1.35 var(--sans); letter-spacing: -.01em;
