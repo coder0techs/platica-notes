@@ -257,6 +257,44 @@ describe("SessionWriter", () => {
       expect(recovered).toEqual([true, false])
     })
 
+    it("resolves writeNow only after the failover write has landed", async () => {
+      // The end-of-meeting sequence is writeNow -> close -> finalize, and finalize
+      // reads the snapshot back out of storage. If writeNow resolved while the
+      // switched-to transport was still in flight, finalize would commit the
+      // snapshot from BEFORE the last words of the meeting - the exact loss this
+      // whole mechanism exists to prevent.
+      const landed: number[] = []
+      let counter = 0
+      let releaseFallback!: () => void
+      const fallbackGate = new Promise<void>((resolve) => {
+        releaseFallback = resolve
+      })
+      const writer = new SessionWriter<number>(
+        async () => {
+          throw invalidated()
+        },
+        () => ++counter,
+        1000,
+        undefined,
+        async (snapshot) => {
+          await fallbackGate
+          landed.push(snapshot)
+        },
+      )
+
+      const done = writer.writeNow()
+      let settled = false
+      void done.then(() => {
+        settled = true
+      })
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(settled).toBe(false)
+      releaseFallback()
+      await done
+      expect(landed).toHaveLength(1)
+    })
+
     it("does not seal on a transient fallback error", async () => {
       const fallbackWrites: number[] = []
       let fallbackCalls = 0

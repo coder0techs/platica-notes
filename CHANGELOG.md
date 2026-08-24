@@ -4,6 +4,16 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+- **An update to the extension no longer interrupts a meeting you are recording.**
+  Chrome installs an update the moment the extension is idle, which can be any quiet
+  second of a call. Until now that cut the recording off where it stood and put up a
+  banner asking you to reload the page, and reloading a Meet page drops you out of the
+  call. Capture itself never actually stopped, only the path it used to save what it
+  captured, so that path now fails over to one an update cannot break. The rest of the
+  meeting is captured, the file is written when you leave as it always was, and there
+  is nothing to click: you get a brief note saying the extension updated and the
+  meeting is still being transcribed.
+
 ## 1.16.3 - 2026-08-24
 
 - **The in-meeting indicator no longer looks like a camera.** It was a red pill with a

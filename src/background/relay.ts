@@ -36,7 +36,7 @@ export interface RelaySender {
 }
 
 export type RelayVerdict =
-  | { accept: true; tabId: number; snapshot: unknown }
+  | { accept: true; tabId: number; snapshot: unknown; final: boolean }
   | { accept: false; reason: string }
 
 /**
@@ -60,7 +60,7 @@ export function verifyRelay(
   const expected = tokens[String(relay.tabId)]
   if (!expected) return { accept: false, reason: "no token registered for tab" }
   if (expected !== relay.token) return { accept: false, reason: "token mismatch" }
-  return { accept: true, tabId: relay.tabId, snapshot: relay.snapshot }
+  return { accept: true, tabId: relay.tabId, snapshot: relay.snapshot, final: relay.final === true }
 }
 
 /** A token to hand the MAIN world. Unguessable, and worthless outside its tab. */

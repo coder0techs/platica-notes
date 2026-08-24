@@ -7,8 +7,22 @@ import { SessionWriter } from "../core/persistence"
 import { isBookmarkChord, isHideUiChord } from "../core/hotkeys"
 import { isUiHidden, mountLanguagePrompt, mountMeetingControls, pulseActivity, setUiHidden, showPersistentNotice, showToast } from "../core/ui"
 import { mountTranscriptPanel } from "../core/transcript-panel"
-import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
-import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
+import {
+  RTC_CONFIG_EVENT,
+  RTC_DEBUG_EVENT,
+  RTC_EVENT,
+  RTC_RELAY_EVENT,
+  RTC_RELAY_RESULT_EVENT,
+} from "../meet-rtc/bridge"
+import type {
+  RelayCredentials,
+  RtcCaptionEvent,
+  RtcChatEvent,
+  RtcConfig,
+  RtcEvent,
+  RtcRelayRequest,
+  RtcRelayResult,
+} from "../meet-rtc/bridge"
 import { RtcFeed } from "../meet-rtc/feed"
 import { parseOwnChatMessage } from "../chatgoogle/parse"
 import {
@@ -178,23 +192,104 @@ function settleDebugBacklog(enabled: boolean): void {
   debugBacklog.length = 0
 }
 
-// Set once the extension context is invalidated (reload/update mid-meeting). From
-// that point every chrome.* call is dead: writes are sealed at the SessionWriter,
-// sendToBackground returns {invalidated:true} instead of throwing, and we show a
-// one-time notice telling the user to reload. Idempotent — later failures are silent.
+// Set once the extension context is invalidated (an update or a reload of the
+// extension mid-meeting). From that point every chrome.* call from this script is
+// dead and sendToBackground returns {invalidated:true} instead of throwing.
+//
+// What the user is told depends entirely on whether the meeting survived it, and
+// the two cases are not variations of one message. With the relay wired the update
+// is a non-event: capture never paused, the file will be written as usual, and the
+// only honest thing to do is say so briefly and get out of the way — a persistent
+// banner demanding a reload would be both wrong and expensive, because reloading
+// is what drops the user out of the call. Without a relay nothing more can be
+// saved, which is a state the user has to act on, so that one stays a banner.
+// Idempotent — later failures are silent.
 let contextInvalidated = false
-function onContextInvalidated(): void {
+function onContextInvalidated(recovered = false): void {
   if (contextInvalidated) return
   contextInvalidated = true
+  dlog("extension context invalidated", { recovered })
+  if (recovered) {
+    showToast("Plática Notes updated. This meeting is still being transcribed.")
+    return
+  }
   showPersistentNotice(
-    "Plática Notes was updated and can't keep transcribing in this tab. " +
-      "Reload the page (or rejoin the call) to resume and save this meeting.",
+    "Plática Notes was updated and can't save any more of this meeting. " +
+      "Everything transcribed so far is kept. Reloading the page resumes capture, " +
+      "but Meet will drop you from the call.",
   )
+}
+
+// --- persistence relay ------------------------------------------------------
+// The transport that outlives an update. Set up at meeting start, while chrome.*
+// still works, because after the update there is no way to set it up. See
+// meet-rtc/main.ts for the far side and background/relay.ts for what gates it.
+let relayCredentials: RelayCredentials | null = null
+let relayRequestId = 0
+
+// A relay round trip crosses two worlds and a service worker that may be asleep.
+// Bounded so a lost reply cannot wedge the write chain: the writer treats a
+// timeout as an ordinary failed write and tries again with the next snapshot.
+const RELAY_TIMEOUT_MS = 10_000
+
+/**
+ * Persist a snapshot through the MAIN world. Resolves only once the background
+ * has confirmed the write, so the caller can rely on it having landed.
+ */
+function relayPersist(snapshot: unknown, final: boolean): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const id = ++relayRequestId
+    const onResult = (event: Event): void => {
+      const detail = (event as CustomEvent).detail
+      if (typeof detail !== "string") return
+      let result: RtcRelayResult
+      try {
+        result = JSON.parse(detail) as RtcRelayResult
+      } catch {
+        return
+      }
+      // Replies are not ordered: ignore anything that is not ours.
+      if (result.id !== id) return
+      settle()
+      if (result.ok) resolve()
+      else reject(new Error(result.error ?? "relay refused the snapshot"))
+    }
+    const timer = setTimeout(() => {
+      settle()
+      reject(new Error("relay timed out"))
+    }, RELAY_TIMEOUT_MS)
+    function settle(): void {
+      clearTimeout(timer)
+      document.removeEventListener(RTC_RELAY_RESULT_EVENT, onResult)
+    }
+    document.addEventListener(RTC_RELAY_RESULT_EVENT, onResult)
+    const request: RtcRelayRequest = { id, snapshot: JSON.stringify(snapshot), final }
+    document.dispatchEvent(new CustomEvent(RTC_RELAY_EVENT, { detail: JSON.stringify(request) }))
+  })
+}
+
+/**
+ * Ask the background for this tab's capability token and hand it, with the
+ * extension id, to the MAIN world. Both are things page context cannot obtain for
+ * itself, which is what keeps the external channel from being open to anyone.
+ *
+ * Best-effort: a failure here costs the update-survival property, not the
+ * meeting, so it is logged and capture carries on exactly as before.
+ */
+async function armRelay(tabId: number): Promise<void> {
+  const response = await sendToBackground<string>({ kind: "registerRelayToken" })
+  if (!response.ok || typeof response.data !== "string") {
+    relayCredentials = null
+    dlog("relay not armed", { error: response.ok ? "no token returned" : response.error })
+    return
+  }
+  relayCredentials = { extensionId: chrome.runtime.id, token: response.data, tabId }
+  dlog("relay armed", { tab: tabId })
 }
 
 /** Surface the reload notice if a background call failed on an orphaned context. */
 function noteIfInvalidated(response: BackgroundResponse): void {
-  if (!response.ok && response.invalidated) onContextInvalidated()
+  if (!response.ok && response.invalidated) onContextInvalidated(false)
 }
 
 void main().catch((error) => console.error("[platica-notes]", error))
@@ -463,20 +558,34 @@ async function runMeeting(tabId: number): Promise<void> {
   // language it was captured with. Reset the live subscription so a previous
   // meeting's pill override (which is never persisted) does not carry over.
   activeLanguage = session.captionLanguage ?? settings.captionLanguage
+
+  // Arm the relay before anything can need it. An update lands whenever the
+  // service worker happens to be idle, which includes the first quiet second of
+  // this meeting, so "later" is not a safe time to do this.
+  await armRelay(tabId)
   pushRtcConfig(activeLanguage, debugEnabled)
 
   // The page roster is shared in, so names resolve retroactively even for
   // participants whose roster entries arrived before this meeting's feed existed.
   const feed = new RtcFeed(roster)
+  // One builder for both transports and for the relayed finalize, so the snapshot
+  // that survives an update is byte-for-byte the one that would have been stored.
+  const snapshotNow = (): ActiveSession => ({
+    ...session,
+    roster: Object.fromEntries(roster),
+    selfName: selfName ?? undefined,
+    chatUrl: chatUrl ?? undefined,
+  })
   const writer = new SessionWriter<ActiveSession>(
     (snapshot) => setLocal({ [sessionKey(tabId)]: snapshot }),
     // Stamp the current page-level roster and self name into every persisted
     // snapshot so a reload can re-seed them (see the resume block above).
-    () => ({ ...session, roster: Object.fromEntries(roster), selfName: selfName ?? undefined, chatUrl: chatUrl ?? undefined }),
+    snapshotNow,
     1000,
-    // A write that fails on an orphaned context surfaces the reload notice; the
-    // writer seals itself so it stops hammering a dead chrome.storage.
     onContextInvalidated,
+    // Where writes go once this script's own chrome.* handle is dead. Absent when
+    // the relay could not be armed, in which case the writer seals as it used to.
+    relayCredentials ? (snapshot) => relayPersist(snapshot, false) : undefined,
   )
   writer.requestWrite()
 
@@ -925,6 +1034,21 @@ async function runMeeting(tabId: number): Promise<void> {
     if (!response.ok) {
       console.error("[platica-notes] finalize failed:", response.error)
       dlog("finalize failed", { error: response.error })
+      // An update took the direct channel, but the relay reaches the NEW version,
+      // so the meeting can still end the way it always does: file written on
+      // leave, no reload, no rejoin. Only if that fails too is there a reason to
+      // tell the user anything.
+      if (response.invalidated && relayCredentials) {
+        try {
+          await relayPersist(snapshotNow(), true)
+          dlog("finalized over the relay")
+          onContextInvalidated(true)
+          meetingDone()
+          return
+        } catch (error) {
+          dlog("relayed finalize failed", { error: String(error) })
+        }
+      }
       noteIfInvalidated(response)
     }
     meetingDone()
@@ -934,9 +1058,12 @@ async function runMeeting(tabId: number): Promise<void> {
 // ---------- module-level helpers ----------
 
 function pushRtcConfig(captionLanguage: string, debug: boolean): void {
-  document.dispatchEvent(
-    new CustomEvent(RTC_CONFIG_EVENT, { detail: JSON.stringify({ captionLanguage, debug }) }),
-  )
+  // Credentials ride on every push, not just the first: the MAIN-world script is
+  // reloaded with the page but the adapter is not, and a push that dropped them
+  // would leave the far side unable to relay exactly when it is needed.
+  const config: RtcConfig = { captionLanguage, debug }
+  if (relayCredentials) config.relay = relayCredentials
+  document.dispatchEvent(new CustomEvent(RTC_CONFIG_EVENT, { detail: JSON.stringify(config) }))
 }
 
 function watchSettings(): void {

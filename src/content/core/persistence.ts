@@ -77,10 +77,10 @@ export class SessionWriter<T> {
   /** Writes are serialized so an older snapshot can never overwrite a newer one. */
   private enqueueWrite(): Promise<void> {
     this.chain = this.chain
-      .then(() => this.active(this.getSnapshot()))
+      .then(() => this.attempt(this.getSnapshot()))
       .catch((error) => {
         if (isContextInvalidatedError(error)) {
-          this.handleInvalidated()
+          this.seal()
           return
         }
         console.error("[platica-notes] session write failed:", error)
@@ -88,30 +88,37 @@ export class SessionWriter<T> {
     return this.chain
   }
 
-  /** The transport in use: the direct one until it dies, then the fallback. */
-  private get active(): (snapshot: T) => Promise<void> {
-    return this.usingFallback && this.fallbackWrite ? this.fallbackWrite : this.write
+  /**
+   * One snapshot, on the transport that is currently alive.
+   *
+   * A context-invalidation failure switches transport and retries THE SAME
+   * snapshot inside this call, rather than scheduling a fresh write. That keeps
+   * the failover inside the chain link the caller is awaiting: the end-of-meeting
+   * sequence is writeNow -> close -> finalize, and finalize reads the snapshot
+   * back out of storage, so a writeNow that resolved with the switched-to write
+   * still in flight would let finalize commit the meeting minus its last words.
+   */
+  private async attempt(snapshot: T): Promise<void> {
+    const transport = this.usingFallback && this.fallbackWrite ? this.fallbackWrite : this.write
+    try {
+      await transport(snapshot)
+    } catch (error) {
+      if (!isContextInvalidatedError(error)) throw error
+      if (this.usingFallback || !this.fallbackWrite) throw error
+      this.usingFallback = true
+      this.onInvalidated?.(true)
+      await this.attempt(snapshot)
+    }
   }
 
   /**
-   * First invalidation: switch transport and keep writing. Second (the fallback
-   * died too, or there was none): seal, because there is nowhere left to write and
-   * retrying a dead channel is only noise.
+   * Nowhere left to write: the fallback died too, or there never was one. Stop,
+   * because retrying a provably dead channel is only noise, and say so once.
    */
-  private handleInvalidated(): void {
-    if (!this.usingFallback && this.fallbackWrite) {
-      this.usingFallback = true
-      this.onInvalidated?.(true)
-      // Write again straight away rather than waiting for the next caption: the
-      // snapshot that just failed is the newest one, and it is what the
-      // still-arriving captions will be appended to.
-      void this.enqueueWrite()
-      return
-    }
-    if (!this.notifiedInvalidated) {
-      this.notifiedInvalidated = true
-      this.close()
-      this.onInvalidated?.(false)
-    }
+  private seal(): void {
+    if (this.notifiedInvalidated) return
+    this.notifiedInvalidated = true
+    this.close()
+    this.onInvalidated?.(false)
   }
 }

@@ -208,7 +208,14 @@ document.addEventListener(RTC_RELAY_EVENT, (e: Event) => {
       relayResult({ id, ok: false, error: "no external channel" })
       return
     }
-    send(relay.extensionId, { kind: "relaySnapshot", token: relay.token, tabId: relay.tabId, snapshot: JSON.parse(req.snapshot) }, (reply) => {
+    const payload = {
+      kind: "relaySnapshot",
+      token: relay.token,
+      tabId: relay.tabId,
+      snapshot: JSON.parse(req.snapshot),
+      final: req.final === true,
+    }
+    send(relay.extensionId, payload, (reply) => {
       relayResult({ id, ok: Boolean(reply?.ok), error: reply?.error })
     })
   } catch (err) {

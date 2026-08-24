@@ -127,6 +127,8 @@ export interface RtcRelayRequest {
   id: number
   /** JSON of the session snapshot, already serialized by the isolated world. */
   snapshot: string
+  /** The meeting is over: persist, then finalize. See RelaySnapshotMessage.final. */
+  final?: boolean
 }
 
 export interface RtcRelayResult {

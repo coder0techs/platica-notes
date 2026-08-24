@@ -1,9 +1,11 @@
 export type BackgroundRequest =
   | { kind: "getTabId" }
-  // Registers the capability token this tab's MAIN world may later use to persist
+  // Asks for the capability token this tab's MAIN world may later use to persist
   // a snapshot over the external channel. Sent once per meeting, over the trusted
-  // internal channel, BEFORE any update can orphan this content script.
-  | { kind: "registerRelayToken"; token: string }
+  // internal channel, BEFORE any update can orphan this content script. The token
+  // is minted and stored by the background and returned here: the secret is made
+  // where it is checked, so a compromised page context cannot weaken it.
+  | { kind: "registerRelayToken" }
   | { kind: "meetingStarted" }
   | { kind: "meetingEnded" }
   | { kind: "downloadMeeting"; meetingId: string }
@@ -35,6 +37,12 @@ export interface RelaySnapshotMessage {
   token: string
   tabId: number
   snapshot: unknown
+  /**
+   * The meeting is over: persist this snapshot, then finalize it exactly as
+   * `meetingEnded` would. Without it an update mid-meeting would still cost the
+   * user the normal ending — the file would only appear when the tab closed.
+   */
+  final?: boolean
 }
 
 /** Narrow an unknown external message to a relay snapshot. Shape only, no trust. */
@@ -48,7 +56,8 @@ export function isRelaySnapshotMessage(value: unknown): value is RelaySnapshotMe
     m.token.length > 0 &&
     typeof m.tabId === "number" &&
     Number.isInteger(m.tabId) &&
-    m.snapshot !== undefined
+    m.snapshot !== undefined &&
+    (m.final === undefined || typeof m.final === "boolean")
   )
 }
 
