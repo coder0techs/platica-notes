@@ -73,18 +73,38 @@ const CSS = `
 .pn-rec { font-weight: 600; }
 .pn-rec-dot {
   width: 8px; height: 8px; border-radius: 50%; background: var(--pn-violet); flex: none;
+  /* The halo is what keeps the state readable as the most important thing in the
+     bar without a loud fill. Same treatment the popup gives its live dot, so the
+     two surfaces agree. Deliberately NOT a lighter pill background: the obvious
+     candidate is --pn-surface-hover, which would leave the pill permanently
+     looking hovered and its real hover invisible. */
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pn-violet) 22%, transparent);
 }
 .pn-rec.is-paused { color: var(--pn-text-2); }
-.pn-rec.is-paused .pn-rec-dot { background: var(--pn-text-2); border-radius: 1px; }
+.pn-rec.is-paused .pn-rec-dot {
+  background: var(--pn-text-2); border-radius: 1px; box-shadow: none;
+}
 .pn-lock { font-size: 12px; }
 
-/* Pinned-language buttons: the active one is filled, the rest recede. */
-.pn-lang { border-color: transparent; opacity: .78; padding: 0 12px; }
+/* Pinned-language buttons: the active one carries a violet ring and a faint wash,
+   the rest recede.
+
+   It used to be filled Google-Meet blue, which made the language selector the
+   loudest thing on the bar, above the capture state, and put a hue in the overlay
+   that means nothing in this product. Two cues rather than one on the active
+   button, because picking the wrong language is what produces an empty transcript,
+   so which one is live has to read without being studied. */
+.pn-lang { border-color: transparent; opacity: .6; padding: 0 12px; }
 .pn-lang:hover { opacity: 1; }
 .pn-lang[aria-pressed="true"] {
-  opacity: 1; background: rgba(26, 115, 232, .95); color: #fff;
+  opacity: 1;
+  background: color-mix(in srgb, var(--pn-violet) 18%, transparent);
+  border-color: color-mix(in srgb, var(--pn-violet) 50%, transparent);
+  color: #f3ecfb;
 }
-.pn-lang[aria-pressed="true"]:hover { background: rgba(26, 115, 232, .95); filter: brightness(1.08); }
+.pn-lang[aria-pressed="true"]:hover {
+  background: color-mix(in srgb, var(--pn-violet) 26%, transparent); filter: none;
+}
 .pn-lang-code { font: 500 11px/1 var(--pn-mono); letter-spacing: .04em; }
 
 .pn-more {
