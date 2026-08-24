@@ -4,6 +4,8 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+## 1.16.3 - 2026-08-24
+
 - **The in-meeting indicator no longer looks like a camera.** It was a red pill with a
   dot and a running clock, reading `Recording`, which is the visual language every
   video tool uses for "this call is being filmed". People read it that way and it
