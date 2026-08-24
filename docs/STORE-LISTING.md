@@ -34,7 +34,7 @@ Plática Notes saves your meeting transcripts and in-meeting chat as a Markdown 
 • A floating, scrollable transcript panel inside the meeting window, searchable, with notes you can type as the call happens.
 • Fourteen caption languages. Pin the two or three you actually meet in and each gets its own button in the call, so switching mid-meeting is one click.
 • One recording pill in the meeting, showing that it is recording and for how long. Everything else is a click away in a menu, not a toolbar over somebody's face.
-• Recording on/off without leaving the call: pause capture, then resume where you left off. Whatever was captured before the pause is still saved.
+• Pause and resume without leaving the call, and whatever was captured before the pause is still saved. The in-meeting indicator says "Transcribing", not "Recording", because no video and no audio is ever captured.
 • Wipe what was captured in the current meeting, in two clicks. A meeting left with nothing captured writes no file at all.
 • Per-meeting privacy toggle: private meetings save to a separate folder you can keep out of cloud sync.
 • A local, searchable history of your recent meetings, with re-download, and an undo on delete.
@@ -132,7 +132,7 @@ be on (otherwise they conclude capture is broken) and where the file lands.
 No account, login or backend, so there are no credentials. The extension runs only on a Google Meet meeting page.
 
 1. Open meet.google.com and start a meeting (the account is for Meet, not for us).
-2. Our controls sit top-centre: a red Recording pill and a menu button. Open the menu and click Show transcript.
+2. Our controls sit top-centre: a Transcribing pill and a menu button. Open the menu and click Show transcript.
 3. Speak, or send a chat message: attributed turns appear in the panel. Meet's caption band need not be on.
 4. Leave. The .md file lands in Downloads/meetings/platica-notes/.
 ```

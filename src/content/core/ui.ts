@@ -124,17 +124,9 @@ export function showPersistentNotice(message: string): { dismiss: () => void } {
   return { dismiss }
 }
 
-const pad2 = (n: number): string => String(n).padStart(2, "0")
-
-/** HH:MM:SS since `iso`, fixed width so the pill never resizes as it counts. */
-function elapsed(iso: string): string {
-  const secs = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000))
-  return `${pad2(Math.floor(secs / 3600))}:${pad2(Math.floor((secs % 3600) / 60))}:${pad2(secs % 60)}`
-}
-
 /**
  * Per-meeting on-screen controls, mounted top-center as one cohesive group: a
- * recording pill carrying the elapsed clock, one button per pinned language, and
+ * capture pill saying whether it is transcribing, one button per pinned language, and
  * an overflow menu holding the caption-language list, the transcript-panel
  * toggle, the privacy toggle and the wipe action. Returns `unmount` plus
  * `setTranscriptActive` / `setLanguage` so the caller can mirror state onto it.
@@ -143,8 +135,6 @@ export function mountMeetingControls(opts: {
   initialLanguage: string
   initialPrivate: boolean
   initialRecording: boolean
-  /** Meeting start, for the elapsed clock on the recording pill. */
-  startedAt?: string
   onLanguageChange: (language: string) => void
   /** Up to three tags pinned to the top of the language list. */
   favouriteLanguages?: string[]
@@ -313,33 +303,43 @@ export function mountMeetingControls(opts: {
   })
   renderPrivacy()
 
-  // --- recording pill: On FILLS the pill red — the universal "recording live"
-  // indicator; Off fills it grey (muted/stopped). A stopped recording is
-  // impossible to miss. The elapsed clock rides along as the liveness signal: a
-  // clock that has stopped moving says something is wrong before any warning can.
-  // Toggling flips the flag via onRecordingChange. ---
+  // --- capture pill: says "Transcribing", with a violet dot while live and a grey
+  // square while paused. Two independent cues plus the word, so the state reads
+  // without relying on colour.
+  //
+  // It used to be a red fill with a running clock, and that was wrong: a red pill
+  // with a dot and a ticking counter is the visual language of video recording. A
+  // colleague seeing it over a shared screen reasonably concluded the call was
+  // being filmed. This extension records no video and no audio; it reads the
+  // captions Google already generates. The indicator now says what the product
+  // actually does.
+  //
+  // The clock went with it. Its stated job was liveness — a stopped clock warns
+  // before anything else can — but it never did that job: it ticks off
+  // `startedAt` regardless of whether captions are arriving, so it freezes only if
+  // the whole content script dies, and it is blind to the failure the health
+  // notice exists for (subscribed, nothing arriving). The elapsed time lives in
+  // the toolbar popup, where asking for it is a choice rather than a broadcast
+  // over somebody's face. Toggling flips the flag via onRecordingChange. ---
   let recording = opts.initialRecording
   const recordingPill = document.createElement("button")
   recordingPill.type = "button"
   recordingPill.className = "pn-pill pn-rec"
   recordingPill.dataset.pn = "recording"
-  recordingPill.title = "Plática Notes: pause or resume capturing this meeting"
+  recordingPill.title = "Plática Notes: pause or resume transcribing this meeting"
   const recDot = document.createElement("span")
   recDot.className = "pn-rec-dot"
   const recLabel = document.createElement("span")
-  const recClock = document.createElement("span")
-  recClock.className = "pn-clock"
   const recLock = document.createElement("span")
   recLock.className = "pn-lock"
-  recordingPill.append(recDot, recLabel, recClock, recLock)
+  recordingPill.append(recDot, recLabel, recLock)
 
   const renderRecording = (): void => {
-    recLabel.textContent = recording ? "Recording" : "Paused"
+    recLabel.textContent = recording ? "Transcribing" : "Paused"
     recordingPill.classList.toggle("is-paused", !recording)
     // Carries the privacy state too, now that the toggle itself lives in the
     // menu: hiding a control is fine, hiding what it is currently doing is not.
     recLock.textContent = isPrivate ? "🔒" : ""
-    recClock.textContent = opts.startedAt ? elapsed(opts.startedAt) : ""
   }
   recordingPill.addEventListener("click", () => {
     recording = !recording
@@ -347,8 +347,6 @@ export function mountMeetingControls(opts: {
     opts.onRecordingChange(recording)
   })
   renderRecording()
-  // One second is the resolution of the clock, and the only thing that repaints.
-  const clockTimer = opts.startedAt ? setInterval(renderRecording, 1000) : undefined
 
   // --- wipe row: destructive clean-slate for the current meeting. Two-click
   // confirm inline (no native dialog): first click arms for 4s, second click within
@@ -388,7 +386,7 @@ export function mountMeetingControls(opts: {
 
   // --- overflow menu ---------------------------------------------------------
   // The bar sits on top of somebody's meeting, so every pill has to earn its
-  // place. Two things do: whether it is recording, and in which language —
+  // place. Two things do: whether it is transcribing, and in which language —
   // getting either wrong ruins the transcript, and both need one click. The rest
   // moves behind a menu.
   //
@@ -490,7 +488,6 @@ export function mountMeetingControls(opts: {
     unmount: () => {
       document.removeEventListener("click", onDocClick, true)
       document.removeEventListener("keydown", onKey, true)
-      if (clockTimer) clearInterval(clockTimer)
       if (wipeTimer) clearTimeout(wipeTimer)
       container.remove()
     },
@@ -536,12 +533,12 @@ export function mountLanguagePrompt(opts: {
   // call is joined, where stealing focus would fight Meet's own controls and
   // could swallow a keystroke aimed at the mic.
   card.setAttribute("aria-modal", "false")
-  card.setAttribute("aria-label", "Recording language")
+  card.setAttribute("aria-label", "Transcription language")
   registerUiEl(card)
 
   const title = document.createElement("p")
   title.className = "pn-prompt-title"
-  title.textContent = "Recording language"
+  title.textContent = "Transcription language"
 
   const body = document.createElement("p")
   body.className = "pn-prompt-body"

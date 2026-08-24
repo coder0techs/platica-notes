@@ -35,11 +35,11 @@ up: no sign-in, no bot joining your call, no third participant for anyone to see
 ## 2. Quick start
 
 1. Install from the Chrome Web Store and open a Google Meet call.
-2. Check the language. A `● Recording` pill appears at the top of the call with a
-   running clock, and beside it a button for each language you pinned (`🇺🇸 US`,
-   `🇲🇽 MX`), the current one lit. **The language must match what is actually being
-   spoken**, otherwise the transcript comes out empty. Set your usual one once in
-   Settings; a pinned button, or the full list under `⋯`, overrides a single call.
+2. Check the language. A `● Transcribing` pill appears at the top of the call, and
+   beside it a button for each language you pinned (`🇺🇸 US`, `🇲🇽 MX`), the current one
+   lit. **The language must match what is actually being spoken**, otherwise the
+   transcript comes out empty. Set your usual one once in Settings; a pinned button,
+   or the full list under `⋯`, overrides a single call.
 3. Talk. Capture runs from the moment you join; there is nothing to press. Meet's
    own on-screen caption band does not need to be turned on.
 4. `⋯` then **Show transcript** to watch it build up live, if you want to.
@@ -54,14 +54,14 @@ If a meeting produced nothing (nobody spoke, or you wiped it), no file is writte
 
 Two controls sit at the top of the meeting window, plus one button per language you
 pinned. Everything else lives a click away behind `⋯`, so what covers somebody's
-face during a call is the state of the recording, not a row of settings.
+face during a call is the state of capture, not a row of settings.
 
 ![The in-meeting controls and the live transcript panel](panel.png)
 
 | Always on screen | What it does |
 |---|---|
-| `● Recording 00:12:35` | Capture is running, and for how long. Click to pause, click again to resume. Paused, it goes grey and reads `Paused`. It also carries a `🔒` while the meeting is marked private, so that state is visible without opening anything. |
-| `🇺🇸 US` `🇲🇽 MX` | One button per language you pinned in Settings, up to three, the current one lit. A click switches the recording language **for this meeting only**. |
+| `● Transcribing` | Capture is running: a violet dot while live, a grey square and the word `Paused` when it is not. Click to pause, click again to resume. It also carries a `🔒` while the meeting is marked private, so that state is visible without opening anything. Deliberately not a red pill with a ticking clock: this extension records no video and no audio, and it should not look like it does. The elapsed time is in the toolbar popup. |
+| `🇺🇸 US` `🇲🇽 MX` | One button per language you pinned in Settings, up to three, the current one lit. A click switches the transcription language **for this meeting only**. |
 | `⋯` | Everything else. |
 
 | Behind `⋯` | What it does |
@@ -90,20 +90,20 @@ under `⋯`.
 
 If your calls are less predictable than that, turn on **Ask language at meeting
 start** in Settings. Each meeting then opens with a small prompt: keep the current
-language, pick another, or dismiss it. It never blocks recording, and capture is
+language, pick another, or dismiss it. It never blocks capture, which is
 already running while it waits.
 
-### Recording on and off
+### Pausing and resuming
 
-`● Recording` is on when you join. Click the pill and everything new stops:
+`● Transcribing` is on when you join. Click the pill and everything new stops:
 transcript, chat, join/leave markers, notes. Whatever was already captured is kept
 and still saved when the meeting ends, and the off state survives a page reload, so
-an accidental refresh does not silently start recording you again.
+an accidental refresh does not silently start capturing you again.
 
 Use it for the part of the call that should not exist in writing.
 
-The clock on the pill is there to be glanced at. A clock that has stopped moving
-tells you something is wrong sooner than any warning could.
+If you want to know how long it has been running, the toolbar popup says so. It is
+not on the pill in the meeting, where it read as a camera counting.
 
 ![Capture paused, and Wipe waiting for confirmation](recording.png)
 
@@ -127,7 +127,7 @@ meetings; delete those from Downloads or from the history page.
 **Mark private**, under `⋯`, routes this meeting's file to a separate folder
 (`meetings/platica-notes-private` by default) so you can keep it out of whatever you
 sync to the cloud. A private meeting is also excluded from the diagnostic log
-entirely, even when that log is switched on. While it is on, the recording pill
+entirely, even when that log is switched on. While it is on, the `Transcribing` pill
 carries a `🔒`, so the menu does not have to be open for you to know.
 
 If most of your calls are sensitive, set **Private by default** in Settings and use
@@ -136,7 +136,7 @@ the menu for the exceptions.
 ### Hiding everything
 
 **Alt+Shift+H** (**⌥⇧H** on macOS) hides every element the extension draws: the
-pill, the buttons, the panel, the confirmations. Recording keeps running. The same
+pill, the buttons, the panel, the confirmations. Capture keeps running. The same
 toggle lives in the toolbar popup, and the shortcut is named in the `⋯` menu. Use it
 before you share your screen. Press it again to bring the controls back.
 
@@ -198,7 +198,7 @@ Each group on that page shows its current value on its own heading, so the whole
 configuration can be read without opening a single control, and every change says
 that it saved.
 
-### Recording
+### Transcribing
 
 - **Default caption language.** Seeds every new meeting. Fourteen languages are
   available: Dutch, English (US/UK), French, German, Italian, Kazakh, Polish,

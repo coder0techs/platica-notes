@@ -28,8 +28,6 @@ const CSS = `
   --pn-line: rgba(255, 255, 255, .14);
   --pn-text: #e8eaf0;
   --pn-text-2: #a3aaba;
-  --pn-rec: #ff4d45;
-  --pn-rec-off: rgba(95, 99, 104, .95);
   --pn-violet: #c58af9;
   --pn-amber: #fdd663;
   --pn-danger: #ff8a80;
@@ -64,20 +62,20 @@ const CSS = `
 }
 .pn-pill:hover { background: var(--pn-surface-hover); }
 
-/* Recording: red fill while live, grey while paused. The clock is the liveness
-   signal: a frozen clock says something is wrong before any warning does. */
-.pn-rec { border-color: transparent; background: var(--pn-rec); color: #1a1014; font-weight: 600; }
-.pn-rec:hover { background: var(--pn-rec); filter: brightness(1.08); }
-.pn-rec.is-paused { background: var(--pn-rec-off); color: var(--pn-text); }
-.pn-rec.is-paused:hover { background: var(--pn-surface-hover); filter: none; }
+/* Capture state: a violet round dot while live, a grey square while paused. Two
+   cues plus the word, so it reads without relying on colour alone.
+
+   NOT a red fill, and no ticking clock. That combination is the visual language of
+   video recording, and it was read exactly that way: a colleague seeing the pill
+   over a shared screen concluded the call was being filmed. Nothing here records
+   video or audio. Red is now reserved for one meaning only, a control that
+   destroys data, and the elapsed time lives in the toolbar popup. */
+.pn-rec { font-weight: 600; }
 .pn-rec-dot {
-  width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--pn-violet); flex: none;
 }
-.pn-rec.is-paused .pn-rec-dot { border-radius: 1px; }
-.pn-clock {
-  font: 500 12px/1 var(--pn-mono); font-variant-numeric: tabular-nums;
-  letter-spacing: .01em; opacity: .85;
-}
+.pn-rec.is-paused { color: var(--pn-text-2); }
+.pn-rec.is-paused .pn-rec-dot { background: var(--pn-text-2); border-radius: 1px; }
 .pn-lock { font-size: 12px; }
 
 /* Pinned-language buttons: the active one is filled, the rest recede. */

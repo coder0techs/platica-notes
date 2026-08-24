@@ -146,8 +146,12 @@ use), and the content-to-background message contract.
   fixed palette in `src/content/core/styles.ts` (it lives on someone else's
   page), and its speaker colours are the same six values `ui.css` uses for its
   dark theme. That shared palette is what makes the app and the file it writes
-  look like one product. Two hues are reserved and never decorative: red means
-  live capture, and red means a control that destroys data.
+  look like one product. Red is reserved and never decorative, and it now means
+  exactly one thing: a control that destroys data. It used to mean live capture
+  too, and that cost us: a red pill with a dot and a ticking clock is how every
+  video tool says "this call is being filmed", so that is what people read it as,
+  on a product that captures no video and no audio. Live capture is a violet dot
+  beside the word `Transcribing`. Do not put red back on the capture indicator.
 - **The saved-file format is structured.** `src/background/format.ts` emits the
   v2 format (YAML front matter plus a turn grid). Body text is newline-collapsed
   via `inlineText`, and front-matter scalars go through `yamlScalar`, to prevent

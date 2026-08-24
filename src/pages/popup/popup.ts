@@ -130,8 +130,8 @@ async function refresh(): Promise<void> {
 
     const paint = (): void =>
       render({
-        rail: live ? "var(--rec)" : "var(--ink-2)",
-        state: live ? (elsewhere ? "Recording in another tab" : "Recording") : "Capture paused",
+        rail: live ? "var(--live)" : "var(--ink-2)",
+        state: live ? (elsewhere ? "Transcribing in another tab" : "Transcribing") : "Paused",
         live,
         clock: elapsed(session.startedAt),
         title: session.title,
@@ -139,7 +139,7 @@ async function refresh(): Promise<void> {
         path: destination(session.isPrivate, session.startedAt, settings.folderPublic, settings.folderPrivate),
         note: live
           ? undefined
-          : "Nothing is being captured. Resume it from the Recording control in the call.",
+          : "Nothing is being captured. Resume it from the Transcribing pill in the call.",
       })
     paint()
     // The clock is the only thing that moves, and only while the popup is open.
