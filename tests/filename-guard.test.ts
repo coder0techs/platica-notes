@@ -174,3 +174,54 @@ describe("export → guard integration", () => {
     expect(calls).toEqual([undefined])
   })
 })
+
+describe("matching a URL Chrome truncated", () => {
+  // Measured in a real Chrome 151: chrome.downloads reports `url`/`finalUrl` for a
+  // data: URL cut to exactly 1024 characters. Every transcript and every debug log
+  // is longer than that, so exact equality never matched for them and the name was
+  // decided by queue ORDER alone - which is only correct while exactly one of our
+  // downloads is in flight, and silently wrong the moment that stops being true.
+  const long = (marker: string) =>
+    "data:application/octet-stream;charset=utf-8," + marker + "x".repeat(4000)
+  const truncate = (url: string) => url.slice(0, 1024)
+
+  it("claims a long download by the prefix Chrome kept", () => {
+    const guard = new FilenameGuard()
+    guard.expect({ url: long("a"), filename: "notes/a.md", conflictAction: "uniquify" })
+    expect(guard.claim(truncate(long("a")), true)?.filename).toBe("notes/a.md")
+    expect(guard.size).toBe(0)
+  })
+
+  it("gives each of two queued downloads its own name, whatever the order", () => {
+    // The case order-based matching gets wrong: the second download determined
+    // first walks off with the first one's name.
+    const guard = new FilenameGuard()
+    guard.expect({ url: long("md"), filename: "notes/meeting.md", conflictAction: "uniquify" })
+    guard.expect({ url: long("log"), filename: "logs/meeting.jsonl", conflictAction: "uniquify" })
+    expect(guard.claim(truncate(long("log")), true)?.filename).toBe("logs/meeting.jsonl")
+    expect(guard.claim(truncate(long("md")), true)?.filename).toBe("notes/meeting.md")
+  })
+
+  it("does not hand a foreign download one of our names on a prefix", () => {
+    const guard = new FilenameGuard()
+    guard.expect({ url: long("a"), filename: "notes/a.md", conflictAction: "uniquify" })
+    expect(guard.claim(truncate(long("a")), false)).toBeUndefined()
+    expect(guard.size).toBe(1)
+  })
+
+  it("refuses a prefix too short to identify anything, and falls back to order", () => {
+    // The opening characters are shared by every data: URL we ever issue, so a
+    // short one must not be treated as having identified a particular download.
+    const guard = new FilenameGuard()
+    guard.expect({ url: long("md"), filename: "notes/meeting.md", conflictAction: "uniquify" })
+    guard.expect({ url: long("log"), filename: "logs/meeting.jsonl", conflictAction: "uniquify" })
+    expect(guard.claim("data:application/octet-stream;charset=utf-8,", true)?.filename).toBe("notes/meeting.md")
+  })
+
+  it("still falls back to order when nothing matches at all", () => {
+    // A URL Chrome mangled beyond recognition must not cost the name outright.
+    const guard = new FilenameGuard()
+    guard.expect({ url: long("a"), filename: "notes/a.md", conflictAction: "uniquify" })
+    expect(guard.claim("blob:https://meet.google.com/abc", true)?.filename).toBe("notes/a.md")
+  })
+})

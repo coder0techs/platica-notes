@@ -4,6 +4,16 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+- **A saved meeting is less likely to lose its name.** Chrome hands the filename
+  round back a truncated version of the address a file was saved from, so for
+  anything longer than a short transcript the extension could not tell its own
+  downloads apart by address and fell back to the order it had asked for them in.
+  That is right while only one file is being written and wrong the moment two are,
+  and getting it wrong means a meeting saved under the diagnostic log's name. It
+  now identifies each download properly. If a name is ever lost anyway, the
+  extension says so in its error log instead of leaving a nameless `download` in
+  your Downloads folder with no explanation.
+
 - **An update to the extension no longer interrupts a meeting you are recording.**
   Chrome installs an update the moment the extension is idle, which can be any quiet
   second of a call. Until now that cut the recording off where it stood and put up a

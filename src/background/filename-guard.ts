@@ -37,6 +37,12 @@ export interface PendingName {
 // issued one at a time, so anything beyond a couple of entries is already stale.
 const MAX_PENDING = 8
 
+// Shortest truncated URL worth matching a prefix on. Every URL we issue opens with
+// the same 44-character `data:` header, so a prefix has to reach well past it
+// before it says anything about WHICH download this is. Chrome's own cut is 1024;
+// this is only a floor against a mangled short one matching the wrong entry.
+const MIN_PREFIX = 128
+
 /**
  * The names we have asked Chrome for and not yet seen determined. Pure logic, no
  * chrome.* access, so the matching rules are unit-testable.
@@ -61,22 +67,33 @@ export class FilenameGuard {
   }
 
   /**
-   * Take the name that belongs to a download being determined. Matching is by exact
-   * URL first; `ours` (the item is attributed to this extension) then allows a fall
-   * back to FIFO order, because Chrome does not promise to hand back a
-   * multi-megabyte `data:` URL verbatim. A foreign download that matches nothing
-   * claims nothing, so a stale entry can never rename someone else's file.
+   * Take the name that belongs to a download being determined.
    *
-   * FIFO is safe here only because the exports are sequential: `index.ts` awaits
-   * the meeting download before it starts the debug log, and the determination
-   * round runs before `chrome.downloads.download()` resolves, so at most one of
-   * our own downloads is ever in flight. Issue two concurrently and the two names
-   * could swap.
+   * Three ways, narrowest first. Exact URL, which only ever hits for a very short
+   * transcript. Then the prefix Chrome actually hands back: measured in Chrome
+   * 151, a `data:` URL comes back cut to 1024 characters, and every file this
+   * extension writes is longer than that, so exact equality misses ALL of them.
+   * Only then FIFO order.
+   *
+   * Order was the sole fallback until the prefix match went in, and it is right
+   * only while exactly one of our downloads is in flight. That held by
+   * construction - the exports are awaited one after another - but nothing in the
+   * type system says so, and when it stops holding the failure is a meeting saved
+   * under the debug log's name, which nobody would think to look for. The prefix
+   * makes the common case a real identification instead of a bet on ordering.
+   *
+   * `ours` (Chrome attributes the item to this extension) gates everything past
+   * exact equality, so a stale entry can never rename someone else's file.
    */
   claim(url: string, ours: boolean): PendingName | undefined {
     const at = this.pending.findIndex(p => p.url === url)
     if (at >= 0) return this.pending.splice(at, 1)[0]
-    return ours ? this.pending.shift() : undefined
+    if (!ours) return undefined
+    if (url.length >= MIN_PREFIX) {
+      const byPrefix = this.pending.findIndex(p => p.url.startsWith(url))
+      if (byPrefix >= 0) return this.pending.splice(byPrefix, 1)[0]
+    }
+    return this.pending.shift()
   }
 }
 
@@ -99,11 +116,20 @@ export function installFilenameGuard(guard: FilenameGuard = filenameGuard): void
     return
   }
   determiner.addListener((item, suggest) => {
-    const claimed = guard.claim(item.finalUrl || item.url, item.byExtensionId === chrome.runtime.id)
+    const ours = item.byExtensionId === chrome.runtime.id
+    const claimed = guard.claim(item.finalUrl || item.url, ours)
     // Answer exactly once, always. A bare suggest() means "no suggestion from me"
     // and leaves foreign downloads entirely to Chrome: the courtesy the extensions
     // that broke this were missing.
     if (!claimed) {
+      // Our own download with no name to give it lands in the Downloads root as a
+      // bare "download". Silence here is how that shipped unnoticed, so say it.
+      if (ours) {
+        console.warn(
+          "[platica-notes] a download of ours reached the filename round with no name registered",
+          { url: (item.finalUrl || item.url).slice(0, 64), pending: guard.size },
+        )
+      }
       suggest()
       return
     }
