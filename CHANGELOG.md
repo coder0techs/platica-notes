@@ -15,6 +15,14 @@ All notable changes to Plática Notes, newest first.
   carrying captions it is picked up there and then, so the next rename costs
   nobody a meeting.
 
+- **A meeting that records nothing now says so while you are still in it.** The
+  extension warned you when it had failed to ask Meet for captions, but not when
+  it had asked and no captions ever came back, which is exactly what the channel
+  rename above looked like from the inside. If five minutes pass with other people
+  in the meeting and not one word captured, it now tells you, and names the two
+  things worth checking: the language setting, and whether this version has fallen
+  behind a change at Google's end.
+
 ## 1.16.3 - 2026-08-24
 
 - **The in-meeting indicator no longer looks like a camera.** It was a red pill with a
