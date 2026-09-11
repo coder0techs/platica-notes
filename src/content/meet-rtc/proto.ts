@@ -12,9 +12,16 @@ export interface Transcript {
   messageId?: number
   messageVersion?: number
   text?: string
-  // Meet's numeric caption-language id (field 8). Captured for diagnostics of
+  // Meet's numeric caption-language id (v1 field 8). Captured for diagnostics of
   // multi-language meetings; not yet rendered into the saved transcript.
   langId?: number
+  // BCP-47 language tag ("ru-RU"). The v2 channel sends the tag itself where v1
+  // sent a numeric id; same diagnostic purpose, both left out of the saved file.
+  lang?: string
+  // v2 only: Meet flagged this revision as the last one for its messageId. The
+  // feed does not need it (it keys on messageVersion either way). It is here so
+  // the debug log can show whether a turn ever finished.
+  final?: boolean
 }
 
 export interface ChatPayload {
@@ -172,6 +179,114 @@ export function decodeTranscriptWrapper(buf: Uint8Array): Transcript | null {
   } catch {
     return null
   }
+}
+
+// ---------- transcript v2 decoder ----------
+
+// Meet moved live captions onto a second data channel, `captions_v2`, some time
+// between Meet builds boq_meetingsuiserver_20260818.04_p0 (absent) and
+// 20260904.05_p1 (present), rolled out per user: two accounts in the SAME call
+// can be served different channels, and the old one then carries nothing at all.
+// Same semantics, deeper envelope, renumbered fields. Read off the wire:
+//
+//   wrapper:  f1 = envelope
+//   envelope: f1 = entry (REPEATED, one frame can batch several), f6 = { f1 = epoch s }
+//   entry:    f1 = messageId (varint), f2 = messageVersion (varint), f3 = payload
+//   payload:  f2 = final (varint 1, only on the last revision of a messageId),
+//             f3 = text, f4 + f5 = BCP-47 language tag, f6 = deviceId, f9 = varint 1
+//
+// An entry whose f3 is a varint instead of a submessage is an ack (Meet's own
+// client sends those back on the same channel), not a caption.
+
+function decodeV2Payload(buf: Uint8Array, start: number, end: number, out: Transcript): void {
+  const safeEnd = Math.min(end, buf.length)
+  const c: Cursor = { buf, i: start }
+  while (c.i < safeEnd) {
+    const { field, wire } = readTag(c)
+    if (field === 2 && wire === 0) { if (readVarint(c) === 1) out.final = true }
+    else if (field === 3 && wire === 2) out.text = readString(c)
+    else if (field === 4 && wire === 2) out.lang = readString(c)
+    else if (field === 6 && wire === 2) out.deviceId = readString(c)
+    else skip(c, wire)
+  }
+}
+
+// One entry. Returns null unless it carried text: an ack, or a payload Meet sent
+// without a text field, is not a caption and must not reach the feed as one.
+function decodeV2Entry(buf: Uint8Array, start: number, end: number): Transcript | null {
+  const safeEnd = Math.min(end, buf.length)
+  const c: Cursor = { buf, i: start }
+  const out: Transcript = {}
+  while (c.i < safeEnd) {
+    const { field, wire } = readTag(c)
+    if (field === 1 && wire === 0) out.messageId = readVarint(c)
+    else if (field === 2 && wire === 0) out.messageVersion = readVarint(c)
+    else if (field === 3 && wire === 2) {
+      const end2 = boundedEnd(c, readVarint(c))
+      decodeV2Payload(buf, c.i, end2, out)
+      c.i = end2
+    } else skip(c, wire)
+  }
+  return out.text ? out : null
+}
+
+function decodeV2Envelope(buf: Uint8Array, start: number, end: number, out: Transcript[]): void {
+  const safeEnd = Math.min(end, buf.length)
+  const c: Cursor = { buf, i: start }
+  while (c.i < safeEnd) {
+    const { field, wire } = readTag(c)
+    if (field === 1 && wire === 2) {
+      const end2 = boundedEnd(c, readVarint(c))
+      const entry = decodeV2Entry(buf, c.i, end2)
+      if (entry) out.push(entry)
+      c.i = end2
+    } else skip(c, wire)
+  }
+}
+
+/**
+ * Decode a `captions_v2` frame into the captions it carries, newest state last.
+ *
+ * Returns an empty array for anything it cannot use (a v1 frame, an ack, a
+ * truncated or hostile packet), so a caller can try both decoders on a channel
+ * whose format it does not know yet, and so a frame we misread can never be
+ * mistaken for a caption. Malformed input aborts the whole frame rather than
+ * yielding a half-parsed turn: skip() throws on the undefined wire types.
+ */
+export function decodeTranscriptV2(buf: Uint8Array): Transcript[] {
+  const out: Transcript[] = []
+  try {
+    const c: Cursor = { buf, i: 0 }
+    while (c.i < buf.length) {
+      const { field, wire } = readTag(c)
+      if (field === 1 && wire === 2) {
+        const end = boundedEnd(c, readVarint(c))
+        decodeV2Envelope(buf, c.i, end, out)
+        c.i = end
+      } else {
+        skip(c, wire)
+      }
+    }
+  } catch {
+    return []
+  }
+  return out
+}
+
+/**
+ * Decode a caption frame without knowing which format the channel speaks.
+ *
+ * Meet serves v1 to some accounts and v2 to others, and two people in the same
+ * call can differ, so the format is a property of the frame rather than of the
+ * build or of the channel's name. Both decoders reject what is not theirs, so trying v2 and
+ * falling back to v1 is safe in either direction; v2 goes first because it is
+ * where Meet is heading and where the batched frames are.
+ */
+export function decodeCaptions(buf: Uint8Array): Transcript[] {
+  const v2 = decodeTranscriptV2(buf)
+  if (v2.length > 0) return v2
+  const v1 = decodeTranscriptWrapper(buf)
+  return v1 ? [v1] : []
 }
 
 // ---------- chat message-node decoder ----------
