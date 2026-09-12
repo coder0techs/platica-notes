@@ -10,7 +10,7 @@ import {
   shouldEndFromMedia,
   shouldFinalizeStaleSession,
   shouldFinishRearmWait,
-  shouldWarnCaptureIdle,
+  captureFault,
 } from "../src/content/platforms/meet-lifecycle"
 
 const GRACE = 8000
@@ -253,44 +253,68 @@ describe("shouldAskLanguage", () => {
   })
 })
 
-describe("shouldWarnCaptureIdle", () => {
-  const base = { armed: false, elapsedMs: 60_000, graceMs: 45_000, warned: false, paused: false }
+describe("captureFault", () => {
+  // A meeting that armed, has other people in it, and has produced nothing.
+  const base = {
+    armed: false,
+    captionsSeen: 0,
+    attendees: 2,
+    elapsedMs: 60_000,
+    graceMs: 45_000,
+    silentGraceMs: 300_000,
+    warned: false,
+    paused: false,
+  }
 
-  it("warns when the grace has passed and capture never armed", () => {
-    expect(shouldWarnCaptureIdle(base)).toBe(true)
+  it("reports not-armed once the grace has passed and capture never armed", () => {
+    expect(captureFault(base)).toBe("not-armed")
   })
 
   it("stays quiet while still inside the grace", () => {
-    expect(shouldWarnCaptureIdle({ ...base, elapsedMs: 44_999 })).toBe(false)
+    expect(captureFault({ ...base, elapsedMs: 44_999 })).toBeNull()
   })
 
   it("fires exactly at the grace boundary", () => {
-    expect(shouldWarnCaptureIdle({ ...base, elapsedMs: 45_000 })).toBe(true)
-  })
-
-  it("stays quiet when capture armed, however long the silence lasts", () => {
-    // The case this whole design exists for: everyone joined, nobody is talking.
-    // Captures nothing, and that is entirely normal.
-    expect(shouldWarnCaptureIdle({ ...base, armed: true })).toBe(false)
-    expect(shouldWarnCaptureIdle({ ...base, armed: true, elapsedMs: 3_600_000 })).toBe(false)
+    expect(captureFault({ ...base, elapsedMs: 45_000 })).toBe("not-armed")
   })
 
   it("never warns twice for the same meeting", () => {
-    expect(shouldWarnCaptureIdle({ ...base, warned: true })).toBe(false)
+    expect(captureFault({ ...base, warned: true })).toBeNull()
+    expect(captureFault({ ...base, armed: true, elapsedMs: 600_000, warned: true })).toBeNull()
   })
 
   it("stays quiet while the user has recording paused", () => {
-    expect(shouldWarnCaptureIdle({ ...base, paused: true })).toBe(false)
+    expect(captureFault({ ...base, paused: true })).toBeNull()
+    expect(captureFault({ ...base, armed: true, elapsedMs: 600_000, paused: true })).toBeNull()
   })
 
-  it("keeps quiet on every combination that is not a real fault", () => {
-    for (const armed of [true, false]) {
-      for (const warned of [true, false]) {
-        for (const paused of [true, false]) {
-          const fault = !armed && !warned && !paused
-          expect(shouldWarnCaptureIdle({ ...base, armed, warned, paused })).toBe(fault)
-        }
-      }
-    }
+  // --- armed, but nothing is coming out ---------------------------------------
+  // Meet renamed the caption channel under a share of accounts and capture went
+  // on reporting itself armed, because asking for captions had worked: only the
+  // answers stopped arriving. Nobody was told for days. Arming is no longer the
+  // whole health check.
+
+  it("reports no-captions when an armed meeting with other people has produced nothing", () => {
+    expect(captureFault({ ...base, armed: true, elapsedMs: 300_000 })).toBe("no-captions")
+  })
+
+  it("waits out the longer silent grace before saying so", () => {
+    expect(captureFault({ ...base, armed: true, elapsedMs: 299_999 })).toBeNull()
+  })
+
+  it("stays quiet once a single caption has arrived", () => {
+    expect(captureFault({ ...base, armed: true, elapsedMs: 3_600_000, captionsSeen: 1 })).toBeNull()
+  })
+
+  it("stays quiet when nobody else is in the meeting", () => {
+    // Sitting alone in a call produces no captions and is not a fault. This is
+    // what keeps the notice from crying wolf in an empty room.
+    expect(captureFault({ ...base, armed: true, elapsedMs: 3_600_000, attendees: 1 })).toBeNull()
+    expect(captureFault({ ...base, armed: true, elapsedMs: 3_600_000, attendees: 0 })).toBeNull()
+  })
+
+  it("prefers the not-armed diagnosis when capture never armed at all", () => {
+    // Both windows have passed. The one that names the actual cause wins.
+    expect(captureFault({ ...base, elapsedMs: 600_000 })).toBe("not-armed")
   })
 })

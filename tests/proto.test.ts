@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
   decodeTranscriptWrapper,
+  decodeTranscriptV2,
+  decodeCaptions,
+  frameShape,
   decodeCollectionsChat,
   decodeOutgoingChat,
   decodeRoster,
@@ -164,6 +167,244 @@ describe("decodeTranscriptWrapper", () => {
     tagBytes(7, 0, out); writeVarint(99, out)   // field 7, varint — unknown
     const result = decodeTranscriptWrapper(u8(out))
     expect(result!.text).toBe("hi")
+  })
+})
+
+// ---------- transcript v2 builder helpers ----------
+
+// Google Meet moved live captions onto a second data channel (`captions_v2`,
+// first seen on Meet build boq_meetingsuiserver_20260904.05_p1) with a deeper
+// envelope and renumbered fields. Shape, read off the wire:
+//   wrapper: f1 = envelope
+//   envelope: f1 = entry (REPEATED), f6 = { f1 = epoch seconds }
+//   entry: f1 = messageId (varint), f2 = messageVersion (varint), f3 = payload
+//   payload: f2 = final (varint, present only on the last revision),
+//            f3 = text, f4/f5 = language tag, f6 = deviceId, f9 = varint
+// An entry whose f3 is a varint rather than a submessage is an ack, not a
+// caption, and carries no text.
+
+function buildV2Payload(opts: {
+  text?: string
+  lang?: string
+  deviceId?: string
+  final?: boolean
+  extraField?: boolean
+}): number[] {
+  const out: number[] = []
+  if (opts.final) { tagBytes(2, 0, out); writeVarint(1, out) }
+  if (opts.text !== undefined) lenField(3, strBytes(opts.text), out)
+  if (opts.lang !== undefined) { lenField(4, strBytes(opts.lang), out); lenField(5, strBytes(opts.lang), out) }
+  if (opts.deviceId !== undefined) lenField(6, strBytes(opts.deviceId), out)
+  if (opts.extraField) { tagBytes(99, 0, out); writeVarint(42, out) }
+  tagBytes(9, 0, out); writeVarint(1, out)
+  return out
+}
+
+function buildV2Entry(opts: {
+  messageId?: number
+  messageVersion?: number
+  payload?: number[]
+  ack?: boolean
+}): number[] {
+  const out: number[] = []
+  if (opts.messageId !== undefined) { tagBytes(1, 0, out); writeVarint(opts.messageId, out) }
+  if (opts.messageVersion !== undefined) { tagBytes(2, 0, out); writeVarint(opts.messageVersion, out) }
+  if (opts.ack) { tagBytes(3, 0, out); writeVarint(1, out) }
+  else if (opts.payload !== undefined) lenField(3, opts.payload, out)
+  return out
+}
+
+function buildV2Wrapper(entries: number[][], opts: { stamp?: number; extraField?: boolean } = {}): Uint8Array {
+  const envelope: number[] = []
+  for (const e of entries) lenField(1, e, envelope)
+  if (opts.stamp !== undefined) {
+    const ts: number[] = []
+    tagBytes(1, 0, ts); writeVarint(opts.stamp, ts)
+    lenField(6, ts, envelope)
+  }
+  if (opts.extraField) { tagBytes(98, 0, envelope); writeVarint(7, envelope) }
+  const out: number[] = []
+  lenField(1, envelope, out)
+  return u8(out)
+}
+
+const V2_DEVICE = "spaces/TestSpace01/devices/74"
+
+// ---------- transcript v2 tests ----------
+
+describe("decodeTranscriptV2", () => {
+  it("decodes one caption entry out of a v2 envelope", () => {
+    const bytes = buildV2Wrapper([
+      buildV2Entry({
+        messageId: 3,
+        messageVersion: 16,
+        payload: buildV2Payload({ text: "Hello world", lang: "en-US", deviceId: V2_DEVICE }),
+      }),
+    ], { stamp: 1789054079 })
+    expect(decodeTranscriptV2(bytes)).toEqual([
+      { deviceId: V2_DEVICE, messageId: 3, messageVersion: 16, text: "Hello world", lang: "en-US" },
+    ])
+  })
+
+  it("decodes every entry when one envelope batches several", () => {
+    const bytes = buildV2Wrapper([
+      buildV2Entry({ messageId: 1, messageVersion: 1, payload: buildV2Payload({ text: "first", deviceId: V2_DEVICE }) }),
+      buildV2Entry({ messageId: 2, messageVersion: 5, payload: buildV2Payload({ text: "second", deviceId: V2_DEVICE }) }),
+    ])
+    expect(decodeTranscriptV2(bytes).map((m) => m.text)).toEqual(["first", "second"])
+  })
+
+  it("marks the revision Meet flagged as final", () => {
+    const open = buildV2Wrapper([
+      buildV2Entry({ messageId: 9, messageVersion: 13, payload: buildV2Payload({ text: "still going", deviceId: V2_DEVICE }) }),
+    ])
+    const done = buildV2Wrapper([
+      buildV2Entry({ messageId: 9, messageVersion: 14, payload: buildV2Payload({ text: "still going", deviceId: V2_DEVICE, final: true }) }),
+    ])
+    expect(decodeTranscriptV2(open)[0].final).toBeUndefined()
+    expect(decodeTranscriptV2(done)[0].final).toBe(true)
+  })
+
+  it("ignores an ack entry, which carries a version but no text", () => {
+    const bytes = buildV2Wrapper([buildV2Entry({ messageId: 47, messageVersion: 5, ack: true })])
+    expect(decodeTranscriptV2(bytes)).toEqual([])
+  })
+
+  it("keeps the good entries when one entry in the batch has no text", () => {
+    const bytes = buildV2Wrapper([
+      buildV2Entry({ messageId: 1, messageVersion: 1, ack: true }),
+      buildV2Entry({ messageId: 2, messageVersion: 2, payload: buildV2Payload({ text: "kept", deviceId: V2_DEVICE }) }),
+    ])
+    expect(decodeTranscriptV2(bytes).map((m) => m.text)).toEqual(["kept"])
+  })
+
+  it("skips unknown fields at every level", () => {
+    const bytes = buildV2Wrapper([
+      buildV2Entry({
+        messageId: 4,
+        messageVersion: 2,
+        payload: buildV2Payload({ text: "ok", deviceId: V2_DEVICE, extraField: true }),
+      }),
+    ], { extraField: true })
+    expect(decodeTranscriptV2(bytes)[0].text).toBe("ok")
+  })
+
+  it("returns nothing for a v1 caption frame, so the two decoders cannot cross", () => {
+    const v1 = buildTranscriptWrapper(
+      buildTranscriptMessage({ deviceId: "dev-abc", messageId: 42, messageVersion: 1, text: "Hello world" }),
+    )
+    expect(decodeTranscriptV2(v1)).toEqual([])
+  })
+
+  it("returns nothing for bytes that are not protobuf at all", () => {
+    expect(decodeTranscriptV2(u8([0xff, 0xff, 0xff, 0xff]))).toEqual([])
+    expect(decodeTranscriptV2(u8([]))).toEqual([])
+  })
+
+  it("does not walk past the buffer when a length says it should", () => {
+    const out: number[] = []
+    tagBytes(1, 2, out); writeVarint(200, out); out.push(0x08, 0x01)
+    expect(() => decodeTranscriptV2(u8(out))).not.toThrow()
+  })
+})
+
+
+describe("decodeCaptions", () => {
+  it("reads a v2 frame, whatever channel it arrived on", () => {
+    const bytes = buildV2Wrapper([
+      buildV2Entry({ messageId: 3, messageVersion: 16, payload: buildV2Payload({ text: "from v2", deviceId: V2_DEVICE }) }),
+    ])
+    expect(decodeCaptions(bytes).map((m) => m.text)).toEqual(["from v2"])
+  })
+
+  it("still reads a v1 frame, which Meet serves to a share of accounts", () => {
+    const bytes = buildTranscriptWrapper(
+      buildTranscriptMessage({ deviceId: "dev-abc", messageId: 42, messageVersion: 1, text: "from v1" }),
+    )
+    expect(decodeCaptions(bytes).map((m) => m.text)).toEqual(["from v1"])
+  })
+
+  it("returns nothing for a frame in neither format", () => {
+    expect(decodeCaptions(u8([0xff, 0xff, 0xff, 0xff]))).toEqual([])
+  })
+
+  it("does not turn a v1 ack into a caption", () => {
+    // decodeTranscriptWrapper returns null when field 2 is set; the array form
+    // must not paper over that with an empty-shaped entry.
+    const bytes = buildTranscriptWrapper(buildTranscriptMessage({ text: "ignored" }), true)
+    expect(decodeCaptions(bytes)).toEqual([])
+  })
+})
+
+// ---------- frame shape (content-free wire summary) ----------
+
+describe("frameShape", () => {
+  it("summarises a v2 caption frame without carrying a word of it", () => {
+    const bytes = buildV2Wrapper([
+      buildV2Entry({
+        messageId: 3,
+        messageVersion: 16,
+        payload: buildV2Payload({ text: "Hello world", lang: "en-US", deviceId: V2_DEVICE }),
+      }),
+    ])
+    const shape = frameShape(bytes)
+    // Structure and sizes survive; the text does not.
+    expect(shape).toBe("1{1{1=v3,2=v16,3{3=s11,4=s5,5=s5,6=s29,9=v1}}}")
+    expect(shape).not.toContain("Hello")
+    expect(shape).not.toContain("en-US")
+    expect(shape).not.toContain(V2_DEVICE)
+  })
+
+  it("summarises a v1 caption frame the same way", () => {
+    const bytes = buildTranscriptWrapper(
+      buildTranscriptMessage({ deviceId: "dev-abc", messageId: 42, messageVersion: 1, text: "Hello world" }),
+    )
+    expect(frameShape(bytes)).toBe("1{1=s7,2=v42,3=v1,6=s11}")
+  })
+
+  it("tells the two caption formats apart, which is the point of keeping it", () => {
+    const v1 = frameShape(buildTranscriptWrapper(buildTranscriptMessage({ text: "hi" })))
+    const v2 = frameShape(buildV2Wrapper([
+      buildV2Entry({ messageId: 1, messageVersion: 1, payload: buildV2Payload({ text: "hi", deviceId: V2_DEVICE }) }),
+    ]))
+    expect(v1).not.toBe(v2)
+  })
+
+  it("keeps no string bytes even when a string would parse as a message", () => {
+    // Ambiguity is inherent: wire type 2 is string, bytes AND submessage, and
+    // only a schema tells them apart. Whichever way it resolves, a value never
+    // reaches the output - the worst case is structure reported for a string.
+    const out: number[] = []
+    lenField(1, strBytes("Ada Lovelace"), out)
+    const shape = frameShape(u8(out))
+    expect(shape).not.toContain("Ada")
+    expect(shape).not.toContain("Lovelace")
+  })
+
+  it("reports varint values, which cannot carry text", () => {
+    const out: number[] = []
+    tagBytes(4, 0, out); writeVarint(1789054079, out)
+    expect(frameShape(u8(out))).toBe("4=v1789054079")
+  })
+
+  it("marks a frame it could not finish parsing instead of throwing", () => {
+    const out: number[] = []
+    tagBytes(1, 0, out); writeVarint(7, out)
+    out.push(0x3c)   // field 7, wire 4 - undefined in proto3
+    const shape = frameShape(u8(out))
+    expect(shape).toContain("1=v7")
+    expect(shape).toContain("!")
+  })
+
+  it("is empty for an empty frame", () => {
+    expect(frameShape(u8([]))).toBe("")
+  })
+
+  it("stops descending at a depth no real frame reaches", () => {
+    let inner: number[] = []
+    for (let i = 0; i < 12; i++) { const next: number[] = []; lenField(1, inner, next); inner = next }
+    expect(() => frameShape(u8(inner))).not.toThrow()
+    expect(frameShape(u8(inner))).toContain("...")
   })
 })
 

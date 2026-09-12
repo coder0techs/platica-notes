@@ -60,6 +60,13 @@ export interface ActiveSession {
   rawVersions?: CaptionHistory[]
   /** Recorder's bookmarks/notes, timestamped. Rides alongside transcript so reload/recovery keep them. */
   notes?: Note[]
+  /**
+   * Content-free diagnostic trail, kept for EVERY meeting whether or not the
+   * debug log is switched on (see shared/lite-log.ts). It holds what capture
+   * did, never what anyone said, which is what lets it exist by default and on
+   * private meetings alike.
+   */
+  lite?: DebugEvent[]
   /** Participant join (and, later, leave) markers, timestamped. Rides alongside notes for reload/recovery. */
   participantEvents?: ParticipantEvent[]
   /**
@@ -110,6 +117,8 @@ export interface Meeting {
   rawVersions?: CaptionHistory[]
   /** Recorder's bookmarks/notes, timestamped. */
   notes?: Note[]
+  /** Content-free diagnostic trail for this meeting (see shared/lite-log.ts). */
+  lite?: DebugEvent[]
   /** Participant join (and, later, leave) markers, timestamped. */
   participantEvents?: ParticipantEvent[]
   /** Display name of the local user who recorded this meeting. */
@@ -127,6 +136,18 @@ export interface Meeting {
    * signal — read by the downloader (overwrite vs uniquify) and the history page.
    */
   visits?: VisitSpan[]
+}
+
+/**
+ * A meeting that ran but captured nothing at all.
+ *
+ * Such a meeting is still kept in history when other people were present (see
+ * finalizeSession), because it is the one whose diagnostics someone will want.
+ * It has no transcript to write, so nothing downstream should offer or write a
+ * .md for it.
+ */
+export function isCaptureFailure(meeting: Pick<Meeting, "transcript" | "chat" | "notes">): boolean {
+  return meeting.transcript.length === 0 && meeting.chat.length === 0 && (meeting.notes?.length ?? 0) === 0
 }
 
 export interface Settings {

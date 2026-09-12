@@ -43,6 +43,68 @@ describe("finalizeSession", () => {
     expect(chrome._store["activeSessionTabs"]).toEqual([])
   })
 
+  // A meeting that captured nothing used to vanish without trace: no Meeting, no
+  // history row, nothing to attach diagnostics to. That is exactly the meeting
+  // whose diagnostics someone needs. It is kept when other people were present,
+  // which is what separates a broken meeting from a stray tab nobody spoke in.
+  it("empty session with other people present: keeps a Meeting so its diagnostics survive", async () => {
+    chrome._store["session_7"] = makeSession({ participants: ["Grace Hopper", "Ada Lovelace"] })
+    chrome._store["activeSessionTabs"] = [7]
+    const r = await finalizeSession(7)
+    expect(r!.meeting).not.toBeNull()
+    expect(r!.meeting!.transcript).toEqual([])
+    expect((chrome._store["meetings"] as Meeting[]).length).toBe(1)
+  })
+
+  it("empty session with nobody else present: still stores nothing", async () => {
+    chrome._store["session_7"] = makeSession({ participants: ["Grace Hopper"] })
+    chrome._store["activeSessionTabs"] = [7]
+    const r = await finalizeSession(7)
+    expect(r!.meeting).toBeNull()
+    expect(chrome._store["meetings"]).toBeUndefined()
+  })
+
+  it("does NOT mark a failed meeting as pending export: there is no transcript to write", async () => {
+    chrome._store["session_7"] = makeSession({ participants: ["Grace Hopper", "Ada Lovelace"] })
+    chrome._store["activeSessionTabs"] = [7]
+    await finalizeSession(7)
+    expect(await listPendingExports()).toEqual([])
+  })
+
+  it("never folds a failed meeting into a prior visit of the same code", async () => {
+    // Merging would hide the failure inside a meeting that worked, which is the
+    // opposite of why the row is kept.
+    chrome._store["settings"] = { mergeRejoins: true }
+    chrome._store["meetings"] = [
+      {
+        id: "prior",
+        platform: "meet",
+        title: "Test meeting",
+        startedAt: "2026-06-18T09:00:00.000Z",
+        endedAt: "2026-06-18T09:30:00.000Z",
+        isPrivate: false,
+        transcript: oneUtterance,
+        chat: [],
+        participants: ["Grace Hopper"],
+        meetingUrl: "https://meet.google.com/abc-defg-hij",
+      },
+    ]
+    chrome._store["session_7"] = makeSession({ participants: ["Grace Hopper", "Ada Lovelace"] })
+    chrome._store["activeSessionTabs"] = [7]
+    await finalizeSession(7)
+    const stored = chrome._store["meetings"] as Meeting[]
+    expect(stored.length).toBe(2)
+    expect(stored[0].transcript).toEqual(oneUtterance)
+  })
+
+  it("carries the lite diagnostic log onto the stored meeting", async () => {
+    const lite = [{ t: "2026-06-18T10:00:00.000Z", ctx: "rtc" as const, phase: "funnel", wire: 0 }]
+    chrome._store["session_7"] = makeSession({ transcript: oneUtterance, lite })
+    chrome._store["activeSessionTabs"] = [7]
+    const r = await finalizeSession(7)
+    expect(r!.meeting!.lite).toEqual(lite)
+  })
+
   it("non-empty session: builds a Meeting, appends to history, removes the key", async () => {
     chrome._store["session_7"] = makeSession({ transcript: oneUtterance })
     chrome._store["activeSessionTabs"] = [7]

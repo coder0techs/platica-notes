@@ -1,4 +1,5 @@
 import { isContextInvalidatedError, sendToBackground } from "../../shared/messages"
+import { toLiteEvent } from "../../shared/lite-log"
 import type { BackgroundResponse } from "../../shared/messages"
 import { getLocal, getSettings, saveSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
 import { DEFAULT_SETTINGS } from "../../shared/types"
@@ -11,6 +12,7 @@ import {
   RTC_CONFIG_EVENT,
   RTC_DEBUG_EVENT,
   RTC_EVENT,
+  RTC_LITE_EVENT,
   RTC_RELAY_EVENT,
   RTC_RELAY_RESULT_EVENT,
 } from "../meet-rtc/bridge"
@@ -36,7 +38,7 @@ import {
   shouldEndFromMedia,
   shouldFinalizeStaleSession,
   shouldFinishRearmWait,
-  shouldWarnCaptureIdle,
+  captureFault,
 } from "./meet-lifecycle"
 
 // --- Google Meet DOM contract. Verify on a live meeting before each release. ---
@@ -92,6 +94,11 @@ const JOIN_SETTLE_MS = 10000
 // the notice.
 const CAPTURE_HEALTH_GRACE_MS = 45000
 const CAPTURE_HEALTH_TICK_MS = 5000
+// How long a meeting that DID subscribe may produce nothing before we say so.
+// Much longer than the arming grace, because the innocent explanation (a room
+// where nobody has spoken yet) is common and the faulty one is not. Five minutes
+// of two or more people and not one caption is no longer plausibly a quiet room.
+const CAPTURE_SILENT_GRACE_MS = 300000
 
 // Roster events stream from join time — often before our leave-icon detection
 // lands — so the deviceId → name map lives at page level and survives across
@@ -162,12 +169,25 @@ let debugConfigSeen = false
 const debugBacklog: DebugEvent[] = []
 const DEBUG_BACKLOG_MAX = 500
 
+// The lite trail. Same shape as the debug buffer above and deliberately separate
+// from it, because this one is collected whether or not debug is switched on and
+// is kept on every meeting, private ones included. It needs no backlog: nothing
+// about it waits on settings, so it starts collecting at document_start.
+const liteEvents: DebugEvent[] = []
+let onLiteEvent: (() => void) | null = null
+// Smaller cap than the debug buffer: this is stored for EVERY meeting in history
+// rather than for the few where someone turned logging on. A meeting's worth of
+// lifecycle events and the first frames of each channel sits far below it; the
+// cap is there so a pathological reconnect loop cannot grow history without end.
+const LITE_EVENTS_MAX = 2000
+
 // Adapter's own lifecycle events: to the console and the debug buffer only when
 // debug is enabled (quiet by default; genuine errors use console.error directly).
 // Structured detail rides in `extra`.
 function dlog(msg: string, extra?: Record<string, unknown>): void {
   // Spread caller data first so framing fields (t, ctx, msg) always win on collision.
   const event: DebugEvent = { ...(extra ?? {}), t: new Date().toISOString(), ctx: "adapter", msg }
+  collectLite(event)
   if (!debugConfigSeen) {
     debugBacklog.push(event)
     if (debugBacklog.length > DEBUG_BACKLOG_MAX) debugBacklog.shift()
@@ -177,6 +197,19 @@ function dlog(msg: string, extra?: Record<string, unknown>): void {
   console.log("[platica-notes]", msg, extra ?? "")
   debugEvents.push(event)
   onDebugEvent?.()
+}
+
+// Put one event through the content-free filter and keep what survives. Called
+// for the adapter's own events and for every event the MAIN world dispatches.
+function collectLite(event: DebugEvent): void {
+  try {
+    const lite = toLiteEvent(event)
+    if (!lite) return
+    liteEvents.push({ ...lite, t: event.t, ctx: event.ctx } as DebugEvent)
+    onLiteEvent?.()
+  } catch {
+    /* a diagnostics failure must never affect capture */
+  }
 }
 
 /** Settings have arrived: keep the retained adapter events, or drop them. */
@@ -368,6 +401,18 @@ async function main(): Promise<void> {
     }
   })
 
+  document.addEventListener(RTC_LITE_EVENT, (event) => {
+    try {
+      const detail = (event as CustomEvent).detail
+      if (typeof detail !== "string") return
+      // Already filtered in the MAIN world; re-filtered here so the contract is
+      // enforced on the side that persists it, not only on the side that sends.
+      collectLite(JSON.parse(detail) as DebugEvent)
+    } catch {
+      /* a diagnostics failure must never affect capture */
+    }
+  })
+
   document.addEventListener(RTC_EVENT, (event) => {
     const detail = (event as CustomEvent).detail
     if (typeof detail !== "string") return
@@ -553,6 +598,7 @@ async function runMeeting(tabId: number): Promise<void> {
   // below puts the service facts INSIDE the window instead of hoping an earlier
   // event survives.
   const debugStart = debugEvents.length
+  const liteStart = liteEvents.length
   dlog("meeting header", {
     extVersion: typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev",
     extCommit: typeof __BUILD_COMMIT__ === "string" ? __BUILD_COMMIT__ : "dev",
@@ -589,6 +635,7 @@ async function runMeeting(tabId: number): Promise<void> {
   const prefixChat = resumed ? resumed.chat : []
   // Debug from a resumed snapshot is prepended, mirroring transcript/chat.
   const prefixDebug = resumed?.debug ?? []
+  const prefixLite = resumed?.lite ?? []
   // Attendees from a resumed snapshot seed the set (?? [] tolerates pre-feature snapshots).
   const prefixParticipants = resumed?.participants ?? []
   const prefixRawVersions = resumed?.rawVersions ?? []
@@ -700,6 +747,14 @@ async function runMeeting(tabId: number): Promise<void> {
   // immediately. The closure self-gates on debugEnabled — no cost when debug is
   // off for the entire meeting (session.debug stays undefined), and ON→OFF
   // freezes the trail because the guard returns before writing.
+  // No gate, unlike onDebugEvent below: the lite trail is what a meeting keeps by
+  // default, so the only thing bounding it is the cap.
+  onLiteEvent = () => {
+    session.lite = [...prefixLite, ...liteEvents.slice(liteStart)].slice(-LITE_EVENTS_MAX)
+    writer.requestWrite()
+  }
+  onLiteEvent()
+
   onDebugEvent = () => {
     if (!debugEnabled) return
     // Cap the serialized slice to DEBUG_EVENTS_MAX so chrome.storage write size
@@ -726,6 +781,12 @@ async function runMeeting(tabId: number): Promise<void> {
     languagePrompt?.unmount()
     languagePrompt = null
   }
+
+  // This half of the delivery funnel: what actually crossed into the isolated
+  // world and what the feed did with it. The MAIN world counts the wire side.
+  // Comparing the two is the point — a gap between dispatched and received is a
+  // loss in the hop between worlds, which nothing would otherwise show.
+  const funnel = { received: 0, applied: 0, ignored: 0, paused: 0 }
 
   // --- capture health ---------------------------------------------------------
   // Capture failing to start is currently silent: the meeting runs, the panel
@@ -756,27 +817,38 @@ async function runMeeting(tabId: number): Promise<void> {
     }
   }
   const captureHealthTimer = setInterval(() => {
-    if (
-      !shouldWarnCaptureIdle({
-        armed: captureArmed,
-        elapsedMs: Date.now() - meetingStartedAt,
-        graceMs: CAPTURE_HEALTH_GRACE_MS,
-        warned: captureWarned,
-        paused: !recording,
-      })
-    ) {
-      return
-    }
+    const fault = captureFault({
+      armed: captureArmed,
+      captionsSeen: funnel.received,
+      attendees: attendees.size,
+      elapsedMs: Date.now() - meetingStartedAt,
+      graceMs: CAPTURE_HEALTH_GRACE_MS,
+      silentGraceMs: CAPTURE_SILENT_GRACE_MS,
+      warned: captureWarned,
+      paused: !recording,
+    })
+    if (!fault) return
     captureWarned = true
-    dlog("capture health warning", { elapsedMs: Date.now() - meetingStartedAt })
+    dlog("capture health warning", { fault, elapsedMs: Date.now() - meetingStartedAt })
     // Speech, specifically. The chat channel is independent and keeps working in
     // the one failure we have reproduced, so "nothing has been captured" would be
     // wrong — and the earlier draft went on to promise that whatever had been
     // captured was safe, which contradicted the sentence before it.
     captureNotice = showPersistentNotice(
-      "Plática Notes is not transcribing speech in this meeting. The usual cause is a " +
-        "second meeting-recorder extension running in this tab — only one of them can " +
-        "read Meet's captions. Turn the other one off and reload the tab.",
+      fault === "not-armed"
+        ? "Plática Notes is not transcribing speech in this meeting. The usual cause is a " +
+          "second meeting-recorder extension running in this tab — only one of them can " +
+          "read Meet's captions. Turn the other one off and reload the tab."
+        // Deliberately does not guess which: both causes are real, the user can
+        // check one of them in seconds, and claiming the wrong one is worse than
+        // naming both. Chat and notes are unaffected either way, so this says
+        // speech rather than everything.
+        : "Plática Notes has not captured any speech in this meeting. Either the spoken " +
+          "language does not match the one set in the extension, or Google Meet has " +
+          "changed something and this version cannot read its captions. Chat and notes " +
+          "are still being saved. To report it, send the Diagnostics file from the " +
+          "extension's history page: it records what capture did and holds none of " +
+          "what was said.",
     )
   }, CAPTURE_HEALTH_TICK_MS)
 
@@ -927,11 +999,6 @@ async function runMeeting(tabId: number): Promise<void> {
   }, 7000)
 
   let firstCaptionLogged = false
-  // This half of the delivery funnel: what actually crossed into the isolated
-  // world and what the feed did with it. The MAIN world counts the wire side.
-  // Comparing the two is the point — a gap between dispatched and received is a
-  // loss in the hop between worlds, which nothing would otherwise show.
-  const funnel = { received: 0, applied: 0, ignored: 0, paused: 0 }
   activeMeetingHandler = (event) => {
     if (!recording && (event.type === "transcript" || event.type === "chat")) {
       // Dropped on purpose, but still counted: otherwise a paused meeting looks
@@ -1069,6 +1136,7 @@ async function runMeeting(tabId: number): Promise<void> {
     addNoteToActive = null
     onMediaState = null
     onDebugEvent = null
+    onLiteEvent = null
     controls.unmount()
     panel.unmount()
     languagePrompt?.unmount()
@@ -1084,6 +1152,7 @@ async function runMeeting(tabId: number): Promise<void> {
     session.participantEvents = [...participantEvents]
     // Capture the complete debug trail (including this "meeting ended") into the
     // final snapshot. Stays undefined when disabled — no behavioural change.
+    session.lite = [...prefixLite, ...liteEvents.slice(liteStart)].slice(-LITE_EVENTS_MAX)
     if (debugEnabled) session.debug = [...prefixDebug, ...debugEvents.slice(debugStart)]
     await writer.writeNow()
     // Seal the writer: any late event/timer must not re-create the session key

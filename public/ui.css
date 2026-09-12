@@ -190,6 +190,13 @@ input[aria-invalid="true"] { border-color: var(--danger); }
 .btn-danger:hover:not(:disabled), .btn-danger:focus-visible {
   color: var(--danger); background: var(--danger-wash); border-color: var(--danger);
 }
+/* A third weight, below outlined. For an action that must be reachable but is
+   almost never the reason anyone opened the page - offering it at the same
+   weight as the real action would make every row read as a choice between two
+   equal things, which it is not. */
+.btn-quiet { border-color: transparent; background: transparent; color: var(--ink-2); }
+.btn-quiet:hover:not(:disabled) { background: var(--sunken); border-color: var(--rule); color: var(--ink); }
+.btn-quiet:disabled { opacity: .45; }
 .btn-sm { min-height: 30px; padding: 6px 11px; font-size: 12.5px; }
 .btn-block { display: flex; width: 100%; }
 
@@ -208,6 +215,9 @@ a.link:hover { text-decoration: underline; }
   font: 500 11px/1 var(--mono); letter-spacing: .04em; color: var(--ink-2);
 }
 .tag-private { color: var(--accent-strong); border-color: var(--accent); background: var(--accent-wash); }
+/* Neutral, not red. A meeting that captured nothing is a fact about the past,
+   not a control that destroys data, and red is reserved for the latter. */
+.tag-failed { color: var(--ink-2); border-color: var(--ink-2); border-style: dashed; }
 @media (prefers-color-scheme: dark) { .tag-private { color: var(--accent); } }
 .tag-rec { color: var(--accent-strong); border-color: var(--live); background: var(--live-wash); }
 

@@ -1,6 +1,7 @@
 import type { ActiveSession, DebugEvent, Meeting } from "../shared/types"
+import { isCaptureFailure } from "../shared/types"
 import { ACTIVE_TABS_KEY, getLocal, getSettings, removeLocal, sessionKey, setLocal, tabIdFromSessionKey } from "../shared/storage"
-import { addPendingExport, commitFinalizedMeeting, enqueue } from "./store"
+import { addMeeting, addPendingExport, commitFinalizedMeeting, enqueue } from "./store"
 import { MERGE_GAP_MS } from "./merge"
 
 const finalizing = new Set<number>()
@@ -46,8 +47,7 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
     const debug = session.debug ?? []
     // A session is "empty" (no Meeting saved) only when nothing was captured AND
     // the recorder dropped no notes/bookmarks — notes alone are worth keeping.
-    const empty =
-      session.transcript.length === 0 && session.chat.length === 0 && (session.notes?.length ?? 0) === 0
+    const empty = isCaptureFailure(session)
     // Append a bg summary only when debug is non-empty — debug is non-empty
     // exactly when the feature was on, so an empty debug means no file downstream.
     if (debug.length > 0) {
@@ -62,13 +62,21 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
     }
     const meetingUrl =
       session.platform === "meet" && session.path ? `https://meet.google.com${session.path}` : undefined
-    if (empty) {
-      // Empty session: do not build/store a Meeting (history stays clean).
+    const settings = await getSettings()
+    // A meeting that captured NOTHING while other people were in it is a capture
+    // failure, not a stray tab, and it used to vanish without trace: no Meeting,
+    // no history row, nothing to attach diagnostics to. That is precisely the
+    // meeting whose diagnostics someone needs afterwards, which is how a caption
+    // channel rename cost a user days with no artefact to show for any of it. So
+    // the row is kept, with its lite log, and the participant count is what tells
+    // a broken meeting from an empty room nobody ever spoke in.
+    const failed = empty && session.participants.length >= 2
+    if (empty && !failed) {
+      // Nothing captured and nobody else there: nothing happened. History stays clean.
       await removeLocal(sessionKey(tabId))
       await untrackTab(tabId)
       return { meeting: null, debug, title: session.title, startedAt: session.startedAt, meetingUrl, isPrivate: session.isPrivate }
     }
-    const settings = await getSettings()
     const meeting: Meeting = {
       id: crypto.randomUUID(),
       platform: session.platform,
@@ -83,9 +91,19 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
       notes: session.notes ?? [],
       participantEvents: session.participantEvents ?? [],
       recorder: session.selfName,
+      lite: session.lite ?? [],
       language: session.captionLanguage ?? settings.captionLanguage,
       meetingUrl,
       chatUrl: session.chatUrl,
+    }
+    // A failed meeting is appended, never merged and never marked for export:
+    // folding it into a visit that worked would hide the very failure the row
+    // exists to show, and there is no transcript to write a file from.
+    if (failed) {
+      await addMeeting(meeting, settings.retentionLimit)
+      await removeLocal(sessionKey(tabId))
+      await untrackTab(tabId)
+      return { meeting, debug, title: session.title, startedAt: session.startedAt, meetingUrl, isPrivate: session.isPrivate }
     }
     // Commit to history — folding into a prior visit of the same meeting when the
     // user opted in (mergeRejoins). `stored` carries the merge target's identity

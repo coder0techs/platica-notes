@@ -14,15 +14,20 @@ import {
   decodeRoster,
   decodeRosterLeave,
   ROSTER_STATE_LEFT,
-  decodeTranscriptWrapper,
+  decodeCaptions,
+  frameShape,
   readNestedOp,
   readNestedSeq,
   toBytes,
 } from "./proto"
+import type { Transcript } from "./proto"
+import { carriesCaptions, isCaptionsLabel, isUsableCaption } from "./channels"
+import { toLiteEvent } from "../../shared/lite-log"
 import {
   RTC_CONFIG_EVENT,
   RTC_DEBUG_EVENT,
   RTC_EVENT,
+  RTC_LITE_EVENT,
   RTC_RELAY_EVENT,
   RTC_RELAY_RESULT_EVENT,
   type RelayCredentials,
@@ -88,7 +93,27 @@ function dispatchDebug(detail: string): void {
   }
 }
 
+function dispatchLite(event: Record<string, unknown>): void {
+  try {
+    const lite = toLiteEvent(event)
+    if (!lite) return
+    document.dispatchEvent(
+      new CustomEvent(RTC_LITE_EVENT, {
+        detail: JSON.stringify({ ...lite, t: new Date().toISOString(), ctx: "rtc" }),
+      }),
+    )
+  } catch {
+    /* a diagnostics failure must never affect capture */
+  }
+}
+
 function record(event: Record<string, unknown>): void {
+  // The lite trail goes out first and unconditionally: it is the one a meeting
+  // keeps whether or not anybody turned the debug log on, and the filter has
+  // already removed everything that would make dispatching it by default a
+  // question. toLiteEvent returns null for the hot path (captions, chat), so the
+  // cost here is one set lookup per caption revision.
+  dispatchLite(event)
   // Read debugEnabled at emit time — config can flip it mid-meeting. Common
   // case (debug off, config already seen) drops everything before any work,
   // including the JSON.stringify below: nothing reaches the debug stream or the
@@ -133,6 +158,26 @@ function log(...args: unknown[]): void {
 // live data.
 function toHex(u: Uint8Array, max = 160): string {
   return [...u.slice(0, max)].map((b) => b.toString(16).padStart(2, "0")).join("")
+}
+
+// How many frames of each channel get their structure recorded. A schema change
+// shows up in the first frame; the rest would be the same shape repeated, so the
+// budget is about keeping the lite log small rather than about cost.
+const SHAPE_FRAMES = 8
+const shapeBudget = new Map<string, number>()
+
+// Record one frame's protobuf structure, sizes only, never values. This is what
+// makes a format change visible after the fact in a log that holds no content,
+// so it is NOT gated on the debug setting - it is the lite log's whole substance.
+function recordFrameShape(label: string, bytes: Uint8Array): void {
+  const left = shapeBudget.get(label) ?? SHAPE_FRAMES
+  if (left <= 0) return
+  shapeBudget.set(label, left - 1)
+  try {
+    record({ phase: "frame-shape", label, bytes: bytes.length, shape: frameShape(bytes) })
+  } catch {
+    /* diagnostics must never affect capture */
+  }
 }
 
 // ---------- cross-world event dispatch ----------
@@ -305,7 +350,13 @@ function pruneDeadSessions(): void {
 // recreate our own captions channel after it drops (e.g. a native-caption
 // toggle). Each call opens a channel with a fresh unique id (see allocator) so a
 // recreate never collides with a still-open previous channel.
-function sendSubscribe(s: MediaSession): void {
+//
+// `label` is the channel name to open. It is a parameter because Meet no longer
+// has one: accounts served `captions_v2` must have THAT recreated after a drop,
+// and opening the v1 name for them would restore nothing. The watchdog passes
+// the label of the channel it just watched die; the first subscribe of a meeting
+// has nothing to go on yet and opens the historical name.
+function sendSubscribe(s: MediaSession, label = "captions"): void {
   if (s.channel.readyState !== "open") return
   // Open our own captions channel so capture keeps running regardless of the
   // native-caption UI. `id` without `negotiated: true` is implementation-
@@ -313,8 +364,8 @@ function sendSubscribe(s: MediaSession): void {
   // funnels back through handleChannel (consumer + watchdog) like any other.
   try {
     const id = nextCaptionChannelId()
-    s.pc.createDataChannel("captions", { ordered: true, maxRetransmits: 10, id })
-    record({ phase: "captions-create", id, pc: s.pc.connectionState })
+    s.pc.createDataChannel(label, { ordered: true, maxRetransmits: 10, id })
+    record({ phase: "captions-create", id, label, pc: s.pc.connectionState })
   } catch (err) {
     record({ phase: "create-captions-error", error: String(err) })
   }
@@ -364,8 +415,8 @@ function watchCaptionsChannel(pc: RTCPeerConnection, ch: RTCDataChannel): void {
     if (cs === "closing" || cs === "closed") {
       if (!shouldRecreateCaptions(cs, pc.connectionState)) return
       const s = sessions.find((x) => x.pc === pc && x.channel.readyState === "open")
-      record({ phase: "captions-recreate", id: ch.id, pc: pc.connectionState, haveSession: !!s })
-      if (s) sendSubscribe(s)
+      record({ phase: "captions-recreate", id: ch.id, label: ch.label, pc: pc.connectionState, haveSession: !!s })
+      if (s) sendSubscribe(s, ch.label)
       return
     }
     setTimeout(tick, CAPTIONS_WATCH_MS)
@@ -477,26 +528,38 @@ function armFunnelSnapshots(): void {
 }
 
 function handleCaptions(bytes: Uint8Array): void {
-  const m = decodeTranscriptWrapper(bytes)
-  if (!m || !m.text || !m.deviceId || m.messageId === undefined || m.messageVersion === undefined) {
+  consumeCaptions(decodeCaptions(bytes))
+}
+
+// Dispatch the captions one frame decoded into. A v2 frame can batch several, so
+// `decoded` and `dispatched` count captions while `wire` counts frames: the two
+// are no longer expected to match, and decoded > wire is normal on v2.
+function consumeCaptions(list: Transcript[]): void {
+  if (list.length === 0) {
     // Silent until now: a frame the decoder cannot use left no trace at all.
     funnel.dropped++
     return
   }
-  funnel.decoded++
-  if (firstTranscript) {
-    firstTranscript = false
-    log("first transcript", { lang: captionLanguage })
+  for (const m of list) {
+    if (!isUsableCaption(m)) {
+      funnel.dropped++
+      continue
+    }
+    funnel.decoded++
+    if (firstTranscript) {
+      firstTranscript = false
+      log("first transcript", { lang: captionLanguage })
+    }
+    record({ phase: "transcript", text: m.text, deviceId: m.deviceId, messageId: m.messageId, langId: m.langId, lang: m.lang, final: m.final })
+    dispatch({
+      type: "transcript",
+      deviceId: m.deviceId!,
+      messageId: m.messageId!,
+      messageVersion: m.messageVersion!,
+      text: m.text!,
+    })
+    funnel.dispatched++
   }
-  record({ phase: "transcript", text: m.text, deviceId: m.deviceId, messageId: m.messageId, langId: m.langId })
-  dispatch({
-    type: "transcript",
-    deviceId: m.deviceId,
-    messageId: m.messageId,
-    messageVersion: m.messageVersion,
-    text: m.text,
-  })
-  funnel.dispatched++
 }
 
 // Chat now rides the collections channel (Google Meet moved it off meet_messages
@@ -575,27 +638,64 @@ function handleRoster(bytes: Uint8Array): void {
   }
 }
 
-// Diagnostic-only consumer for data channels we do NOT otherwise read (copresent,
-// coannotations, s11y-sync, and any future label). Meet stopped opening the
-// meet_messages channel our chat reader is bound to, and an incoming chat message
-// from another participant was never observed on it — so we do not yet know which
-// channel now carries received chat. This logs the raw (gzip-normalized) bytes of
-// every message on such a channel, but ONLY when the debug log is enabled: the
-// debugEnabled guard runs BEFORE any read/decompress, so a default install reads
-// nothing off these channels and does no work. It never decodes, dispatches, or
-// otherwise changes capture — it exists purely to locate the incoming-chat
-// transport from a real two-party meeting, then it can be removed.
-function attachRawDiagnostic(ch: RTCDataChannel): void {
+// How many frames of an unrecognised channel are examined before we conclude it
+// is not carrying captions and stop looking at it for the rest of the meeting.
+//
+// The budget counts FRAMES, not time, which is what makes it cheap AND safe: a
+// chatty channel like `audioprocessor` burns its budget in the first second and
+// is never read again, while a caption channel that sits silent until someone
+// speaks has spent nothing and is still being watched when the first words
+// arrive. Worst case is this many small protobuf decodes per channel, once.
+const SNIFF_FRAMES = 32
+
+// Consumer for data channels we do NOT otherwise read (copresent, coannotations,
+// s11y-sync, and any future label). It does two unrelated jobs on one listener so
+// a frame is decompressed at most once.
+//
+// 1. Adoption (always on). Meet renamed the caption channel once already, per
+//    account rather than per build, and the only reason anyone noticed was a user
+//    reporting empty files days later. So every unknown channel gets its first
+//    few frames run through the caption decoders, and a channel that turns out to
+//    be carrying real captions is adopted on the spot, so this meeting is the one
+//    that gets recorded rather than the next release. carriesCaptions is what keeps that from firing on
+//    another channel's traffic.
+// 2. Raw hex (debug only). Logs the gzip-normalized bytes so a live meeting can
+//    show where Meet moved something. Gated BEFORE any hex is built, because
+//    serialising every payload on the page's hot path is pure waste by default.
+function attachUnknownChannel(ch: RTCDataChannel): void {
+  let sniffLeft = SNIFF_FRAMES
+  let adopted = false
   let queue: Promise<void> = Promise.resolve()
   ch.addEventListener("message", (e: MessageEvent) => {
-    // Gate first: no reading, no work, nothing recorded unless debug is on.
-    if (!debugEnabled) return
+    // Counted on the wire, as for a channel we recognised from its name.
+    if (adopted) funnel.wire++
+    else if (!debugEnabled && sniffLeft <= 0) return
     if (!(e.data instanceof ArrayBuffer) && !(e.data instanceof Uint8Array)) return
     const data = e.data as ArrayBuffer
     queue = queue.then(async () => {
       try {
         const bytes = await toBytes(data)
-        record({ phase: "channel-raw", label: ch.label, bytes: bytes.length, hex: toHex(bytes, bytes.length) })
+        if (adopted) {
+          consumeCaptions(decodeCaptions(bytes))
+          return
+        }
+        recordFrameShape(ch.label, bytes)
+        if (debugEnabled) {
+          record({ phase: "channel-raw", label: ch.label, bytes: bytes.length, hex: toHex(bytes, bytes.length) })
+        }
+        if (sniffLeft <= 0) return
+        sniffLeft--
+        const decoded = decodeCaptions(bytes)
+        if (!carriesCaptions(decoded)) return
+        adopted = true
+        adoptedCaptionLabels.push(ch.label)
+        // Not debug-gated: this is the signal that Meet moved the transcript
+        // again, and it is worth knowing even on an install that never turns
+        // the debug log on.
+        log("adopted an unnamed caption channel", ch.label)
+        record({ phase: "captions-channel-adopted", label: ch.label, after: SNIFF_FRAMES - sniffLeft })
+        funnel.wire++
+        consumeCaptions(decoded)
       } catch {
         /* diagnostics must never affect capture */
       }
@@ -612,7 +712,7 @@ function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void
   ch.addEventListener("message", (e: MessageEvent) => {
     // Counted here rather than in handleCaptions: this is the wire, before
     // decompression can fail and before the decoder gets a say.
-    if (ch.label === "captions") funnel.wire++
+    if (isCaptionsLabel(ch.label)) funnel.wire++
     if (!(e.data instanceof ArrayBuffer) && !(e.data instanceof Uint8Array)) {
       record({ phase: "unexpected-payload", label: ch.label, type: typeof e.data })
       return
@@ -621,12 +721,13 @@ function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void
     queue = queue.then(async () => {
       try {
         const bytes = await toBytes(data)
+        recordFrameShape(ch.label, bytes)
         // Wire-bytes diagnostics for channels whose decode is not yet proven on
         // live data (collections/roster, meet_messages/chat, any other). Use the
         // gzip-normalized bytes so the hex is the actual protobuf. Debug-gated
         // BEFORE building the hex: serializing every non-caption payload to hex
         // on the page's hot path is pure waste when debug is off (the default).
-        if (debugEnabled && ch.label !== "captions" && ch.label !== "media-session") {
+        if (debugEnabled && !isCaptionsLabel(ch.label) && ch.label !== "media-session") {
           try {
             record({ phase: "channel-raw", label: ch.label, bytes: bytes.length, hex: toHex(bytes, bytes.length) })
           } catch {
@@ -654,6 +755,10 @@ const adopted = new WeakSet<RTCPeerConnection>()
 let adoptedCount = 0
 const adoptedWhere: string[] = []
 const channelsSeen: string[] = []
+// Channels adopted as caption carriers by sniffing rather than by name. A
+// non-empty list means Meet renamed the transcript channel and we caught it at
+// runtime; it belongs in the state snapshot so the debug log says so plainly.
+const adoptedCaptionLabels: string[] = []
 
 function adopt(pc: RTCPeerConnection, where: string): void {
   const attached = adoptPeerConnection(pc, adopted, (channel, owner) => {
@@ -755,6 +860,9 @@ function recordCaptureState(reason: string): void {
     pcsAdopted: adoptedCount,
     adoptedVia: adoptedWhere,
     channels: channelsSeen,
+    // Non-empty means a channel was adopted as a caption carrier by sniffing its
+    // traffic, not by its name: Meet renamed the transcript channel again.
+    sniffedCaptions: adoptedCaptionLabels,
     mediaSessions: sessions.length,
     subscribed: sessions.filter((s) => s.subscribed).length,
     lang: captionLanguage,
@@ -790,7 +898,7 @@ function handleChannel(ch: RTCDataChannel, pc: RTCPeerConnection): void {
       // Count dropped — when it reaches zero the adapter arms the end grace.
       dispatchMedia(pc)
     })
-  } else if (ch.label === "captions") {
+  } else if (isCaptionsLabel(ch.label)) {
     attachConsumer(ch, handleCaptions)
     // A captions channel opening while a media-session is already subscribed means
     // Meet recreated it (e.g. the user toggled native captions) or we just opened
@@ -804,15 +912,15 @@ function handleChannel(ch: RTCDataChannel, pc: RTCPeerConnection): void {
     // Diagnostics only — the watchdog (not this listener) drives recovery.
     ch.addEventListener("close", () => {
       const open = sessions.filter((s) => s.channel.readyState === "open").length
-      record({ phase: "captions-closed", id: ch.id, pc: pc.connectionState, sessions: sessions.length, openSessions: open })
+      record({ phase: "captions-closed", id: ch.id, label: ch.label, pc: pc.connectionState, sessions: sessions.length, openSessions: open })
     })
   } else if (ch.label === "collections") {
     attachConsumer(ch, handleCollections)
   } else {
-    // Any other channel (copresent, coannotations, s11y-sync, …). We do not read
-    // these for capture; attach a debug-gated raw logger so a two-party meeting
-    // reveals where incoming chat now flows (see attachRawDiagnostic).
-    attachRawDiagnostic(ch)
+    // Any other channel (copresent, coannotations, s11y-sync, …). Not read for
+    // capture, but sniffed for a few frames in case Meet has moved the transcript
+    // onto a name we do not know yet (see attachUnknownChannel).
+    attachUnknownChannel(ch)
   }
 }
 

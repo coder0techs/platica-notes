@@ -4,6 +4,42 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+- **Meetings are transcribed again for accounts Google moved to a new caption
+  channel.** Google Meet serves its live captions over an internal channel, and in
+  early September it began renaming that channel for some accounts and not others.
+  Two people in the same call could be affected differently: one recorded the
+  meeting normally while the other got a file with nothing in it, for days, with
+  no sign that anything was wrong. The extension now reads both names. It also no
+  longer depends on the name at all as a last resort: a channel it does not
+  recognise is examined for its first few messages, and if it turns out to be
+  carrying captions it is picked up there and then, so the next rename costs
+  nobody a meeting.
+
+- **Every meeting now keeps a diagnostic log you can hand over, and it holds
+  nothing anyone said.** When capture goes wrong, the log that would explain it
+  was the one nobody had switched on: the full debug log records the meeting
+  verbatim, so it is off by default and absent exactly when it is needed. Each
+  meeting now also keeps a much smaller record of what capture *did* - the
+  channels it saw, whether the subscription went out, how many captions arrived,
+  and the shape of the data Google sent, with every word, name and chat line left
+  out. `Diagnostics` on the history page saves it as a file. It is kept for
+  private meetings too, because there is nothing in it for the privacy flag to
+  protect.
+
+- **A meeting that recorded nothing no longer disappears.** If a call ran with
+  other people in it and not one word was captured, it used to vanish at the end:
+  no file, no history entry, nothing to look at afterwards. It now stays in the
+  history list, marked `Nothing captured`, with its diagnostic log attached. It
+  offers no transcript download, because there is no transcript behind it.
+
+- **A meeting that records nothing now says so while you are still in it.** The
+  extension warned you when it had failed to ask Meet for captions, but not when
+  it had asked and no captions ever came back, which is exactly what the channel
+  rename above looked like from the inside. If five minutes pass with other people
+  in the meeting and not one word captured, it now tells you, and names the two
+  things worth checking: the language setting, and whether this version has fallen
+  behind a change at Google's end.
+
 - **A saved meeting is less likely to lose its name.** Chrome hands the filename
   round back a truncated version of the address a file was saved from, so for
   anything longer than a short transcript the extension could not tell its own

@@ -16,6 +16,14 @@ export const RTC_CONFIG_EVENT = "platica-rtc-config"
 // only when debug is enabled; isolated adapter collects them.
 export const RTC_DEBUG_EVENT = "platica-rtc-debug"
 
+// The content-free half of the same trail, dispatched ALWAYS rather than only
+// when the debug log is switched on (detail = JSON string of a DebugEvent that
+// has been through shared/lite-log.ts). Dispatching this by default is only
+// defensible because of what that filter removes: no caption, no chat line, no
+// participant name and no raw bytes ever ride this event, so a page listening in
+// on it learns nothing about the meeting it is not already hosting.
+export const RTC_LITE_EVENT = "platica-rtc-lite"
+
 // Events for one channel are emitted in arrival order, but consumers must
 // still treat max(messageVersion) per (deviceId, messageId) as the winner
 // regardless of arrival order.

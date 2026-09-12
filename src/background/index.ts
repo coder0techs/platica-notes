@@ -1,6 +1,7 @@
 import type { BackgroundRequest, BackgroundResponse } from "../shared/messages"
 import { ACTIVE_TABS_KEY, getLocal, sessionKey, setLocal } from "../shared/storage"
-import { downloadDebugLog, downloadMeeting } from "./export"
+import { isCaptureFailure } from "../shared/types"
+import { downloadDebugLog, downloadLiteLog, downloadMeeting } from "./export"
 import { installFilenameGuard } from "./filename-guard"
 import { shouldOpenWelcome } from "./install"
 import {
@@ -96,6 +97,13 @@ async function handle(message: BackgroundRequest, sender: chrome.runtime.Message
       await downloadMeeting(meeting)
       return null
     }
+    case "downloadLiteLog": {
+      const meeting = await getMeeting(message.meetingId)
+      if (!meeting) throw new Error("Meeting not found")
+      if ((meeting.lite ?? []).length === 0) throw new Error("No diagnostics recorded for this meeting")
+      await downloadLiteLog(meeting)
+      return null
+    }
     case "deleteMeeting": {
       await deleteMeeting(message.meetingId)
       return null
@@ -133,7 +141,10 @@ async function dropRelayToken(tabId: number): Promise<void> {
 // meeting marked private never gets one — the privacy flag is honored on every
 // export path, not just the .md.
 async function deliver(r: FinalizeResult): Promise<void> {
-  if (r.meeting) {
+  // A capture failure is kept in history for its diagnostics but has no
+  // transcript behind it; writing one would put an empty file in the user's
+  // Downloads and imply a recording that never happened.
+  if (r.meeting && !isCaptureFailure(r.meeting)) {
     await downloadMeeting(r.meeting)
     await clearPendingExport(r.meeting.id)
   }
