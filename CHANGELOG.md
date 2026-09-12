@@ -15,6 +15,23 @@ All notable changes to Plática Notes, newest first.
   carrying captions it is picked up there and then, so the next rename costs
   nobody a meeting.
 
+- **Every meeting now keeps a diagnostic log you can hand over, and it holds
+  nothing anyone said.** When capture goes wrong, the log that would explain it
+  was the one nobody had switched on: the full debug log records the meeting
+  verbatim, so it is off by default and absent exactly when it is needed. Each
+  meeting now also keeps a much smaller record of what capture *did* - the
+  channels it saw, whether the subscription went out, how many captions arrived,
+  and the shape of the data Google sent, with every word, name and chat line left
+  out. `Diagnostics` on the history page saves it as a file. It is kept for
+  private meetings too, because there is nothing in it for the privacy flag to
+  protect.
+
+- **A meeting that recorded nothing no longer disappears.** If a call ran with
+  other people in it and not one word was captured, it used to vanish at the end:
+  no file, no history entry, nothing to look at afterwards. It now stays in the
+  history list, marked `Nothing captured`, with its diagnostic log attached. It
+  offers no transcript download, because there is no transcript behind it.
+
 - **A meeting that records nothing now says so while you are still in it.** The
   extension warned you when it had failed to ask Meet for captions, but not when
   it had asked and no captions ever came back, which is exactly what the channel

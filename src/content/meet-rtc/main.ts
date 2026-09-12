@@ -15,13 +15,15 @@ import {
   decodeRosterLeave,
   ROSTER_STATE_LEFT,
   decodeCaptions,
+  frameShape,
   readNestedOp,
   readNestedSeq,
   toBytes,
 } from "./proto"
 import type { Transcript } from "./proto"
 import { carriesCaptions, isCaptionsLabel, isUsableCaption } from "./channels"
-import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "./bridge"
+import { toLiteEvent } from "../../shared/lite-log"
+import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT, RTC_LITE_EVENT } from "./bridge"
 import { adoptPeerConnection } from "./adopt"
 import { emptyFunnel } from "./funnel"
 import type { RtcConfig, RtcEvent } from "./bridge"
@@ -81,7 +83,27 @@ function dispatchDebug(detail: string): void {
   }
 }
 
+function dispatchLite(event: Record<string, unknown>): void {
+  try {
+    const lite = toLiteEvent(event)
+    if (!lite) return
+    document.dispatchEvent(
+      new CustomEvent(RTC_LITE_EVENT, {
+        detail: JSON.stringify({ ...lite, t: new Date().toISOString(), ctx: "rtc" }),
+      }),
+    )
+  } catch {
+    /* a diagnostics failure must never affect capture */
+  }
+}
+
 function record(event: Record<string, unknown>): void {
+  // The lite trail goes out first and unconditionally: it is the one a meeting
+  // keeps whether or not anybody turned the debug log on, and the filter has
+  // already removed everything that would make dispatching it by default a
+  // question. toLiteEvent returns null for the hot path (captions, chat), so the
+  // cost here is one set lookup per caption revision.
+  dispatchLite(event)
   // Read debugEnabled at emit time — config can flip it mid-meeting. Common
   // case (debug off, config already seen) drops everything before any work,
   // including the JSON.stringify below: nothing reaches the debug stream or the
@@ -126,6 +148,26 @@ function log(...args: unknown[]): void {
 // live data.
 function toHex(u: Uint8Array, max = 160): string {
   return [...u.slice(0, max)].map((b) => b.toString(16).padStart(2, "0")).join("")
+}
+
+// How many frames of each channel get their structure recorded. A schema change
+// shows up in the first frame; the rest would be the same shape repeated, so the
+// budget is about keeping the lite log small rather than about cost.
+const SHAPE_FRAMES = 8
+const shapeBudget = new Map<string, number>()
+
+// Record one frame's protobuf structure, sizes only, never values. This is what
+// makes a format change visible after the fact in a log that holds no content,
+// so it is NOT gated on the debug setting - it is the lite log's whole substance.
+function recordFrameShape(label: string, bytes: Uint8Array): void {
+  const left = shapeBudget.get(label) ?? SHAPE_FRAMES
+  if (left <= 0) return
+  shapeBudget.set(label, left - 1)
+  try {
+    record({ phase: "frame-shape", label, bytes: bytes.length, shape: frameShape(bytes) })
+  } catch {
+    /* diagnostics must never affect capture */
+  }
 }
 
 // ---------- cross-world event dispatch ----------
@@ -571,6 +613,7 @@ function attachUnknownChannel(ch: RTCDataChannel): void {
           consumeCaptions(decodeCaptions(bytes))
           return
         }
+        recordFrameShape(ch.label, bytes)
         if (debugEnabled) {
           record({ phase: "channel-raw", label: ch.label, bytes: bytes.length, hex: toHex(bytes, bytes.length) })
         }
@@ -612,6 +655,7 @@ function attachConsumer(ch: RTCDataChannel, consume: (bytes: Uint8Array) => void
     queue = queue.then(async () => {
       try {
         const bytes = await toBytes(data)
+        recordFrameShape(ch.label, bytes)
         // Wire-bytes diagnostics for channels whose decode is not yet proven on
         // live data (collections/roster, meet_messages/chat, any other). Use the
         // gzip-normalized bytes so the hex is the actual protobuf. Debug-gated

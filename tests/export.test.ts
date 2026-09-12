@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { makeChromeMock, type ChromeMock } from "./helpers/chrome-mock"
-import { downloadDebugLog, downloadMeeting } from "../src/background/export"
+import { downloadDebugLog, downloadLiteLog, downloadMeeting } from "../src/background/export"
 import type { DebugEvent, Meeting } from "../src/shared/types"
 
 function meeting(over: Partial<Meeting> = {}): Meeting {
@@ -128,5 +128,33 @@ describe("downloadDebugLog", () => {
   it("writes nothing for an empty event array", async () => {
     await downloadDebugLog({ title: "T", startedAt: "2026-06-18T10:00:00.000Z" }, [])
     expect(chrome._downloads).toHaveLength(0)
+  })
+})
+
+describe("downloadLiteLog", () => {
+  const lite: DebugEvent[] = [{ t: "2026-06-18T10:00:00.000Z", ctx: "rtc", phase: "funnel", wire: 0 }]
+
+  it("names the file so nobody confuses it with the log that holds the meeting", async () => {
+    await downloadLiteLog(meeting({ lite }))
+    expect(chrome._downloads[0].filename.endsWith(".diagnostics.jsonl")).toBe(true)
+  })
+
+  it("writes it for a PRIVATE meeting too, which the full debug log never is", async () => {
+    // The privacy flag protects content, and there is none in this file.
+    await downloadLiteLog(meeting({ lite, isPrivate: true }))
+    expect(chrome._downloads.length).toBe(1)
+    expect(chrome._downloads[0].filename.startsWith("meetings/platica-notes-logs/")).toBe(true)
+  })
+
+  it("writes nothing when the meeting recorded no diagnostics", async () => {
+    await downloadLiteLog(meeting({ lite: [] }))
+    await downloadLiteLog(meeting())
+    expect(chrome._downloads.length).toBe(0)
+  })
+
+  it("writes one JSON object per line, exactly what was collected", async () => {
+    await downloadLiteLog(meeting({ lite }))
+    const body = decodeURIComponent(chrome._downloads[0].url.split(",")[1])
+    expect(JSON.parse(body)).toEqual(lite[0])
   })
 })

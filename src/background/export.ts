@@ -1,6 +1,6 @@
 import { getSettings } from "../shared/storage"
 import { DEFAULT_SETTINGS, type DebugEvent, type Meeting } from "../shared/types"
-import { debugLogFileName, formatDebugLog, formatMeetingText, meetingFileName, monthFolder, sanitizeFolder } from "./format"
+import { debugLogFileName, formatDebugLog, formatMeetingText, liteLogFileName, meetingFileName, monthFolder, sanitizeFolder } from "./format"
 import { type ConflictAction, filenameGuard } from "./filename-guard"
 import { meetingFolderFor } from "../shared/paths"
 
@@ -37,6 +37,24 @@ export async function downloadMeeting(meeting: Meeting): Promise<void> {
     `${meetingFolderFor(settings, meeting)}/${meetingFileName(meeting)}`,
     (meeting.visits?.length ?? 0) > 1 ? "overwrite" : "uniquify",
   )
+}
+
+/**
+ * Write the content-free diagnostic log for one meeting.
+ *
+ * Unlike the debug log this is not gated on a setting and not withheld from
+ * private meetings: it carries no transcript, no chat and no participant names,
+ * so there is nothing in it that the privacy flag exists to protect. It is only
+ * ever written when the user asks for it from the history page - keeping it is
+ * automatic, producing a file from it is not.
+ */
+export async function downloadLiteLog(meeting: Meeting): Promise<void> {
+  const events = meeting.lite ?? []
+  if (events.length === 0) return // never write empty files
+  const url = "data:application/octet-stream;charset=utf-8," + encodeURIComponent(formatDebugLog(events))
+  const settings = await getSettings()
+  const folder = sanitizeFolder(settings.folderDebug, DEFAULT_SETTINGS.folderDebug)
+  await startDownload(url, `${folder}/${monthFolder(meeting.startedAt)}/${liteLogFileName(meeting)}`, "uniquify")
 }
 
 export async function downloadDebugLog(

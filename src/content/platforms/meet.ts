@@ -1,4 +1,5 @@
 import { sendToBackground } from "../../shared/messages"
+import { toLiteEvent } from "../../shared/lite-log"
 import type { BackgroundResponse } from "../../shared/messages"
 import { getLocal, getSettings, saveSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
 import { DEFAULT_SETTINGS } from "../../shared/types"
@@ -7,7 +8,7 @@ import { SessionWriter } from "../core/persistence"
 import { isBookmarkChord, isHideUiChord } from "../core/hotkeys"
 import { isUiHidden, mountLanguagePrompt, mountMeetingControls, pulseActivity, setUiHidden, showPersistentNotice, showToast } from "../core/ui"
 import { mountTranscriptPanel } from "../core/transcript-panel"
-import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT } from "../meet-rtc/bridge"
+import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT, RTC_LITE_EVENT } from "../meet-rtc/bridge"
 import type { RtcCaptionEvent, RtcChatEvent, RtcEvent } from "../meet-rtc/bridge"
 import { RtcFeed } from "../meet-rtc/feed"
 import { parseOwnChatMessage } from "../chatgoogle/parse"
@@ -153,12 +154,25 @@ let debugConfigSeen = false
 const debugBacklog: DebugEvent[] = []
 const DEBUG_BACKLOG_MAX = 500
 
+// The lite trail. Same shape as the debug buffer above and deliberately separate
+// from it, because this one is collected whether or not debug is switched on and
+// is kept on every meeting, private ones included. It needs no backlog: nothing
+// about it waits on settings, so it starts collecting at document_start.
+const liteEvents: DebugEvent[] = []
+let onLiteEvent: (() => void) | null = null
+// Smaller cap than the debug buffer: this is stored for EVERY meeting in history
+// rather than for the few where someone turned logging on. A meeting's worth of
+// lifecycle events and the first frames of each channel sits far below it; the
+// cap is there so a pathological reconnect loop cannot grow history without end.
+const LITE_EVENTS_MAX = 2000
+
 // Adapter's own lifecycle events: to the console and the debug buffer only when
 // debug is enabled (quiet by default; genuine errors use console.error directly).
 // Structured detail rides in `extra`.
 function dlog(msg: string, extra?: Record<string, unknown>): void {
   // Spread caller data first so framing fields (t, ctx, msg) always win on collision.
   const event: DebugEvent = { ...(extra ?? {}), t: new Date().toISOString(), ctx: "adapter", msg }
+  collectLite(event)
   if (!debugConfigSeen) {
     debugBacklog.push(event)
     if (debugBacklog.length > DEBUG_BACKLOG_MAX) debugBacklog.shift()
@@ -168,6 +182,19 @@ function dlog(msg: string, extra?: Record<string, unknown>): void {
   console.log("[platica-notes]", msg, extra ?? "")
   debugEvents.push(event)
   onDebugEvent?.()
+}
+
+// Put one event through the content-free filter and keep what survives. Called
+// for the adapter's own events and for every event the MAIN world dispatches.
+function collectLite(event: DebugEvent): void {
+  try {
+    const lite = toLiteEvent(event)
+    if (!lite) return
+    liteEvents.push({ ...lite, t: event.t, ctx: event.ctx } as DebugEvent)
+    onLiteEvent?.()
+  } catch {
+    /* a diagnostics failure must never affect capture */
+  }
 }
 
 /** Settings have arrived: keep the retained adapter events, or drop them. */
@@ -225,6 +252,18 @@ async function main(): Promise<void> {
       onDebugEvent?.()
     } catch {
       /* a debug-collection failure must never affect capture */
+    }
+  })
+
+  document.addEventListener(RTC_LITE_EVENT, (event) => {
+    try {
+      const detail = (event as CustomEvent).detail
+      if (typeof detail !== "string") return
+      // Already filtered in the MAIN world; re-filtered here so the contract is
+      // enforced on the side that persists it, not only on the side that sends.
+      collectLite(JSON.parse(detail) as DebugEvent)
+    } catch {
+      /* a diagnostics failure must never affect capture */
     }
   })
 
@@ -404,6 +443,7 @@ async function runMeeting(tabId: number): Promise<void> {
   // below puts the service facts INSIDE the window instead of hoping an earlier
   // event survives.
   const debugStart = debugEvents.length
+  const liteStart = liteEvents.length
   dlog("meeting header", {
     extVersion: typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev",
     extCommit: typeof __BUILD_COMMIT__ === "string" ? __BUILD_COMMIT__ : "dev",
@@ -440,6 +480,7 @@ async function runMeeting(tabId: number): Promise<void> {
   const prefixChat = resumed ? resumed.chat : []
   // Debug from a resumed snapshot is prepended, mirroring transcript/chat.
   const prefixDebug = resumed?.debug ?? []
+  const prefixLite = resumed?.lite ?? []
   // Attendees from a resumed snapshot seed the set (?? [] tolerates pre-feature snapshots).
   const prefixParticipants = resumed?.participants ?? []
   const prefixRawVersions = resumed?.rawVersions ?? []
@@ -537,6 +578,14 @@ async function runMeeting(tabId: number): Promise<void> {
   // immediately. The closure self-gates on debugEnabled — no cost when debug is
   // off for the entire meeting (session.debug stays undefined), and ON→OFF
   // freezes the trail because the guard returns before writing.
+  // No gate, unlike onDebugEvent below: the lite trail is what a meeting keeps by
+  // default, so the only thing bounding it is the cap.
+  onLiteEvent = () => {
+    session.lite = [...prefixLite, ...liteEvents.slice(liteStart)].slice(-LITE_EVENTS_MAX)
+    writer.requestWrite()
+  }
+  onLiteEvent()
+
   onDebugEvent = () => {
     if (!debugEnabled) return
     // Cap the serialized slice to DEBUG_EVENTS_MAX so chrome.storage write size
@@ -628,7 +677,9 @@ async function runMeeting(tabId: number): Promise<void> {
         : "Plática Notes has not captured any speech in this meeting. Either the spoken " +
           "language does not match the one set in the extension, or Google Meet has " +
           "changed something and this version cannot read its captions. Chat and notes " +
-          "are still being saved.",
+          "are still being saved. To report it, send the Diagnostics file from the " +
+          "extension's history page: it records what capture did and holds none of " +
+          "what was said.",
     )
   }, CAPTURE_HEALTH_TICK_MS)
 
@@ -916,6 +967,7 @@ async function runMeeting(tabId: number): Promise<void> {
     addNoteToActive = null
     onMediaState = null
     onDebugEvent = null
+    onLiteEvent = null
     controls.unmount()
     panel.unmount()
     languagePrompt?.unmount()
@@ -931,6 +983,7 @@ async function runMeeting(tabId: number): Promise<void> {
     session.participantEvents = [...participantEvents]
     // Capture the complete debug trail (including this "meeting ended") into the
     // final snapshot. Stays undefined when disabled — no behavioural change.
+    session.lite = [...prefixLite, ...liteEvents.slice(liteStart)].slice(-LITE_EVENTS_MAX)
     if (debugEnabled) session.debug = [...prefixDebug, ...debugEvents.slice(debugStart)]
     await writer.writeNow()
     // Seal the writer: any late event/timer must not re-create the session key
