@@ -109,6 +109,14 @@ export function collapseVersions(versions: string[]): string[] {
 export interface FormatOptions {
   /** Emit caption alternatives (`> ↳ _alt:_ …`) under speech turns. Default off. */
   alternatives?: boolean
+  /**
+   * ISO instant this file was written at while the meeting was still running.
+   * Set only by the mid-meeting snapshot: it swaps `ended` for `status` plus
+   * `snapshot_at` in the front matter and puts an incomplete notice at the top of
+   * the body. Absent on every finished file, which is what lets a reader tell one
+   * from the other.
+   */
+  snapshotAt?: string
 }
 
 export function formatMeetingText(meeting: Meeting, opts: FormatOptions = {}): string {
@@ -118,7 +126,16 @@ export function formatMeetingText(meeting: Meeting, opts: FormatOptions = {}): s
   if (meeting.language) fm.push(`language: ${yamlScalar(meeting.language)}`)
   fm.push(`timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`)
   fm.push(`started: ${isoLocal(meeting.startedAt)}`)
-  fm.push(`ended: ${isoLocal(meeting.endedAt)}`)
+  // A still-running meeting has no end. Putting the snapshot instant in `ended`
+  // would read as one, so the key is absent and `status` says why: a parser that
+  // only knows the finished shape sees a missing `ended` and stops, rather than
+  // quietly treating a first-ten-minutes file as the whole meeting.
+  if (opts.snapshotAt) {
+    fm.push("status: in-progress")
+    fm.push(`snapshot_at: ${isoLocal(opts.snapshotAt)}`)
+  } else {
+    fm.push(`ended: ${isoLocal(meeting.endedAt)}`)
+  }
   if (meeting.recorder) fm.push(`recorder: ${yamlScalar(meeting.recorder)}`)
   if (meeting.participants?.length) {
     fm.push("participants:")
@@ -145,6 +162,19 @@ export function formatMeetingText(meeting: Meeting, opts: FormatOptions = {}): s
   }
 
   const lines: string[] = [...fm, "", `# ${inlineText(meeting.title)}`, ""]
+  // The same disclaimer again, in prose, because the front matter above is read by
+  // parsers and this is what a person (or an assistant handed the file) actually
+  // reads. Built only from our own counters and timestamps, so it carries no
+  // untrusted text and cannot be forged from inside a caption.
+  if (opts.snapshotAt) {
+    lines.push(
+      `> **INCOMPLETE. This meeting is still running.** Captured up to ` +
+        `${isoLocal(opts.snapshotAt)}, ${elapsedLabel(meeting.startedAt, opts.snapshotAt)} in, ` +
+        `${meeting.transcript.length} turns so far. This file is overwritten with the ` +
+        `full transcript when the meeting ends.`,
+      "",
+    )
+  }
   // Visit separators: for a merged meeting, each visit after the first has a
   // rejoin anchor. Before the first timeline entry at/after an anchor, emit a
   // heading (a `while` drains any anchors a single entry jumps past). Built only

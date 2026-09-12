@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { isBookmarkChord, isHideUiChord } from "../src/content/core/hotkeys"
+import { isBookmarkChord, isHideUiChord, isSnapshotChord } from "../src/content/core/hotkeys"
 
 const chord = (over: Partial<Parameters<typeof isHideUiChord>[0]> = {}) => ({
   altKey: true,
@@ -45,5 +45,25 @@ describe("isBookmarkChord", () => {
   it("ignores it without both Alt and Shift, or with Ctrl/Meta", () => {
     expect(isBookmarkChord(chord({ code: "KeyB", altKey: false }))).toBe(false)
     expect(isBookmarkChord(chord({ code: "KeyB", ctrlKey: true }))).toBe(false)
+  })
+})
+
+describe("isSnapshotChord", () => {
+  it("matches Alt+Shift+S", () => {
+    expect(isSnapshotChord(chord({ code: "KeyS" }))).toBe(true)
+  })
+
+  it("does not collide with the other in-meeting chords", () => {
+    expect(isSnapshotChord(chord({ code: "KeyB" }))).toBe(false)
+    expect(isSnapshotChord(chord({ code: "KeyH" }))).toBe(false)
+    expect(isHideUiChord(chord({ code: "KeyS" }))).toBe(false)
+    expect(isBookmarkChord(chord({ code: "KeyS" }))).toBe(false)
+  })
+
+  it("ignores it without both Alt and Shift, or with Ctrl/Meta — Ctrl+S is the browser's", () => {
+    expect(isSnapshotChord(chord({ code: "KeyS", altKey: false }))).toBe(false)
+    expect(isSnapshotChord(chord({ code: "KeyS", shiftKey: false }))).toBe(false)
+    expect(isSnapshotChord(chord({ code: "KeyS", ctrlKey: true }))).toBe(false)
+    expect(isSnapshotChord(chord({ code: "KeyS", metaKey: true }))).toBe(false)
   })
 })

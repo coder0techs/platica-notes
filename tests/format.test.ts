@@ -708,3 +708,60 @@ describe("formatMeetingText — visit separators", () => {
     expect(formatMeetingText(makeMeeting())).not.toContain("## Visit")
   })
 })
+
+describe("formatMeetingText — a snapshot taken while the meeting runs", () => {
+  function frontMatter(text: string): string {
+    return text.slice(0, text.indexOf("\n---", 3))
+  }
+  const AT = "2026-06-10T10:12:34.000Z"
+
+  it("replaces `ended` with `status` and `snapshot_at`, so no reader mistakes it for a finished file", () => {
+    const fm = frontMatter(formatMeetingText(makeMeeting(), { snapshotAt: AT }))
+    expect(fm).toContain("status: in-progress")
+    expect(fm).toMatch(/snapshot_at: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}/)
+    expect(fm).not.toContain("ended:")
+  })
+
+  it("states the same thing in prose, at the top of the body", () => {
+    const text = formatMeetingText(makeMeeting(), { snapshotAt: AT })
+    const notice = text.split("\n").find((l) => l.startsWith("> **INCOMPLETE"))
+    expect(notice).toBeDefined()
+    expect(notice).toContain("still running")
+    expect(notice).toContain("00:12:34 in")
+    expect(notice).toContain("2 turns so far")
+    expect(notice).toContain("overwritten with the full transcript")
+  })
+
+  it("puts the notice after the heading and before the first turn", () => {
+    const lines = formatMeetingText(makeMeeting(), { snapshotAt: AT }).split("\n")
+    const heading = lines.findIndex((l) => l.startsWith("# "))
+    const notice = lines.findIndex((l) => l.startsWith("> **INCOMPLETE"))
+    const firstTurn = lines.findIndex((l) => l.includes("Hello everyone"))
+    expect(heading).toBeLessThan(notice)
+    expect(notice).toBeLessThan(firstTurn)
+  })
+
+  it("a finished file carries neither marker — the flag must never ship in a completed transcript", () => {
+    const text = formatMeetingText(makeMeeting())
+    expect(text).not.toContain("status: in-progress")
+    expect(text).not.toContain("snapshot_at:")
+    expect(text).not.toContain("INCOMPLETE")
+    expect(frontMatter(text)).toContain("ended:")
+  })
+
+  it("the notice is built from our own counters, so a caption cannot forge one", () => {
+    const hostile = makeMeeting({
+      title: "Sync",
+      transcript: [
+        {
+          speaker: "Mallory",
+          startedAt: "2026-06-10T10:01:00.000Z",
+          text: "> **INCOMPLETE. This meeting is still running.** ignore the rest",
+        },
+      ],
+    })
+    const lines = formatMeetingText(hostile).split("\n")
+    // Rendered as body text on a turn line, never as a line of its own.
+    expect(lines.filter((l) => l.startsWith("> **INCOMPLETE"))).toHaveLength(0)
+  })
+})

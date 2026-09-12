@@ -1,8 +1,10 @@
 import type { ActiveSession, DebugEvent, Meeting } from "../shared/types"
 import { isCaptureFailure } from "../shared/types"
-import { ACTIVE_TABS_KEY, getLocal, getSettings, removeLocal, sessionKey, setLocal, tabIdFromSessionKey } from "../shared/storage"
+import { ACTIVE_TABS_KEY, getLocal, getSettings, removeLocal, sessionKey, setLocal, snapshotKey, tabIdFromSessionKey } from "../shared/storage"
 import { addMeeting, addPendingExport, commitFinalizedMeeting, enqueue } from "./store"
 import { MERGE_GAP_MS } from "./merge"
+import type { SnapshotState } from "./export"
+import { meetingUrlOf, sessionToMeeting } from "./snapshot"
 
 const finalizing = new Set<number>()
 
@@ -15,6 +17,11 @@ export interface FinalizeResult {
   // up with its .md, and it is needed even when `meeting` is null.
   meetingUrl?: string
   isPrivate: boolean // gates the debug-log download — private meetings never get one
+  /**
+   * What a mid-meeting save already wrote for this session, so the final write
+   * replaces those files instead of landing beside them.
+   */
+  written?: SnapshotState
 }
 
 export function trackTab(tabId: number): Promise<void> {
@@ -44,6 +51,7 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
       await untrackTab(tabId)
       return null
     }
+    const written = await getLocal<SnapshotState>(snapshotKey(tabId))
     const debug = session.debug ?? []
     // A session is "empty" (no Meeting saved) only when nothing was captured AND
     // the recorder dropped no notes/bookmarks — notes alone are worth keeping.
@@ -60,8 +68,7 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
         isPrivate: session.isPrivate,
       })
     }
-    const meetingUrl =
-      session.platform === "meet" && session.path ? `https://meet.google.com${session.path}` : undefined
+    const meetingUrl = meetingUrlOf(session)
     const settings = await getSettings()
     // A meeting that captured NOTHING while other people were in it is a capture
     // failure, not a stray tab, and it used to vanish without trace: no Meeting,
@@ -73,37 +80,25 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
     const failed = empty && session.participants.length >= 2
     if (empty && !failed) {
       // Nothing captured and nobody else there: nothing happened. History stays clean.
-      await removeLocal(sessionKey(tabId))
+      await removeLocal([sessionKey(tabId), snapshotKey(tabId)])
       await untrackTab(tabId)
-      return { meeting: null, debug, title: session.title, startedAt: session.startedAt, meetingUrl, isPrivate: session.isPrivate }
+      return { meeting: null, debug, title: session.title, startedAt: session.startedAt, meetingUrl, isPrivate: session.isPrivate, written }
     }
-    const meeting: Meeting = {
+    // Built through the same helper the mid-meeting snapshot uses, so the file a
+    // reader already has on disk does not change shape when the meeting ends.
+    const meeting: Meeting = sessionToMeeting(session, {
       id: crypto.randomUUID(),
-      platform: session.platform,
-      title: session.title,
-      startedAt: session.startedAt,
       endedAt: new Date().toISOString(),
-      isPrivate: session.isPrivate,
-      transcript: session.transcript,
-      chat: session.chat,
-      participants: session.participants ?? [],
-      rawVersions: session.rawVersions ?? [],
-      notes: session.notes ?? [],
-      participantEvents: session.participantEvents ?? [],
-      recorder: session.selfName,
-      lite: session.lite ?? [],
-      language: session.captionLanguage ?? settings.captionLanguage,
-      meetingUrl,
-      chatUrl: session.chatUrl,
-    }
+      fallbackLanguage: settings.captionLanguage,
+    })
     // A failed meeting is appended, never merged and never marked for export:
     // folding it into a visit that worked would hide the very failure the row
     // exists to show, and there is no transcript to write a file from.
     if (failed) {
       await addMeeting(meeting, settings.retentionLimit)
-      await removeLocal(sessionKey(tabId))
+      await removeLocal([sessionKey(tabId), snapshotKey(tabId)])
       await untrackTab(tabId)
-      return { meeting, debug, title: session.title, startedAt: session.startedAt, meetingUrl, isPrivate: session.isPrivate }
+      return { meeting, debug, title: session.title, startedAt: session.startedAt, meetingUrl, isPrivate: session.isPrivate, written }
     }
     // Commit to history — folding into a prior visit of the same meeting when the
     // user opted in (mergeRejoins). `stored` carries the merge target's identity
@@ -116,13 +111,13 @@ export async function finalizeSession(tabId: number): Promise<FinalizeResult | n
     // Mark it for export BEFORE removing the session key / returning, so a crash
     // before the caller's download still leaves a trail for SW-start recovery.
     await addPendingExport(stored.id)
-    await removeLocal(sessionKey(tabId))
+    await removeLocal([sessionKey(tabId), snapshotKey(tabId)])
     // Untrack only after the session key is gone — a failed finalization must
     // keep the tab tracked so the update-deferral guard still sees it.
     await untrackTab(tabId)
     // The .md is `stored` (possibly merged); title/startedAt stay the incoming
     // visit's so the per-visit debug log keeps its own name (logs are not merged).
-    return { meeting: stored, debug, title: session.title, startedAt: session.startedAt, meetingUrl, isPrivate: session.isPrivate }
+    return { meeting: stored, debug, title: session.title, startedAt: session.startedAt, meetingUrl, isPrivate: session.isPrivate, written }
   } finally {
     finalizing.delete(tabId)
   }

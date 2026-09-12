@@ -134,6 +134,14 @@ const CSS = `
   transition: background .12s ease;
 }
 .pn-row:hover { background: rgba(255, 255, 255, .08); }
+/* A meeting with nothing captured yet has nothing to save. The row says so and
+   stays put rather than disappearing: a control that comes and goes as a meeting
+   runs is a control nobody learns. */
+.pn-row:disabled { color: var(--pn-text-2); cursor: default; }
+.pn-row:disabled:hover { background: transparent; }
+/* Separates the one row that writes a file from the rows that configure the
+   meeting or destroy what it captured. */
+.pn-menu-sep { height: 1px; margin: 4px 2px; background: var(--pn-line); }
 .pn-row-end { margin-left: auto; color: var(--pn-text-2); font-size: 12px; }
 .pn-row-state { margin-left: auto; font: 500 11px/1 var(--pn-mono); color: var(--pn-text-2); }
 .pn-row.is-on .pn-row-state { color: var(--pn-violet); }

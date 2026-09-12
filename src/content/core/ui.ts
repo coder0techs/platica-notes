@@ -39,6 +39,7 @@ export function isUiHidden(): boolean {
 const isMac = /Mac|iPhone|iPad/i.test(navigator.platform) || /Mac/i.test(navigator.userAgent)
 const HIDE_CHORD = isMac ? "⌥⇧H" : "Alt+Shift+H"
 const BOOKMARK_CHORD = isMac ? "⌥⇧B" : "Alt+Shift+B"
+const SNAPSHOT_CHORD = isMac ? "⌥⇧S" : "Alt+Shift+S"
 
 /** Brief top-bar flash confirming a storage write happened. */
 export function pulseActivity(): void {
@@ -141,6 +142,14 @@ export function mountMeetingControls(opts: {
   onPrivateChange: (isPrivate: boolean) => void
   onRecordingChange: (recording: boolean) => void
   onToggleTranscript: () => void
+  /** Write the transcript so far to disk, without ending the meeting. */
+  onSnapshot: () => void
+  /**
+   * Turns captured so far, read when the menu opens rather than pushed on every
+   * caption: the number only has to be right at the moment it is looked at, and a
+   * getter keeps the seven places that update the panel out of this.
+   */
+  snapshotCount: () => number
   onPurge: () => void
 }): { unmount: () => void; setTranscriptActive: (active: boolean) => void; setLanguage: (language: string) => void } {
   const container = document.createElement("div")
@@ -384,6 +393,38 @@ export function mountMeetingControls(opts: {
   })
   disarmWipe()
 
+  // --- save row: the only row here that produces a file. Everything else in this
+  // menu configures the meeting or destroys what was captured, which is why this
+  // one sits at the top, and as far from the wipe row as the menu allows. ---
+  const saveRow = document.createElement("button")
+  saveRow.type = "button"
+  saveRow.className = "pn-row"
+  saveRow.dataset.pn = "snapshot"
+  saveRow.title = "Write the transcript so far to disk. The meeting keeps recording."
+  const saveGlyph = document.createElement("span")
+  saveGlyph.textContent = "⬇️"
+  const saveLabel = document.createElement("span")
+  saveLabel.textContent = "Save the file now"
+  const saveState = document.createElement("span")
+  saveState.className = "pn-row-state"
+  saveRow.append(saveGlyph, saveLabel, saveState)
+  // Read when the menu opens: an empty meeting has nothing to write, and a file
+  // written from one would sit in Downloads promising an overwrite that never
+  // comes. Better to show the row spent than to explain the refusal afterwards.
+  const renderSave = (): void => {
+    const turns = opts.snapshotCount()
+    saveState.textContent = turns > 0 ? `${turns} turns` : "nothing yet"
+    saveRow.disabled = turns === 0
+  }
+  saveRow.addEventListener("click", () => {
+    opts.onSnapshot()
+    setMenu(false)
+  })
+  renderSave()
+
+  const saveSep = document.createElement("div")
+  saveSep.className = "pn-menu-sep"
+
   // --- overflow menu ---------------------------------------------------------
   // The bar sits on top of somebody's meeting, so every pill has to earn its
   // place. Two things do: whether it is transcribing, and in which language —
@@ -415,9 +456,13 @@ export function mountMeetingControls(opts: {
     unit.append(cap, label)
     return unit
   }
-  foot.append(chord(BOOKMARK_CHORD, "marks a moment"), chord(HIDE_CHORD, "hides the controls"))
+  foot.append(
+    chord(SNAPSHOT_CHORD, "saves the file so far"),
+    chord(BOOKMARK_CHORD, "marks a moment"),
+    chord(HIDE_CHORD, "hides the controls"),
+  )
 
-  menu.append(langRow, transcriptRow, privacyRow, wipeRow, foot)
+  menu.append(saveRow, saveSep, langRow, transcriptRow, privacyRow, wipeRow, foot)
 
   const moreButton = document.createElement("button")
   moreButton.type = "button"
@@ -432,7 +477,10 @@ export function mountMeetingControls(opts: {
   // Arrow keys walk the menu, so it is usable without a mouse. The language row's
   // focusable element is its transparent <select>, which is also what opens the
   // list, so it takes that row's place in the sequence.
-  const menuItems = (): HTMLElement[] => [select, transcriptRow, privacyRow, wipeRow]
+  const menuItems = (): HTMLElement[] =>
+    [saveRow, select, transcriptRow, privacyRow, wipeRow].filter(
+      (el) => !(el as HTMLButtonElement).disabled,
+    )
 
   let menuOpen = false
   function setMenu(open: boolean, focusFirst = false): void {
@@ -440,6 +488,8 @@ export function mountMeetingControls(opts: {
     menu.classList.toggle("is-open", open)
     moreButton.setAttribute("aria-expanded", String(open))
     if (!open) disarmWipe()
+    // The turn count is only true at the moment it is read.
+    if (open) renderSave()
     if (open && focusFirst) menuItems()[0]?.focus()
   }
   moreButton.addEventListener("click", (event) => {

@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { makeChromeMock, type ChromeMock } from "./helpers/chrome-mock"
-import { downloadDebugLog, downloadLiteLog, downloadMeeting } from "../src/background/export"
+import {
+  downloadDebugLog,
+  downloadDebugSnapshot,
+  downloadLiteLog,
+  downloadMeeting,
+  downloadSnapshot,
+  eraseDownloadRows,
+} from "../src/background/export"
 import type { DebugEvent, Meeting } from "../src/shared/types"
 
 function meeting(over: Partial<Meeting> = {}): Meeting {
@@ -156,5 +163,94 @@ describe("downloadLiteLog", () => {
     await downloadLiteLog(meeting({ lite }))
     const body = decodeURIComponent(chrome._downloads[0].url.split(",")[1])
     expect(JSON.parse(body)).toEqual(lite[0])
+  })
+})
+
+describe("downloadSnapshot — saving mid-meeting", () => {
+  const AT = "2026-06-18T10:12:00.000Z"
+  const body = (url: string): string => decodeURIComponent(url.slice(url.indexOf(",") + 1))
+
+  it("writes to the very path the finished meeting will write to", async () => {
+    const m = meeting()
+    const { path } = await downloadSnapshot(m, AT)
+    chrome._downloads.length = 0
+    await downloadMeeting(m)
+    expect(chrome._downloads[0].filename).toBe(path)
+  })
+
+  it("carries the incomplete notice, which the finished file then replaces", async () => {
+    await downloadSnapshot(meeting(), AT)
+    expect(body(chrome._downloads[0].url)).toContain("status: in-progress")
+    expect(body(chrome._downloads[0].url)).toContain("INCOMPLETE")
+    chrome._downloads.length = 0
+    await downloadMeeting(meeting())
+    expect(body(chrome._downloads[0].url)).not.toContain("status: in-progress")
+    expect(body(chrome._downloads[0].url)).not.toContain("INCOMPLETE")
+  })
+
+  it("a private meeting saves into the private folder, never the public one", async () => {
+    await downloadSnapshot(meeting({ isPrivate: true }), AT)
+    expect(chrome._downloads[0].filename.startsWith("meetings/platica-notes-private/")).toBe(true)
+  })
+
+  it("the first save uniquifies, so it cannot clobber an unrelated file of the same name", async () => {
+    await downloadSnapshot(meeting(), AT)
+    expect(chrome._downloads[0].conflictAction).toBe("uniquify")
+  })
+
+  it("every later save replaces the file it already wrote", async () => {
+    const first = await downloadSnapshot(meeting(), AT)
+    await downloadSnapshot(meeting(), "2026-06-18T10:20:00.000Z", { transcript: first.path })
+    expect(chrome._downloads[1].conflictAction).toBe("overwrite")
+    expect(chrome._downloads[1].filename).toBe(first.path)
+  })
+
+  it("the finished transcript replaces the partial one instead of landing beside it", async () => {
+    const m = meeting()
+    const { path } = await downloadSnapshot(m, AT)
+    chrome._downloads.length = 0
+    await downloadMeeting(m, { transcript: path })
+    expect(chrome._downloads[0].filename).toBe(path)
+    expect(chrome._downloads[0].conflictAction).toBe("overwrite")
+  })
+
+  it("a meeting nothing was ever saved for still uniquifies at the end", async () => {
+    await downloadMeeting(meeting(), { transcript: "some/other/file.md" })
+    expect(chrome._downloads[0].conflictAction).toBe("uniquify")
+  })
+
+  it("tidies the download rows its own earlier saves left behind", async () => {
+    await downloadMeeting(meeting(), { rows: [7, 8] })
+    expect(chrome._erased).toEqual([7, 8])
+  })
+
+  it("erasing rows that are already gone is not an error", async () => {
+    await expect(eraseDownloadRows(undefined)).resolves.toBeUndefined()
+  })
+})
+
+describe("downloadDebugSnapshot", () => {
+  const meta = { title: "Sync test", startedAt: "2026-06-18T10:00:00.000Z" }
+  const events: DebugEvent[] = [{ t: "2026-06-18T10:00:00.000Z", ctx: "rtc", msg: "channel" }]
+
+  it("writes nothing when the debug log was never switched on", async () => {
+    expect(await downloadDebugSnapshot(meta, [])).toBeNull()
+    expect(chrome._downloads).toHaveLength(0)
+  })
+
+  it("replaces its own earlier dump rather than piling up numbered copies", async () => {
+    const first = await downloadDebugSnapshot(meta, events)
+    expect(first).not.toBeNull()
+    expect(chrome._downloads[0].conflictAction).toBe("uniquify")
+    await downloadDebugSnapshot(meta, events, { debug: first!.path })
+    expect(chrome._downloads[1].conflictAction).toBe("overwrite")
+  })
+
+  it("the finished debug log replaces the dump a mid-meeting save left", async () => {
+    const first = await downloadDebugSnapshot(meta, events)
+    chrome._downloads.length = 0
+    await downloadDebugLog(meta, events, { debug: first!.path })
+    expect(chrome._downloads[0].filename).toBe(first!.path)
+    expect(chrome._downloads[0].conflictAction).toBe("overwrite")
   })
 })
