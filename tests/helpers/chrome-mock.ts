@@ -23,6 +23,7 @@ export interface ChromeMock {
   }
   downloads: {
     download(options: { url: string; filename: string; conflictAction?: string }): Promise<number>
+    erase(query: { id: number }): Promise<number[]>
     onDeterminingFilename: {
       addListener(listener: DeterminerListener): void
     }
@@ -37,6 +38,8 @@ export interface ChromeMock {
   _downloads: Array<{ url: string; filename: string; conflictAction?: string }>
   /** Determiners registered via downloads.onDeterminingFilename, in order. */
   _determiners: DeterminerListener[]
+  /** Download ids passed to downloads.erase, in order. */
+  _erased: number[]
 }
 
 /** A downloads.onDeterminingFilename listener, as Chrome calls it. */
@@ -52,6 +55,7 @@ export function makeChromeMock(initialLocal: Record<string, unknown> = {}): Chro
   const transientTabs = new Set<number>()
   const downloads: Array<{ url: string; filename: string; conflictAction?: string }> = []
   const determiners: DeterminerListener[] = []
+  const erased: number[] = []
   let nextDownloadId = 1
 
   const get = async (key: string | string[] | Record<string, unknown> | null): Promise<Record<string, unknown>> => {
@@ -98,6 +102,10 @@ export function makeChromeMock(initialLocal: Record<string, unknown> = {}): Chro
         downloads.push(options)
         return nextDownloadId++
       },
+      erase: async ({ id }) => {
+        erased.push(id)
+        return [id]
+      },
       onDeterminingFilename: {
         addListener: (listener) => {
           determiners.push(listener)
@@ -111,5 +119,6 @@ export function makeChromeMock(initialLocal: Record<string, unknown> = {}): Chro
     _transientTabs: transientTabs,
     _downloads: downloads,
     _determiners: determiners,
+    _erased: erased,
   }
 }

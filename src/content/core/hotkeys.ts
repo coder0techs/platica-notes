@@ -24,3 +24,9 @@ export function isHideUiChord(e: KeyChord): boolean {
 export function isBookmarkChord(e: KeyChord): boolean {
   return e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === "KeyB"
 }
+
+/** Alt+Shift+S writes the transcript so far to disk without ending the meeting.
+ * Same modifier discipline as {@link isHideUiChord}. */
+export function isSnapshotChord(e: KeyChord): boolean {
+  return e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === "KeyS"
+}

@@ -40,6 +40,12 @@ export function hasActiveMeeting(activeSessionTabs: number[] | undefined): boole
 
 // One place owns the session-key format, so the builder and the orphan-recovery
 // parser can never drift (a silent drift would break crash recovery unnoticed).
+// Where the background records what a live session has already written to disk.
+// Deliberately NOT a field on the session: the content script rewrites the whole
+// session object about once a second, so anything the background put in there
+// would be gone by the next caption.
+export const snapshotKey = (tabId: number): string => `snapshot_${tabId}`
+
 export const SESSION_KEY_PREFIX = "session_"
 export const sessionKey = (tabId: number): string => `${SESSION_KEY_PREFIX}${tabId}`
 export function tabIdFromSessionKey(key: string): number | null {

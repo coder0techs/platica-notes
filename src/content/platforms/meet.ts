@@ -1,11 +1,11 @@
 import { isContextInvalidatedError, sendToBackground } from "../../shared/messages"
 import { toLiteEvent } from "../../shared/lite-log"
-import type { BackgroundResponse } from "../../shared/messages"
+import type { BackgroundResponse, SnapshotResult } from "../../shared/messages"
 import { getLocal, getSettings, saveSettings, sessionKey, setLocal, withDefaults } from "../../shared/storage"
 import { DEFAULT_SETTINGS } from "../../shared/types"
 import type { ActiveSession, DebugEvent, Note, ParticipantEvent, Settings } from "../../shared/types"
 import { SessionWriter } from "../core/persistence"
-import { isBookmarkChord, isHideUiChord } from "../core/hotkeys"
+import { isBookmarkChord, isHideUiChord, isSnapshotChord } from "../core/hotkeys"
 import { isUiHidden, mountLanguagePrompt, mountMeetingControls, pulseActivity, setUiHidden, showPersistentNotice, showToast } from "../core/ui"
 import { mountTranscriptPanel } from "../core/transcript-panel"
 import {
@@ -129,6 +129,9 @@ let onMediaState: ((openSessions: number) => void) | null = null
 // Set by runMeeting; appends a note/bookmark to the active meeting. Page-level so
 // the global bookmark hotkey can reach the running meeting. Null between meetings.
 let addNoteToActive: ((text: string) => void) | null = null
+// Write the transcript so far to disk, without ending the meeting. Null between
+// meetings, exactly like the note hook above.
+let snapshotActive: (() => void) | null = null
 // Set by runMeeting; records a name into the active meeting's attendee set. Fed by
 // roster device events and the self name. Meeting-scoped (not the page-level roster
 // map) so names never bleed from a previous meeting in the same tab.
@@ -882,6 +885,8 @@ async function runMeeting(tabId: number): Promise<void> {
     // the session, never persist to Settings — the next meeting starts from default.
     onLanguageChange: (language) => applyLanguage(language),
     onToggleTranscript: () => panel.toggle(),
+    onSnapshot: () => snapshotActive?.(),
+    snapshotCount: () => session.transcript.length,
   })
 
   const panel = mountTranscriptPanel({
@@ -969,6 +974,22 @@ async function runMeeting(tabId: number): Promise<void> {
     pulseActivity()
   }
   addNoteToActive = addNote
+
+  // Save what has been captured so far. The background does the deciding (where the
+  // file goes, whether it folds into an earlier visit of this meeting); this only
+  // reports the outcome, because a save that says nothing is a save the user has to
+  // go and verify in their Downloads folder.
+  async function saveSnapshot(): Promise<void> {
+    const response = await sendToBackground<SnapshotResult>({ kind: "snapshotMeeting" })
+    if (!response.ok) {
+      showToast(response.invalidated ? "Plática Notes was updated. Reload the page to save." : response.error)
+      return
+    }
+    // Chrome's own download bubble already says a file arrived. What it cannot say
+    // is how much of the meeting is in it, or that it is not the final copy.
+    showToast(`Saved ${response.data.turns} turns so far. Replaced when the meeting ends.`)
+  }
+  snapshotActive = () => void saveSnapshot()
 
   // Wipe everything captured in THIS meeting so far: the feed, the resumed prefixes,
   // and the notes/presence arrays. Persists the emptied session so a crash-resume or
@@ -1134,6 +1155,7 @@ async function runMeeting(tabId: number): Promise<void> {
     recordLeave = null
     refreshTranscript = null
     addNoteToActive = null
+    snapshotActive = null
     onMediaState = null
     onDebugEvent = null
     onLiteEvent = null
@@ -1225,12 +1247,17 @@ function watchHotkeys(): void {
     if (event.repeat) return
     const isHide = isHideUiChord(event)
     const isBookmark = isBookmarkChord(event)
-    if (!isHide && !isBookmark) return
+    const isSnapshot = isSnapshotChord(event)
+    if (!isHide && !isBookmark && !isSnapshot) return
     const target = event.target as HTMLElement | null
     if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return
     event.preventDefault()
     if (isHide) {
       void saveSettings({ hideUi: !isUiHidden() }).catch(swallowIfOrphaned)
+    } else if (isSnapshot) {
+      // Reachable with the on-screen controls hidden, which is the one case the
+      // menu row cannot cover.
+      snapshotActive?.()
     } else {
       addNoteToActive?.("")
     }

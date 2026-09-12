@@ -4,6 +4,22 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+- **You can now save the transcript without leaving the meeting.** Until now the
+  file only appeared once the call was over, so anything you wanted to do with
+  what had been said, hand it to an assistant, paste a decision into a ticket,
+  check who said what an hour ago, had to wait for the meeting to end. `Save the
+  file now` in the in-meeting menu, or `Alt+Shift+S`, writes it there and then.
+  It writes to the very file the finished meeting will write to, so there is
+  still one file per meeting and it only ever grows: save again later and it
+  picks up everything since, and when you leave, the complete transcript
+  replaces it. While the meeting is still running the file says so in its own
+  header, in a line no tool can miss, because a half-recorded meeting that reads
+  like a finished one is worse than no file at all. Rejoining a call you dropped
+  out of keeps writing to the same file rather than starting a second one. The
+  diagnostic log is saved alongside it when you have that switched on, and a
+  meeting marked private saves into your private folder, exactly as it does at
+  the end.
+
 - **Meetings are transcribed again for accounts Google moved to a new caption
   channel.** Google Meet serves its live captions over an internal channel, and in
   early September it began renaming that channel for some accounts and not others.

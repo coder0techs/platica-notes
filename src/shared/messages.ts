@@ -8,9 +8,24 @@ export type BackgroundRequest =
   | { kind: "registerRelayToken" }
   | { kind: "meetingStarted" }
   | { kind: "meetingEnded" }
+  // Write the transcript as it stands, without ending the meeting. The file goes
+  // to the path the finished meeting will go to, so the one already on disk keeps
+  // growing rather than being joined by a second, partial one.
+  // `tabId` is for the popup, which is not a tab and so has no sender.tab of its
+  // own; it is honoured only when the message did NOT come from a tab, so a content
+  // script can never reach into a meeting running in another one.
+  | { kind: "snapshotMeeting"; tabId?: number }
   | { kind: "downloadMeeting"; meetingId: string }
   | { kind: "downloadLiteLog"; meetingId: string }
   | { kind: "deleteMeeting"; meetingId: string }
+
+/** What a mid-meeting save wrote, for the notice that confirms it. */
+export interface SnapshotResult {
+  /** Turns in the file, counting a folded-in earlier visit of the same meeting. */
+  turns: number
+  /** Path of the .md, relative to the Downloads directory. */
+  path: string
+}
 
 export type BackgroundResponse<T = unknown> =
   | { ok: true; data: T }

@@ -1,7 +1,18 @@
-import type { BackgroundRequest, BackgroundResponse } from "../shared/messages"
-import { ACTIVE_TABS_KEY, getLocal, sessionKey, setLocal } from "../shared/storage"
+import type { BackgroundRequest, BackgroundResponse, SnapshotResult } from "../shared/messages"
+import { ACTIVE_TABS_KEY, getLocal, getSettings, sessionKey, setLocal, snapshotKey } from "../shared/storage"
 import { isCaptureFailure } from "../shared/types"
-import { downloadDebugLog, downloadLiteLog, downloadMeeting } from "./export"
+import type { ActiveSession } from "../shared/types"
+import {
+  downloadDebugLog,
+  downloadDebugSnapshot,
+  downloadLiteLog,
+  downloadMeeting,
+  downloadSnapshot,
+  eraseDownloadRows,
+  type SnapshotState,
+} from "./export"
+import { MERGE_GAP_MS } from "./merge"
+import { meetingUrlOf, resolveSnapshot, sessionToMeeting, snapshotDebugEvents } from "./snapshot"
 import { installFilenameGuard } from "./filename-guard"
 import { shouldOpenWelcome } from "./install"
 import {
@@ -13,7 +24,7 @@ import {
   type RelayTokens,
 } from "./relay"
 import { finalizeSession, recoverOrphanSessions, trackTab, type FinalizeResult } from "./sessions"
-import { clearPendingExport, deleteMeeting, enqueue, getMeeting, listPendingExports } from "./store"
+import { clearPendingExport, deleteMeeting, enqueue, getMeeting, listMeetings, listPendingExports } from "./store"
 
 // Before anything can download: the filename-determination round runs before
 // chrome.downloads.download() resolves, so this listener has to be registered
@@ -91,6 +102,13 @@ async function handle(message: BackgroundRequest, sender: chrome.runtime.Message
       if (!tabId) throw new Error("Message has no originating tab")
       return finalizeAndProcess(tabId)
     }
+    case "snapshotMeeting": {
+      // A tab speaks for itself; only a surface with no tab of its own (the popup)
+      // may name one.
+      const tabId = sender.tab?.id ?? message.tabId
+      if (!tabId) throw new Error("No meeting is being recorded")
+      return snapshotNow(tabId)
+    }
     case "downloadMeeting": {
       const meeting = await getMeeting(message.meetingId)
       if (!meeting) throw new Error("Meeting not found")
@@ -140,15 +158,68 @@ async function dropRelayToken(tabId: number): Promise<void> {
 // after the .md download succeeds. The debug log embeds the full transcript, so a
 // meeting marked private never gets one — the privacy flag is honored on every
 // export path, not just the .md.
+/**
+ * Write the meeting as it stands right now, without ending it.
+ *
+ * Everything here mirrors what finalization would do at this instant, which is the
+ * whole design: the same Meeting, folded into the same earlier visit, written to
+ * the same path, with the same debug dump beside it. The only differences are the
+ * disclaimer in the header and the fact that history is not touched, so nothing is
+ * committed and no meeting appears in the list before it has ended.
+ */
+async function snapshotNow(tabId: number): Promise<SnapshotResult> {
+  const session = await getLocal<ActiveSession>(sessionKey(tabId))
+  if (!session) throw new Error("No meeting is being recorded in this tab")
+  // Refusing an empty save is not tidiness: a meeting that ends having captured
+  // nothing writes no file at all, so an empty snapshot would sit in Downloads for
+  // ever promising an overwrite that never comes.
+  if (isCaptureFailure(session)) throw new Error("Nothing has been captured yet")
+
+  const at = new Date().toISOString()
+  const settings = await getSettings()
+  const partial = sessionToMeeting(session, {
+    id: "snapshot",
+    endedAt: at,
+    fallbackLanguage: settings.captionLanguage,
+  })
+  const meeting = resolveSnapshot(partial, await listMeetings(), {
+    mergeEnabled: settings.mergeRejoins,
+    gapMs: MERGE_GAP_MS,
+  })
+
+  const written = await getLocal<SnapshotState>(snapshotKey(tabId))
+  const md = await downloadSnapshot(meeting, at, written)
+  const rows = [md.row]
+  let debugPath = written?.debug
+  // Same gate as the finished debug log: it embeds the meeting verbatim, so a
+  // private meeting never gets one.
+  if (!session.isPrivate) {
+    const dump = await downloadDebugSnapshot(
+      { title: session.title, startedAt: session.startedAt, meetingUrl: meetingUrlOf(session) },
+      snapshotDebugEvents(session, at),
+      written,
+    )
+    if (dump) {
+      debugPath = dump.path
+      rows.push(dump.row)
+    }
+  }
+  await setLocal({ [snapshotKey(tabId)]: { transcript: md.path, debug: debugPath, rows } })
+  // Only once the replacements are on disk: an erased row for a file that then
+  // failed to be rewritten would hide the one copy the user still had.
+  await eraseDownloadRows(written?.rows)
+  return { turns: meeting.transcript.length, path: md.path }
+}
+
 async function deliver(r: FinalizeResult): Promise<void> {
   // A capture failure is kept in history for its diagnostics but has no
   // transcript behind it; writing one would put an empty file in the user's
   // Downloads and imply a recording that never happened.
   if (r.meeting && !isCaptureFailure(r.meeting)) {
-    await downloadMeeting(r.meeting)
+    await downloadMeeting(r.meeting, r.written)
     await clearPendingExport(r.meeting.id)
   }
-  if (r.debug.length > 0 && !r.isPrivate) await downloadDebugLog(r, r.debug)
+  if (r.debug.length > 0 && !r.isPrivate) await downloadDebugLog(r, r.debug, r.written)
 }
 
 // Re-export any meeting committed to history in a prior service-worker life whose

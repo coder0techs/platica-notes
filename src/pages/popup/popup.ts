@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS, type ActiveSession, type Meeting } from "../../shared
 
 const now = document.querySelector<HTMLElement>("#now")!
 const hideUi = document.querySelector<HTMLInputElement>("#hide-ui")!
+const saveNow = document.querySelector<HTMLButtonElement>("#save-now")!
 
 // Build stamp shown at the bottom of the popup. typeof-guarded so vitest and
 // any non-build eval fall back to "dev" instead of throwing ReferenceError.
@@ -96,6 +97,9 @@ function render(view: View): void {
 // --- state ------------------------------------------------------------------
 
 let tick: ReturnType<typeof setInterval> | undefined
+// The tab whose meeting the popup is reporting on, which is not always the tab the
+// user is looking at ("Transcribing in another tab").
+let reportingTab: number | undefined
 
 async function currentTabId(): Promise<number | undefined> {
   // Reading `id` needs no "tabs" permission; that only gates url/title/favIcon.
@@ -116,10 +120,14 @@ async function refresh(): Promise<void> {
   // recording, because "somewhere else" still beats implying nothing is running.
   const target = tabId !== undefined && tabs.includes(tabId) ? tabId : tabs[0]
   const session = target === undefined ? undefined : await getLocal<ActiveSession>(sessionKey(target))
+  reportingTab = target
 
   if (tick) clearInterval(tick)
   tick = undefined
 
+  // A meeting with nothing captured writes no file at the end either, so there is
+  // nothing for this button to save.
+  saveNow.hidden = !session || session.transcript.length + session.chat.length === 0
   if (session) {
     const elsewhere = target !== tabId
     // `recording` is absent on legacy sessions, where it meant "recording".
@@ -162,6 +170,23 @@ async function refresh(): Promise<void> {
       : "Join a Google Meet call and capture starts on its own: there is nothing to switch on.",
   })
 }
+
+saveNow.addEventListener("click", () => {
+  // The popup closes the moment focus leaves it, so the outcome has to be said
+  // here rather than in a toast the user will never see.
+  saveNow.disabled = true
+  saveNow.textContent = "Saving…"
+  void chrome.runtime
+    .sendMessage({ kind: "snapshotMeeting", tabId: reportingTab })
+    .then((response: { ok: boolean; data?: { turns: number }; error?: string }) => {
+      saveNow.textContent = response.ok
+        ? `Saved ${response.data?.turns ?? 0} turns so far`
+        : (response.error ?? "Could not save")
+    })
+    .catch(() => {
+      saveNow.textContent = "Could not save"
+    })
+})
 
 hideUi.addEventListener("change", () => {
   void saveSettings({ hideUi: hideUi.checked })

@@ -314,3 +314,38 @@ describe("recoverOrphanSessions", () => {
     expect(chrome._store["session_5"]).toBeDefined() // left intact for the still-running meeting
   })
 })
+
+describe("finalizeSession — what a mid-meeting save left behind", () => {
+  it("hands the final write the paths already on disk, so it replaces them", async () => {
+    chrome._store["session_7"] = makeSession({ transcript: oneUtterance })
+    chrome._store["snapshot_7"] = { transcript: "meetings/platica-notes/2026-06/x.md", rows: [3] }
+    const r = await finalizeSession(7)
+    expect(r!.written).toEqual({ transcript: "meetings/platica-notes/2026-06/x.md", rows: [3] })
+  })
+
+  it("clears that record with the session, so the next meeting in this tab starts clean", async () => {
+    chrome._store["session_7"] = makeSession({ transcript: oneUtterance })
+    chrome._store["snapshot_7"] = { transcript: "meetings/platica-notes/2026-06/x.md" }
+    await finalizeSession(7)
+    expect("snapshot_7" in chrome._store).toBe(false)
+    expect("session_7" in chrome._store).toBe(false)
+  })
+
+  it("clears it for an empty meeting too, which writes no file at all", async () => {
+    chrome._store["session_7"] = makeSession()
+    chrome._store["snapshot_7"] = { transcript: "meetings/platica-notes/2026-06/x.md" }
+    await finalizeSession(7)
+    expect("snapshot_7" in chrome._store).toBe(false)
+  })
+
+  it("is undefined when nothing was ever saved mid-meeting", async () => {
+    chrome._store["session_7"] = makeSession({ transcript: oneUtterance })
+    expect((await finalizeSession(7))!.written).toBeUndefined()
+  })
+
+  it("does not read as a session key, so orphan recovery ignores it", async () => {
+    chrome._store["snapshot_7"] = { transcript: "x.md" }
+    chrome._aliveTabs.clear()
+    expect(await recoverOrphanSessions()).toEqual([])
+  })
+})
