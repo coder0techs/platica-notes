@@ -289,6 +289,116 @@ export function decodeCaptions(buf: Uint8Array): Transcript[] {
   return v1 ? [v1] : []
 }
 
+// ---------- frame shape (content-free wire summary) ----------
+
+// Real Meet frames nest three or four levels. Anything deeper is a runaway parse
+// or a hostile packet, and descending it buys nothing.
+const SHAPE_MAX_DEPTH = 6
+
+// A strict decoder: throws rather than substituting U+FFFD, so invalid UTF-8 is
+// distinguishable from text. Reused per call; TextDecoder is stateless here.
+const strictDecoder = new TextDecoder("utf-8", { fatal: true })
+
+// Whether a length-delimited field's bytes read as human text. Control
+// characters disqualify, which is what separates real text from a protobuf
+// submessage: field tags are small bytes (0x08, 0x1a, …) and land in the control
+// range almost immediately.
+function looksLikeText(buf: Uint8Array, start: number, end: number): boolean {
+  if (end <= start) return false
+  let s: string
+  try {
+    s = strictDecoder.decode(buf.subarray(start, end))
+  } catch {
+    return false
+  }
+  for (const ch of s) {
+    const code = ch.codePointAt(0) ?? 0
+    if (code < 0x20 || code === 0x7f) return false
+  }
+  return true
+}
+
+// Whether a length-delimited field's bytes are a submessage rather than a string.
+//
+// The wire cannot say: type 2 covers strings, bytes AND submessages, and only a
+// schema tells them apart. Two tests in order, both biased towards "string":
+// anything that reads as text is a string outright (measured: "en-US" parses
+// cleanly as one fixed32 field and would otherwise be reported as a message),
+// and what is left must parse cleanly all the way to the exact end into at least
+// one field. Guessing wrong is bounded by design anyway - this whole function
+// emits sizes and field numbers, never bytes - so the worst case is structure
+// reported for a string, never a value reported for anything.
+function looksLikeMessage(buf: Uint8Array, start: number, end: number): boolean {
+  if (looksLikeText(buf, start, end)) return false
+  const c: Cursor = { buf, i: start }
+  let fields = 0
+  try {
+    while (c.i < end) {
+      const { wire } = readTag(c)
+      skip(c, wire)
+      fields++
+      if (c.i > end) return false
+    }
+  } catch {
+    return false
+  }
+  return c.i === end && fields > 0
+}
+
+function shapeFields(buf: Uint8Array, start: number, end: number, depth: number): string {
+  const safeEnd = Math.min(end, buf.length)
+  const c: Cursor = { buf, i: start }
+  const parts: string[] = []
+  try {
+    while (c.i < safeEnd) {
+      const { field, wire } = readTag(c)
+      if (wire === 0) {
+        parts.push(`${field}=v${readVarint(c)}`)
+      } else if (wire === 2) {
+        const len = readVarint(c)
+        const subEnd = boundedEnd(c, len)
+        if (depth >= SHAPE_MAX_DEPTH) {
+          parts.push(`${field}{...}`)
+        } else if (looksLikeMessage(buf, c.i, subEnd)) {
+          parts.push(`${field}{${shapeFields(buf, c.i, subEnd, depth + 1)}}`)
+        } else {
+          // The only thing said about a string is how long it was.
+          parts.push(`${field}=s${subEnd - c.i}`)
+        }
+        c.i = subEnd
+      } else if (wire === 5) {
+        parts.push(`${field}=f32`)
+        c.i += 4
+      } else if (wire === 1) {
+        parts.push(`${field}=f64`)
+        c.i += 8
+      } else {
+        throw UNKNOWN_WIRE
+      }
+    }
+  } catch {
+    // Keep what parsed and say it stopped early. A truncated shape still tells
+    // you which channel changed; throwing would tell you nothing.
+    parts.push("!")
+  }
+  return parts.join(",")
+}
+
+/**
+ * Summarise a wire frame as its protobuf structure, carrying no values that
+ * could be text.
+ *
+ * This exists so a diagnostic log can be kept for every meeting, private ones
+ * included, without holding a syllable of what anyone said. Field numbers,
+ * nesting and string LENGTHS are enough to see that Meet changed its schema -
+ * the v1 and v2 caption frames produce visibly different shapes - which is the
+ * question a log has to answer after the fact. Varint values are included
+ * because a varint cannot encode text; string and bytes values never are.
+ */
+export function frameShape(buf: Uint8Array): string {
+  return shapeFields(buf, 0, buf.length, 0)
+}
+
 // ---------- chat message-node decoder ----------
 
 // The chat message node (all len-delim unless noted), live-verified on the wire:

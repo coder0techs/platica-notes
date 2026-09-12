@@ -3,6 +3,7 @@ import {
   decodeTranscriptWrapper,
   decodeTranscriptV2,
   decodeCaptions,
+  frameShape,
   decodeCollectionsChat,
   decodeOutgoingChat,
   decodeRoster,
@@ -332,6 +333,78 @@ describe("decodeCaptions", () => {
     // must not paper over that with an empty-shaped entry.
     const bytes = buildTranscriptWrapper(buildTranscriptMessage({ text: "ignored" }), true)
     expect(decodeCaptions(bytes)).toEqual([])
+  })
+})
+
+// ---------- frame shape (content-free wire summary) ----------
+
+describe("frameShape", () => {
+  it("summarises a v2 caption frame without carrying a word of it", () => {
+    const bytes = buildV2Wrapper([
+      buildV2Entry({
+        messageId: 3,
+        messageVersion: 16,
+        payload: buildV2Payload({ text: "Hello world", lang: "en-US", deviceId: V2_DEVICE }),
+      }),
+    ])
+    const shape = frameShape(bytes)
+    // Structure and sizes survive; the text does not.
+    expect(shape).toBe("1{1{1=v3,2=v16,3{3=s11,4=s5,5=s5,6=s29,9=v1}}}")
+    expect(shape).not.toContain("Hello")
+    expect(shape).not.toContain("en-US")
+    expect(shape).not.toContain(V2_DEVICE)
+  })
+
+  it("summarises a v1 caption frame the same way", () => {
+    const bytes = buildTranscriptWrapper(
+      buildTranscriptMessage({ deviceId: "dev-abc", messageId: 42, messageVersion: 1, text: "Hello world" }),
+    )
+    expect(frameShape(bytes)).toBe("1{1=s7,2=v42,3=v1,6=s11}")
+  })
+
+  it("tells the two caption formats apart, which is the point of keeping it", () => {
+    const v1 = frameShape(buildTranscriptWrapper(buildTranscriptMessage({ text: "hi" })))
+    const v2 = frameShape(buildV2Wrapper([
+      buildV2Entry({ messageId: 1, messageVersion: 1, payload: buildV2Payload({ text: "hi", deviceId: V2_DEVICE }) }),
+    ]))
+    expect(v1).not.toBe(v2)
+  })
+
+  it("keeps no string bytes even when a string would parse as a message", () => {
+    // Ambiguity is inherent: wire type 2 is string, bytes AND submessage, and
+    // only a schema tells them apart. Whichever way it resolves, a value never
+    // reaches the output - the worst case is structure reported for a string.
+    const out: number[] = []
+    lenField(1, strBytes("Ada Lovelace"), out)
+    const shape = frameShape(u8(out))
+    expect(shape).not.toContain("Ada")
+    expect(shape).not.toContain("Lovelace")
+  })
+
+  it("reports varint values, which cannot carry text", () => {
+    const out: number[] = []
+    tagBytes(4, 0, out); writeVarint(1789054079, out)
+    expect(frameShape(u8(out))).toBe("4=v1789054079")
+  })
+
+  it("marks a frame it could not finish parsing instead of throwing", () => {
+    const out: number[] = []
+    tagBytes(1, 0, out); writeVarint(7, out)
+    out.push(0x3c)   // field 7, wire 4 - undefined in proto3
+    const shape = frameShape(u8(out))
+    expect(shape).toContain("1=v7")
+    expect(shape).toContain("!")
+  })
+
+  it("is empty for an empty frame", () => {
+    expect(frameShape(u8([]))).toBe("")
+  })
+
+  it("stops descending at a depth no real frame reaches", () => {
+    let inner: number[] = []
+    for (let i = 0; i < 12; i++) { const next: number[] = []; lenField(1, inner, next); inner = next }
+    expect(() => frameShape(u8(inner))).not.toThrow()
+    expect(frameShape(u8(inner))).toContain("...")
   })
 })
 
