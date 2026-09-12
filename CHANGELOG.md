@@ -4,6 +4,8 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+## 1.17.0 - 2026-09-12
+
 - **You can now save the transcript without leaving the meeting.** Until now the
   file only appeared once the call was over, so anything you wanted to do with
   what had been said, hand it to an assistant, paste a decision into a ticket,
