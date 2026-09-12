@@ -4,6 +4,25 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+- **Meetings are transcribed again for accounts Google moved to a new caption
+  channel.** Google Meet serves its live captions over an internal channel, and in
+  early September it began renaming that channel for some accounts and not others.
+  Two people in the same call could be affected differently: one recorded the
+  meeting normally while the other got a file with nothing in it, for days, with
+  no sign that anything was wrong. The extension now reads both names. It also no
+  longer depends on the name at all as a last resort: a channel it does not
+  recognise is examined for its first few messages, and if it turns out to be
+  carrying captions it is picked up there and then, so the next rename costs
+  nobody a meeting.
+
+- **A meeting that records nothing now says so while you are still in it.** The
+  extension warned you when it had failed to ask Meet for captions, but not when
+  it had asked and no captions ever came back, which is exactly what the channel
+  rename above looked like from the inside. If five minutes pass with other people
+  in the meeting and not one word captured, it now tells you, and names the two
+  things worth checking: the language setting, and whether this version has fallen
+  behind a change at Google's end.
+
 ## 1.16.3 - 2026-08-24
 
 - **The in-meeting indicator no longer looks like a camera.** It was a red pill with a

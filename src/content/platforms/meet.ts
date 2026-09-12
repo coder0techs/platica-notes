@@ -22,7 +22,7 @@ import {
   shouldEndFromMedia,
   shouldFinalizeStaleSession,
   shouldFinishRearmWait,
-  shouldWarnCaptureIdle,
+  captureFault,
 } from "./meet-lifecycle"
 
 // --- Google Meet DOM contract. Verify on a live meeting before each release. ---
@@ -78,6 +78,11 @@ const JOIN_SETTLE_MS = 10000
 // the notice.
 const CAPTURE_HEALTH_GRACE_MS = 45000
 const CAPTURE_HEALTH_TICK_MS = 5000
+// How long a meeting that DID subscribe may produce nothing before we say so.
+// Much longer than the arming grace, because the innocent explanation (a room
+// where nobody has spoken yet) is common and the faulty one is not. Five minutes
+// of two or more people and not one caption is no longer plausibly a quiet room.
+const CAPTURE_SILENT_GRACE_MS = 300000
 
 // Roster events stream from join time — often before our leave-icon detection
 // lands — so the deviceId → name map lives at page level and survives across
@@ -559,6 +564,12 @@ async function runMeeting(tabId: number): Promise<void> {
     languagePrompt = null
   }
 
+  // This half of the delivery funnel: what actually crossed into the isolated
+  // world and what the feed did with it. The MAIN world counts the wire side.
+  // Comparing the two is the point — a gap between dispatched and received is a
+  // loss in the hop between worlds, which nothing would otherwise show.
+  const funnel = { received: 0, applied: 0, ignored: 0, paused: 0 }
+
   // --- capture health ---------------------------------------------------------
   // Capture failing to start is currently silent: the meeting runs, the panel
   // stays empty, and the first anyone knows is a missing file afterwards. This
@@ -588,27 +599,36 @@ async function runMeeting(tabId: number): Promise<void> {
     }
   }
   const captureHealthTimer = setInterval(() => {
-    if (
-      !shouldWarnCaptureIdle({
-        armed: captureArmed,
-        elapsedMs: Date.now() - meetingStartedAt,
-        graceMs: CAPTURE_HEALTH_GRACE_MS,
-        warned: captureWarned,
-        paused: !recording,
-      })
-    ) {
-      return
-    }
+    const fault = captureFault({
+      armed: captureArmed,
+      captionsSeen: funnel.received,
+      attendees: attendees.size,
+      elapsedMs: Date.now() - meetingStartedAt,
+      graceMs: CAPTURE_HEALTH_GRACE_MS,
+      silentGraceMs: CAPTURE_SILENT_GRACE_MS,
+      warned: captureWarned,
+      paused: !recording,
+    })
+    if (!fault) return
     captureWarned = true
-    dlog("capture health warning", { elapsedMs: Date.now() - meetingStartedAt })
+    dlog("capture health warning", { fault, elapsedMs: Date.now() - meetingStartedAt })
     // Speech, specifically. The chat channel is independent and keeps working in
     // the one failure we have reproduced, so "nothing has been captured" would be
     // wrong — and the earlier draft went on to promise that whatever had been
     // captured was safe, which contradicted the sentence before it.
     captureNotice = showPersistentNotice(
-      "Plática Notes is not transcribing speech in this meeting. The usual cause is a " +
-        "second meeting-recorder extension running in this tab — only one of them can " +
-        "read Meet's captions. Turn the other one off and reload the tab.",
+      fault === "not-armed"
+        ? "Plática Notes is not transcribing speech in this meeting. The usual cause is a " +
+          "second meeting-recorder extension running in this tab — only one of them can " +
+          "read Meet's captions. Turn the other one off and reload the tab."
+        // Deliberately does not guess which: both causes are real, the user can
+        // check one of them in seconds, and claiming the wrong one is worse than
+        // naming both. Chat and notes are unaffected either way, so this says
+        // speech rather than everything.
+        : "Plática Notes has not captured any speech in this meeting. Either the spoken " +
+          "language does not match the one set in the extension, or Google Meet has " +
+          "changed something and this version cannot read its captions. Chat and notes " +
+          "are still being saved.",
     )
   }, CAPTURE_HEALTH_TICK_MS)
 
@@ -759,11 +779,6 @@ async function runMeeting(tabId: number): Promise<void> {
   }, 7000)
 
   let firstCaptionLogged = false
-  // This half of the delivery funnel: what actually crossed into the isolated
-  // world and what the feed did with it. The MAIN world counts the wire side.
-  // Comparing the two is the point — a gap between dispatched and received is a
-  // loss in the hop between worlds, which nothing would otherwise show.
-  const funnel = { received: 0, applied: 0, ignored: 0, paused: 0 }
   activeMeetingHandler = (event) => {
     if (!recording && (event.type === "transcript" || event.type === "chat")) {
       // Dropped on purpose, but still counted: otherwise a paused meeting looks

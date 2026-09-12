@@ -163,30 +163,50 @@ export function shouldAskLanguage(ask: boolean, isResumed: boolean, uiHidden: bo
 }
 
 /**
- * Whether to raise the "capture may not be working" notice.
+ * What is wrong with capture in this meeting, if anything.
  *
- * The signal is deliberately NOT "no captions have arrived": a meeting where
- * everyone joined and nobody has said anything yet looks exactly like that, and
- * warning there would train people to ignore the notice. What it keys off is
- * whether capture ever got as far as ASKING Meet for captions — a media-session
- * channel routed and the subscribe sent. That either happened or it did not, and
- * silence has no bearing on it.
+ * `not-armed`: capture never got as far as ASKING Meet for captions. No
+ * media-session channel routed, or the subscribe never went out. The usual cause
+ * is a second recorder extension in the tab.
  *
- * Once raised it never repeats: a second identical notice adds nothing, and the
- * condition it describes does not clear by itself.
+ * `no-captions`: the subscription went out and Meet never answered. This case
+ * used to be deliberately excluded, on the reasoning that a room where nobody has
+ * spoken yet looks identical and a notice there would train people to ignore it.
+ * That reasoning cost a user several days of empty files: Meet moved the
+ * transcript to a differently-named channel for his account, capture reported
+ * itself armed because asking had worked, and nothing ever said the answers had
+ * stopped coming. Two conditions separate a fault from a quiet room: somebody
+ * else being in the meeting, and a much longer window having passed. Both must
+ * hold before this is raised.
+ *
+ * Raised at most once per meeting: a second notice adds nothing, and neither
+ * condition clears by itself.
  */
-export function shouldWarnCaptureIdle(state: {
+export type CaptureFault = "not-armed" | "no-captions"
+
+export function captureFault(state: {
   /** The MAIN world reported that the caption subscription went out. */
   armed: boolean
+  /** Captions delivered to the feed so far this meeting. */
+  captionsSeen: number
+  /** Distinct people known to be in the meeting, including the local user. */
+  attendees: number
   /** Milliseconds since this meeting started. */
   elapsedMs: number
-  /** How long to allow before deciding something is wrong. */
+  /** How long to allow before deciding capture never started. */
   graceMs: number
+  /** How long to allow a subscribed meeting to produce nothing at all. */
+  silentGraceMs: number
   /** A notice was already shown for this meeting. */
   warned: boolean
   /** Recording is paused by the user — nothing is expected to arrive. */
   paused: boolean
-}): boolean {
-  if (state.armed || state.warned || state.paused) return false
-  return state.elapsedMs >= state.graceMs
+}): CaptureFault | null {
+  if (state.warned || state.paused) return null
+  // Checked first: when both windows have passed, the diagnosis that names the
+  // actual cause is the useful one.
+  if (!state.armed) return state.elapsedMs >= state.graceMs ? "not-armed" : null
+  if (state.captionsSeen > 0) return null
+  if (state.attendees < 2) return null
+  return state.elapsedMs >= state.silentGraceMs ? "no-captions" : null
 }
