@@ -23,7 +23,17 @@ import {
 import type { Transcript } from "./proto"
 import { carriesCaptions, isCaptionsLabel, isUsableCaption } from "./channels"
 import { toLiteEvent } from "../../shared/lite-log"
-import { RTC_CONFIG_EVENT, RTC_DEBUG_EVENT, RTC_EVENT, RTC_LITE_EVENT } from "./bridge"
+import {
+  RTC_CONFIG_EVENT,
+  RTC_DEBUG_EVENT,
+  RTC_EVENT,
+  RTC_LITE_EVENT,
+  RTC_RELAY_EVENT,
+  RTC_RELAY_RESULT_EVENT,
+  type RelayCredentials,
+  type RtcRelayRequest,
+  type RtcRelayResult,
+} from "./bridge"
 import { adoptPeerConnection } from "./adopt"
 import { emptyFunnel } from "./funnel"
 import type { RtcConfig, RtcEvent } from "./bridge"
@@ -205,6 +215,59 @@ let captionLanguage = DEFAULT_SETTINGS.captionLanguage
 // May flip mid-meeting; record() honours the current value at emit time.
 let debugEnabled = false
 
+// --- persistence relay ------------------------------------------------------
+// This script is the only part of the extension that an update does not sever:
+// it holds no chrome.* handle of its own, it is page JS. So when the isolated
+// world's handle dies it asks this side to persist for it, and this side reaches
+// the NEW version of the extension by id over externally_connectable. Verified
+// in a real Chrome: a page-context send still arrives after a reload has
+// orphaned the content scripts.
+//
+// No session state lives here. The snapshot arrives already serialized and is
+// forwarded verbatim, so this stays a pipe and the accounting stays in one place.
+let relay: RelayCredentials | null = null
+
+function relayResult(result: RtcRelayResult): void {
+  document.dispatchEvent(new CustomEvent(RTC_RELAY_RESULT_EVENT, { detail: JSON.stringify(result) }))
+}
+
+document.addEventListener(RTC_RELAY_EVENT, (e: Event) => {
+  let id = -1
+  try {
+    const detail = (e as CustomEvent).detail
+    if (typeof detail !== "string") return
+    const req = JSON.parse(detail) as RtcRelayRequest
+    if (!req || typeof req.id !== "number" || typeof req.snapshot !== "string") return
+    id = req.id
+    if (!relay) {
+      relayResult({ id, ok: false, error: "no relay credentials" })
+      return
+    }
+    // `chrome` exists here only because of externally_connectable, and page
+    // context gets nothing but sendMessage/connect from it.
+    const send = (globalThis as { chrome?: { runtime?: { sendMessage?: unknown } } }).chrome?.runtime
+      ?.sendMessage as
+      | ((id: string, msg: unknown, cb: (reply?: { ok?: boolean; error?: string }) => void) => void)
+      | undefined
+    if (typeof send !== "function") {
+      relayResult({ id, ok: false, error: "no external channel" })
+      return
+    }
+    const payload = {
+      kind: "relaySnapshot",
+      token: relay.token,
+      tabId: relay.tabId,
+      snapshot: JSON.parse(req.snapshot),
+      final: req.final === true,
+    }
+    send(relay.extensionId, payload, (reply) => {
+      relayResult({ id, ok: Boolean(reply?.ok), error: reply?.error })
+    })
+  } catch (err) {
+    relayResult({ id, ok: false, error: String(err) })
+  }
+})
+
 document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
   try {
     const detail = (e as CustomEvent).detail
@@ -227,6 +290,9 @@ document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
     // exists. Re-announce an armed capture rather than trusting that the original
     // one-shot event found a listener.
     if (captureArmed) dispatch({ type: "capture-armed" })
+    // Keep the newest credentials: the tab id and token are per-meeting, and a
+    // later push must not leave a stale pair behind.
+    if (cfg.relay) relay = cfg.relay
     const changed = cfg.captionLanguage !== captionLanguage
     captionLanguage = cfg.captionLanguage
     record({ phase: "config", lang: captionLanguage, changed })

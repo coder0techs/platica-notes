@@ -11,6 +11,7 @@
   },
   "permissions": ["storage", "unlimitedStorage", "downloads"],
   "host_permissions": ["https://meet.google.com/*", "https://chat.google.com/*"],
+  "externally_connectable": { "matches": ["https://meet.google.com/*"] },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },

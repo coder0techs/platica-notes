@@ -165,6 +165,189 @@ describe("SessionWriter", () => {
     expect(invalidatedCount).toBe(1)
   })
 
+  describe("failing over when the context dies", () => {
+    // An update mid-meeting severs this context's chrome.* handle. Capture itself
+    // never stopped, so the writer must change transport rather than give up: the
+    // alternative costs the rest of the meeting, and the only recovery is a page
+    // reload that drops the user out of the call.
+    const invalidated = () => new Error("Extension context invalidated.")
+
+    it("switches to the fallback and keeps writing", async () => {
+      const fallbackWrites: number[] = []
+      const recovered: boolean[] = []
+      let counter = 0
+      const writer = new SessionWriter<number>(
+        async () => {
+          throw invalidated()
+        },
+        () => ++counter,
+        1000,
+        (ok) => recovered.push(ok),
+        async (snapshot) => {
+          fallbackWrites.push(snapshot)
+        },
+      )
+
+      writer.requestWrite()
+      await vi.advanceTimersByTimeAsync(0)
+
+      // Reported as recovered, not as a dead end.
+      expect(recovered).toEqual([true])
+      // And the snapshot that just failed is written straight away rather than
+      // waiting for the next caption to arrive.
+      expect(fallbackWrites).toHaveLength(1)
+    })
+
+    it("keeps accepting writes after the switch, and never touches the dead transport again", async () => {
+      let primaryCalls = 0
+      const fallbackWrites: number[] = []
+      let counter = 0
+      const writer = new SessionWriter<number>(
+        async () => {
+          primaryCalls++
+          throw invalidated()
+        },
+        () => ++counter,
+        1000,
+        undefined,
+        async (snapshot) => {
+          fallbackWrites.push(snapshot)
+        },
+      )
+
+      writer.requestWrite()
+      await vi.advanceTimersByTimeAsync(0)
+      const callsAtSwitch = primaryCalls
+
+      writer.requestWrite()
+      await vi.advanceTimersByTimeAsync(2000)
+      await writer.writeNow()
+
+      expect(primaryCalls).toBe(callsAtSwitch)
+      expect(fallbackWrites.length).toBeGreaterThan(1)
+    })
+
+    it("seals only when the fallback dies too, and notifies exactly once", async () => {
+      const recovered: boolean[] = []
+      let fallbackCalls = 0
+      let counter = 0
+      const writer = new SessionWriter<number>(
+        async () => {
+          throw invalidated()
+        },
+        () => ++counter,
+        1000,
+        (ok) => recovered.push(ok),
+        async () => {
+          fallbackCalls++
+          throw invalidated()
+        },
+      )
+
+      writer.requestWrite()
+      await vi.advanceTimersByTimeAsync(0)
+      const callsAtSeal = fallbackCalls
+
+      // Sealed: no retry storm on a channel that is provably gone.
+      writer.requestWrite()
+      await writer.writeNow()
+      await vi.advanceTimersByTimeAsync(5000)
+
+      expect(fallbackCalls).toBe(callsAtSeal)
+      expect(recovered).toEqual([true, false])
+    })
+
+    it("resolves writeNow only after the failover write has landed", async () => {
+      // The end-of-meeting sequence is writeNow -> close -> finalize, and finalize
+      // reads the snapshot back out of storage. If writeNow resolved while the
+      // switched-to transport was still in flight, finalize would commit the
+      // snapshot from BEFORE the last words of the meeting - the exact loss this
+      // whole mechanism exists to prevent.
+      const landed: number[] = []
+      let counter = 0
+      let releaseFallback!: () => void
+      const fallbackGate = new Promise<void>((resolve) => {
+        releaseFallback = resolve
+      })
+      const writer = new SessionWriter<number>(
+        async () => {
+          throw invalidated()
+        },
+        () => ++counter,
+        1000,
+        undefined,
+        async (snapshot) => {
+          await fallbackGate
+          landed.push(snapshot)
+        },
+      )
+
+      const done = writer.writeNow()
+      let settled = false
+      void done.then(() => {
+        settled = true
+      })
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(settled).toBe(false)
+      releaseFallback()
+      await done
+      expect(landed).toHaveLength(1)
+    })
+
+    it("does not seal on a transient fallback error", async () => {
+      const fallbackWrites: number[] = []
+      let fallbackCalls = 0
+      let counter = 0
+      const writer = new SessionWriter<number>(
+        async () => {
+          throw invalidated()
+        },
+        () => ++counter,
+        1000,
+        undefined,
+        async (snapshot) => {
+          fallbackCalls++
+          if (fallbackCalls === 2) throw new Error("no receiving end right now")
+          fallbackWrites.push(snapshot)
+        },
+      )
+
+      writer.requestWrite()
+      await vi.advanceTimersByTimeAsync(0)
+      writer.requestWrite()
+      await vi.advanceTimersByTimeAsync(2000)
+      await writer.writeNow()
+
+      // The transient failure is skipped, later writes still land.
+      expect(fallbackWrites.length).toBeGreaterThanOrEqual(2)
+    })
+
+    it("still seals when there is no fallback at all", async () => {
+      // The pre-existing contract: nothing to fail over to, so stop cleanly.
+      const recovered: boolean[] = []
+      let writeCalls = 0
+      const writer = new SessionWriter<number>(
+        async () => {
+          writeCalls++
+          throw invalidated()
+        },
+        () => 1,
+        1000,
+        (ok) => recovered.push(ok),
+      )
+
+      writer.requestWrite()
+      await vi.advanceTimersByTimeAsync(0)
+      const calls = writeCalls
+      writer.requestWrite()
+      await vi.advanceTimersByTimeAsync(5000)
+
+      expect(writeCalls).toBe(calls)
+      expect(recovered).toEqual([false])
+    })
+  })
+
   it("a non-invalidation write error does not seal the writer or notify", async () => {
     const writes: number[] = []
     let invalidatedCount = 0

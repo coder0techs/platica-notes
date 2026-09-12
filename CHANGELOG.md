@@ -40,6 +40,26 @@ All notable changes to Plática Notes, newest first.
   things worth checking: the language setting, and whether this version has fallen
   behind a change at Google's end.
 
+- **A saved meeting is less likely to lose its name.** Chrome hands the filename
+  round back a truncated version of the address a file was saved from, so for
+  anything longer than a short transcript the extension could not tell its own
+  downloads apart by address and fell back to the order it had asked for them in.
+  That is right while only one file is being written and wrong the moment two are,
+  and getting it wrong means a meeting saved under the diagnostic log's name. It
+  now identifies each download properly. If a name is ever lost anyway, the
+  extension says so in its error log instead of leaving a nameless `download` in
+  your Downloads folder with no explanation.
+
+- **An update to the extension no longer interrupts a meeting you are recording.**
+  Chrome installs an update the moment the extension is idle, which can be any quiet
+  second of a call. Until now that cut the recording off where it stood and put up a
+  banner asking you to reload the page, and reloading a Meet page drops you out of the
+  call. Capture itself never actually stopped, only the path it used to save what it
+  captured, so that path now fails over to one an update cannot break. The rest of the
+  meeting is captured, the file is written when you leave as it always was, and there
+  is nothing to click: you get a brief note saying the extension updated and the
+  meeting is still being transcribed.
+
 ## 1.16.3 - 2026-08-24
 
 - **The in-meeting indicator no longer looks like a camera.** It was a red pill with a
