@@ -1,5 +1,6 @@
 import type { BackgroundRequest, BackgroundResponse } from "../shared/messages"
 import { ACTIVE_TABS_KEY } from "../shared/storage"
+import { isCaptureFailure } from "../shared/types"
 import { downloadDebugLog, downloadMeeting } from "./export"
 import { installFilenameGuard } from "./filename-guard"
 import { shouldOpenWelcome } from "./install"
@@ -68,7 +69,10 @@ async function finalizeAndProcess(tabId: number): Promise<string | null> {
 // meeting marked private never gets one — the privacy flag is honored on every
 // export path, not just the .md.
 async function deliver(r: FinalizeResult): Promise<void> {
-  if (r.meeting) {
+  // A capture failure is kept in history for its diagnostics but has no
+  // transcript behind it; writing one would put an empty file in the user's
+  // Downloads and imply a recording that never happened.
+  if (r.meeting && !isCaptureFailure(r.meeting)) {
     await downloadMeeting(r.meeting)
     await clearPendingExport(r.meeting.id)
   }

@@ -67,17 +67,21 @@ describe("toLiteEvent: what survives inside an event it keeps", () => {
 
   it("keeps a frame shape, which is already content-free by construction", () => {
     const shape = "1{1{1=v3,2=v16,3{3=s11,4=s5,5=s5,6=s29,9=v1}}}"
-    expect(toLiteEvent({ ctx: "rtc", phase: "channel-raw", label: "captions_v2", bytes: 74, shape })).toEqual({
+    expect(toLiteEvent({ ctx: "rtc", phase: "frame-shape", label: "captions_v2", bytes: 74, shape })).toEqual({
       ctx: "rtc",
-      phase: "channel-raw",
+      phase: "frame-shape",
       label: "captions_v2",
       bytes: 74,
       shape,
     })
   })
 
-  it("drops raw hex even on an allowed phase", () => {
-    const lite = toLiteEvent({ ctx: "rtc", phase: "channel-raw", label: "captions_v2", hex: "0a480a3e0801" })
+  it("drops the raw hex dump entirely: frame-shape is what replaced it", () => {
+    expect(toLiteEvent({ ctx: "rtc", phase: "channel-raw", label: "captions_v2", hex: "0a480a3e0801" })).toBeNull()
+  })
+
+  it("drops raw hex if it ever rides an allowed phase", () => {
+    const lite = toLiteEvent({ ctx: "rtc", phase: "frame-shape", label: "captions_v2", bytes: 6, hex: "0a480a3e" })
     expect(lite).not.toBeNull()
     expect(lite).not.toHaveProperty("hex")
   })

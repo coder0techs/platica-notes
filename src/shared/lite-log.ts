@@ -17,7 +17,7 @@ const ALLOWED_KINDS = new Set([
   "config",
   "installed",
   "channel",
-  "channel-raw",
+  "frame-shape",
   "capture-state",
   "funnel",
   "subscribe-sent",
