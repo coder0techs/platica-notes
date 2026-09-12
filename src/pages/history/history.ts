@@ -2,6 +2,7 @@ import { CAPTION_LANGUAGES } from "../../shared/languages"
 import { sendToBackground } from "../../shared/messages"
 import { getLocal, getSettings, setLocal } from "../../shared/storage"
 import type { Meeting } from "../../shared/types"
+import { isCaptureFailure } from "../../shared/types"
 
 const list = document.querySelector<HTMLElement>("#list")!
 const search = document.querySelector<HTMLInputElement>("#search")!
@@ -100,17 +101,35 @@ function row(meeting: Meeting): HTMLElement {
     document.createTextNode(started.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })),
   )
 
+  // A meeting kept only because it failed: it ran with other people in it and
+  // captured nothing. Saying "0 turns" for it would be true and useless, and
+  // offering Download would promise a file that cannot exist.
+  const failed = isCaptureFailure(meeting)
+
   const meta = el("div", "meta")
-  meta.append(tag(`${meeting.transcript.length} turns`))
+  if (failed) meta.append(tag("Nothing captured", "tag-failed"))
+  else meta.append(tag(`${meeting.transcript.length} turns`))
   if (meeting.language) meta.append(tag(languageLabel(meeting.language)))
   if (visits > 1) meta.append(tag(`${visits} visits`))
   if (meeting.isPrivate) meta.append(tag("Private", "tag-private"))
 
   const actions = el("div", "actions")
-  actions.append(
-    button("Download", "btn btn-sm", (btn) => void download(meeting, btn)),
-    button("Delete", "btn btn-sm btn-danger", () => void remove(meeting)),
+  // Diagnostics sits at a lower weight than Download on purpose: it is the row's
+  // rarely-wanted action, useful when something went wrong and invisible noise
+  // otherwise. On a failed meeting there is no transcript to download, so it
+  // becomes the only thing the row can offer and rises to the normal weight.
+  const hasLite = (meeting.lite ?? []).length > 0
+  const diagnostics = button(
+    "Diagnostics",
+    failed ? "btn btn-sm" : "btn btn-sm btn-quiet",
+    (btn) => void downloadLite(meeting, btn),
   )
+  diagnostics.disabled = !hasLite
+  diagnostics.title = hasLite
+    ? "Save this meeting's diagnostic log: what capture did, with none of what was said."
+    : "No diagnostics were recorded for this meeting."
+  if (!failed) actions.append(button("Download", "btn btn-sm", (btn) => void download(meeting, btn)))
+  actions.append(diagnostics, button("Delete", "btn btn-sm btn-danger", () => void remove(meeting)))
 
   const body = el("div", "meeting-body")
   body.append(when, el("div", "title", meeting.title), meta, actions)
@@ -198,6 +217,20 @@ async function download(meeting: Meeting, btn: HTMLButtonElement): Promise<void>
   btn.textContent = label
   if (response.ok) say(`Saved "${meeting.title}" to your Downloads folder.`)
   else say(`Could not save that meeting: ${response.error}`)
+}
+
+// Same shape as download() above, different file. Feedback names what the file
+// does NOT contain, because that is the question anyone about to send one to a
+// stranger is actually asking.
+async function downloadLite(meeting: Meeting, btn: HTMLButtonElement): Promise<void> {
+  const label = btn.textContent ?? "Diagnostics"
+  btn.disabled = true
+  btn.textContent = "Saving…"
+  const response = await sendToBackground({ kind: "downloadLiteLog", meetingId: meeting.id })
+  btn.disabled = false
+  btn.textContent = label
+  if (response.ok) say(`Saved the diagnostic log for "${meeting.title}". It contains no transcript or chat.`)
+  else say(`Could not save the diagnostics: ${response.error}`)
 }
 
 async function remove(meeting: Meeting): Promise<void> {

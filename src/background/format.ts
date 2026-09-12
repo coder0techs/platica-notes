@@ -237,6 +237,18 @@ export function debugLogFileName(meta: { title: string; startedAt: string; meeti
   return `${fileBase(meta)}.debug.jsonl`
 }
 
+/**
+ * Name of the content-free diagnostic log.
+ *
+ * Deliberately NOT `.debug.jsonl`: the two files look alike and are not alike at
+ * all. One holds the meeting verbatim and exists only if someone switched it on;
+ * this one holds no content and exists for every meeting. Someone about to send
+ * a log to a stranger should be able to tell which is which from the name.
+ */
+export function liteLogFileName(meta: { title: string; startedAt: string; meetingUrl?: string }): string {
+  return `${fileBase(meta)}.diagnostics.jsonl`
+}
+
 export function formatDebugLog(events: DebugEvent[]): string {
   if (events.length === 0) return ""
   return events.map(e => JSON.stringify(e)).join("\n")

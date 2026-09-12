@@ -677,7 +677,9 @@ async function runMeeting(tabId: number): Promise<void> {
         : "Plática Notes has not captured any speech in this meeting. Either the spoken " +
           "language does not match the one set in the extension, or Google Meet has " +
           "changed something and this version cannot read its captions. Chat and notes " +
-          "are still being saved.",
+          "are still being saved. To report it, send the Diagnostics file from the " +
+          "extension's history page: it records what capture did and holds none of " +
+          "what was said.",
     )
   }, CAPTURE_HEALTH_TICK_MS)
 

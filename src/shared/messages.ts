@@ -3,6 +3,7 @@ export type BackgroundRequest =
   | { kind: "meetingStarted" }
   | { kind: "meetingEnded" }
   | { kind: "downloadMeeting"; meetingId: string }
+  | { kind: "downloadLiteLog"; meetingId: string }
   | { kind: "deleteMeeting"; meetingId: string }
 
 export type BackgroundResponse<T = unknown> =

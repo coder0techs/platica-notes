@@ -1,7 +1,7 @@
 import type { BackgroundRequest, BackgroundResponse } from "../shared/messages"
 import { ACTIVE_TABS_KEY } from "../shared/storage"
 import { isCaptureFailure } from "../shared/types"
-import { downloadDebugLog, downloadMeeting } from "./export"
+import { downloadDebugLog, downloadLiteLog, downloadMeeting } from "./export"
 import { installFilenameGuard } from "./filename-guard"
 import { shouldOpenWelcome } from "./install"
 import { finalizeSession, recoverOrphanSessions, trackTab, type FinalizeResult } from "./sessions"
@@ -46,6 +46,13 @@ async function handle(message: BackgroundRequest, sender: chrome.runtime.Message
       const meeting = await getMeeting(message.meetingId)
       if (!meeting) throw new Error("Meeting not found")
       await downloadMeeting(meeting)
+      return null
+    }
+    case "downloadLiteLog": {
+      const meeting = await getMeeting(message.meetingId)
+      if (!meeting) throw new Error("Meeting not found")
+      if ((meeting.lite ?? []).length === 0) throw new Error("No diagnostics recorded for this meeting")
+      await downloadLiteLog(meeting)
       return null
     }
     case "deleteMeeting": {
