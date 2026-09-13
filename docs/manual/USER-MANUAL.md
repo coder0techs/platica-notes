@@ -6,7 +6,7 @@ Plática Notes records your Google Meet transcript and in-meeting chat and saves
 as a Markdown file on your own computer. No servers, no accounts, no network
 requests: the extension has nowhere to send anything, by design.
 
-This manual covers version 1.16.3, the version published on the Chrome Web Store.
+This manual covers version 1.17.0, the version published on the Chrome Web Store.
 
 ---
 
@@ -66,11 +66,12 @@ face during a call is the state of capture, not a row of settings.
 
 | Behind `⋯` | What it does |
 |---|---|
+| `⬇️ Save the file now` `128 turns` | Writes the transcript as it stands, without ending the meeting (section 7). The count on the right is what would go in the file; the row is greyed out until something has been captured. |
 | `🌐 English (US)` | The full language list, for the meeting you did not see coming. |
 | `📄 Show transcript` / `Hide transcript` | The live transcript panel (section 4). |
 | `🔒 Mark private` `off` | Writes this meeting to the private folder instead. |
 | `🗑 Wipe what was captured` | Throws away everything captured so far. Asks first. |
-| `⌥⇧B` `⌥⇧H` | The two keyboard shortcuts, named where the question comes up. |
+| `⌥⇧S` `⌥⇧B` `⌥⇧H` | The three keyboard shortcuts, named where the question comes up. |
 
 The menu opens with the mouse or with the arrow keys, walks its rows with them, and
 closes with Escape, which puts the focus back where it was. Choosing something
@@ -280,6 +281,17 @@ already in Downloads. The row goes immediately and an **Undo** stays available f
 ten seconds, because a transcript that exists nowhere else in the extension deserves
 a way back.
 
+**Diagnostics** saves a small record of what capture did during that meeting: the
+channels it saw, whether the subscription went out, how many captions arrived. It
+holds no words, no names and no chat, so it is safe to hand to someone helping you,
+and it is kept for private meetings too, for the same reason. This is the file to
+send when something looked wrong (section 9).
+
+A meeting that ran with other people in it and captured nothing at all still gets a
+row, marked `Nothing captured`, with its diagnostics attached. It offers no
+transcript download, because there is no transcript behind it. That row exists so a
+failure leaves something to look at instead of vanishing.
+
 How many meetings the list keeps is a setting (section 5), 30 by default. Everything
 on this page lives in your browser profile on this machine.
 
@@ -309,6 +321,35 @@ The body is one block per event, in chronological order:
 | `### Joined · Name · …` / `### Left · …` | Someone joined or left mid-meeting. |
 | `## Visit 2 · rejoined …` | The start of a second visit, in a merged file. |
 
+### Saving before the meeting ends
+
+You do not have to wait for the call to be over. `⬇️ Save the file now` in the `⋯`
+menu, or `⌥⇧S`, writes the file there and then.
+
+It writes to the **same file** the finished meeting will write to, so you still get
+one file per meeting and it only ever grows. Save again later and it picks up
+everything said since; when you leave, the complete transcript replaces it. Leaving
+and rejoining the same call keeps writing to that one file rather than starting a
+second one.
+
+While the meeting is still running the file says so, twice. The header carries
+`status: in-progress` and a `snapshot_at` time instead of an end time, and the first
+line of the body reads:
+
+```
+> **INCOMPLETE. This meeting is still running.** Captured up to 10:42:07,
+> 00:41:12 in, 128 turns so far. This file is overwritten with the full
+> transcript when the meeting ends.
+```
+
+Both are gone from the finished file. That is deliberate: a half-recorded meeting
+that reads like a finished one is worse than no file at all, and an assistant handed
+the file has to be able to tell which it is holding.
+
+A meeting marked private saves into your private folder, exactly as it does at the
+end, and if you have the per-meeting diagnostic log switched on it is saved
+alongside.
+
 ### Using it with an assistant
 
 Drag the file into Claude, ChatGPT, or a local model and ask for what you actually
@@ -324,6 +365,11 @@ need. Some prompts that work well:
 
 Because the file is plain Markdown with an explicit schema, none of this depends on a
 particular model or vendor.
+
+Saving mid-meeting (above) is what makes this work during a call rather than after
+it: save, hand the file over, and ask what you missed while you were away from the
+screen. If the assistant reads the file itself from your Downloads folder, it will
+see the `status: in-progress` header and know the meeting is still going.
 
 ---
 
@@ -358,6 +404,15 @@ The usual cause is a second meeting-recorder extension in the same tab: only one
 them can read Meet's captions. It does not appear on a quiet call where nobody has
 spoken yet, and it takes itself back if recording turns out to be fine.
 
+**A notice says nothing has been captured, five minutes in.**
+Different from the one above: here the extension did ask Meet for captions and none
+ever came back. Two things are worth checking, and the notice names both. The first
+is the caption language: if the call is in a language the extension is not listening
+for, nothing arrives. The second is the version. Google occasionally changes how Meet
+delivers captions, and a version that predates the change goes quiet without failing,
+which is exactly what this notice exists to break. Update the extension, and send the
+**Diagnostics** file from the history page if it keeps happening.
+
 **The file is empty, or there is no file at all.**
 The caption language did not match what was spoken. Check the language buttons during
 the next call. Also check that somebody actually spoke: a meeting with no captured
@@ -391,7 +446,12 @@ by then), or **Merge a rejoin into the same file** is off, or you have two copie
 installed: one from the store and one loaded unpacked. Two copies capture
 independently and both write files; remove one.
 
-**Reporting a problem.** Turn on **Write a diagnostic log per meeting** in Settings, reproduce the
-problem, and send the `.jsonl` file from `meetings/platica-notes-logs`. It contains
-the full transcript of that meeting, so use a meeting you do not mind sharing, and
-turn the setting off afterwards. Private meetings are never logged.
+**Reporting a problem.** Start with **Diagnostics** on the history page (section 6).
+Every meeting keeps that record automatically, nothing has to be switched on
+beforehand, and it holds none of what was said, so you can send it for any meeting
+including a private one.
+
+Only if that is not enough, turn on **Write a diagnostic log per meeting** in
+Settings and reproduce the problem. That second log is a different thing: it contains
+the full transcript of the meeting, so use a call you do not mind sharing and turn
+the setting off afterwards. Private meetings are never written to it.
