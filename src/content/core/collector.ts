@@ -29,6 +29,15 @@ export class ChatLog {
     return true
   }
 
+  /**
+   * Count an id as seen without keeping a message. For a copy the caller has judged
+   * a duplicate of one it already holds: when that channel replays the copy later
+   * the id is already known, so the replay cannot slip in as a fresh message.
+   */
+  markSeen(id: string): void {
+    this.seenIds.add(id)
+  }
+
   snapshot(): ChatMessage[] {
     return [...this.messages]
   }

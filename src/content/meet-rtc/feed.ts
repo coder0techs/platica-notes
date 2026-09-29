@@ -16,13 +16,17 @@ import type { RtcCaptionEvent, RtcChatEvent } from "./bridge"
 // and splitting a lone messageId would only fragment it.)
 const INTERRUPTION_GAP_MS = 1000
 
-// The local user's own outgoing chat is captured on two independent transports:
-// the meet_messages send hook (id "self-out/…") and the embedded Google Chat frame
-// (id "self-topic/…"). Both can fire for a single send, and because their dedup ids
-// differ, ChatLog's id dedup cannot collapse them. Guard here: a self-authored
-// message (id prefixed "self-") whose exact text was already accepted within this
-// window is the other transport's copy of the same send — drop it. A genuine
-// re-send of the same text arrives well outside the window and is kept.
+// The local user's own outgoing chat can be captured on three independent
+// transports: the meet_messages send hook (id "self-out/…"), the embedded Google
+// Chat frame (id "self-topic/…"), and Meet's own echo of the message over the
+// collections channel (its real "spaces/…/messages/…" id, the user's own name).
+// Any of them can fire for a single send, and because their dedup ids differ,
+// ChatLog's id dedup cannot collapse them. Guard here: within this window, the same
+// text is one send when both copies are the user's own (two "self-" ids), or when a
+// "self-" copy and a collections copy resolve to the same sender. Two collections
+// copies are never collapsed here: that is another person repeating themselves, and
+// ChatLog already collapses their replays by id. A genuine re-send of the same text
+// arrives well outside the window and is kept.
 const SELF_CHAT_DEDUP_MS = 5000
 
 const isSelfChatId = (id?: string): boolean => id !== undefined && id.startsWith("self-")
@@ -102,8 +106,11 @@ export class RtcFeed {
   // my last revision" — O(1), no scan. Chat does not touch this (it never splits speech).
   private lastEventDeviceId = ""
   private chat = new ChatLog()
-  // text → ms of the last accepted self-authored chat, for cross-transport dedup.
-  private lastSelfChatAt = new Map<string, number>()
+  // text → last accepted self-authored chat ("self-" id), for cross-transport dedup.
+  private lastSelfChat = new Map<string, { at: number; sender: string }>()
+  // sender + text → ms of the last accepted collections-channel chat: the reverse
+  // order, where Meet's echo lands before the "self-" copy of the same send.
+  private lastEchoChatAt = new Map<string, number>()
   private roster: Map<string, string>
 
   // The roster map can be shared with the caller (it streams from join time,
@@ -126,7 +133,8 @@ export class RtcFeed {
     this.nextOrder = 0
     this.lastEventDeviceId = ""
     this.chat = new ChatLog()
-    this.lastSelfChatAt.clear()
+    this.lastSelfChat.clear()
+    this.lastEchoChatAt.clear()
   }
 
   /** Returns true if the revision was accepted (not stale). */
@@ -176,16 +184,6 @@ export class RtcFeed {
 
   /** Returns true if appended (not a consecutive duplicate). */
   handleChat(ev: RtcChatEvent, at: string): boolean {
-    // Cross-transport dedup for the user's own chat: the same send can arrive on
-    // both self transports with different ids, so collapse a self message whose
-    // exact text was just accepted (see SELF_CHAT_DEDUP_MS).
-    if (isSelfChatId(ev.messageId)) {
-      const textKey = ev.text.trim()
-      const atMs = Date.parse(at)
-      const prev = this.lastSelfChatAt.get(textKey)
-      if (prev !== undefined && atMs - prev < SELF_CHAT_DEDUP_MS) return false
-      this.lastSelfChatAt.set(textKey, atMs)
-    }
     // Sender resolved at append time, not at snapshot time (unlike transcript speakers).
     // Deliberate: chat needs a human-readable name immediately (seconds after join,
     // before the roster is fully streamed); transcripts can afford retroactive resolution.
@@ -195,10 +193,37 @@ export class RtcFeed {
     // the feed this deviceId->name mapping, so transcript lines from the same
     // device — including the local user, who never appears in the collections
     // roster — resolve to the real name at snapshot time (both later and prior,
-    // since transcript speakers resolve at snapshot time).
+    // since transcript speakers resolve at snapshot time). Done before the duplicate
+    // guard on purpose: a collapsed copy still teaches the roster its real device.
     if (ev.sender && ev.sender.trim()) this.roster.set(ev.deviceId, ev.sender)
     const sender = ev.sender && ev.sender.trim() ? ev.sender : this.speakerFor(ev.deviceId)
-    return this.chat.add({ sender, sentAt: at, text: ev.text }, ev.messageId)
+
+    // Cross-transport dedup for the user's own chat: one send can arrive on several
+    // transports with different ids (see SELF_CHAT_DEDUP_MS).
+    const text = ev.text.trim()
+    const atMs = Date.parse(at)
+    const echoKey = `${sender}\u0000${text}`
+    const isSelf = isSelfChatId(ev.messageId)
+    const prevSelf = this.lastSelfChat.get(text)
+    const selfInWindow = prevSelf !== undefined && atMs - prevSelf.at < SELF_CHAT_DEDUP_MS
+    const prevEcho = this.lastEchoChatAt.get(echoKey)
+    const echoInWindow = prevEcho !== undefined && atMs - prevEcho < SELF_CHAT_DEDUP_MS
+    const duplicate = isSelf
+      ? selfInWindow || echoInWindow
+      : selfInWindow && prevSelf?.sender === sender
+    if (duplicate) {
+      // The channel replays messages: count the id as seen so a replay of this copy
+      // cannot come back later as if it were new.
+      if (ev.messageId !== undefined) this.chat.markSeen(ev.messageId)
+      return false
+    }
+
+    const added = this.chat.add({ sender, sentAt: at, text: ev.text }, ev.messageId)
+    if (added) {
+      if (isSelf) this.lastSelfChat.set(text, { at: atMs, sender })
+      else this.lastEchoChatAt.set(echoKey, atMs)
+    }
+    return added
   }
 
   transcriptSnapshot(): Utterance[] {
