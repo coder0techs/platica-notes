@@ -415,6 +415,76 @@ describe("RtcFeed own-chat cross-transport dedup", () => {
   })
 })
 
+// Measured on a real meeting: Meet now also echoes the local user's own message over
+// the collections channel, under its real messageId and the user's own name and
+// device. That is a third copy of one send, and it carries no "self-" id.
+describe("RtcFeed own-chat echo over the collections channel", () => {
+  const ME = "Ada Lovelace"
+  const MY_DEVICE = "spaces/abc/devices/392"
+  const selfTopic = (text: string, id: string): RtcChatEvent => ({
+    type: "chat",
+    deviceId: "self",
+    text,
+    sender: ME,
+    messageId: `self-topic/${id}`,
+  })
+  const echo = (text: string, id: string, sender = ME): RtcChatEvent => ({
+    type: "chat",
+    deviceId: MY_DEVICE,
+    text,
+    sender,
+    messageId: `spaces/abc/messages/${id}`,
+  })
+
+  it("collapses the echo into the self copy that arrived first", () => {
+    const feed = new RtcFeed()
+    expect(feed.handleChat(selfTopic("all done", "1"), t(0))).toBe(true)
+    expect(feed.handleChat(echo("all done", "m1"), t(1300))).toBe(false)
+    expect(feed.chatSnapshot()).toHaveLength(1)
+  })
+
+  it("collapses the self copy into an echo that arrived first", () => {
+    const feed = new RtcFeed()
+    expect(feed.handleChat(echo("all done", "m1"), t(0))).toBe(true)
+    expect(feed.handleChat(selfTopic("all done", "1"), t(300))).toBe(false)
+    expect(feed.chatSnapshot()).toHaveLength(1)
+  })
+
+  it("does not let a later replay of a collapsed echo back in", () => {
+    // The collections channel replays messages (a resubscribe re-sends the batch).
+    // The echo was dropped as a duplicate, so its id must still count as seen.
+    const feed = new RtcFeed()
+    feed.handleChat(selfTopic("all done", "1"), t(0))
+    expect(feed.handleChat(echo("all done", "m1"), t(1300))).toBe(false)
+    expect(feed.handleChat(echo("all done", "m1"), t(60000))).toBe(false)
+    expect(feed.chatSnapshot()).toHaveLength(1)
+  })
+
+  it("keeps someone else's message that has the same text as mine", () => {
+    const feed = new RtcFeed()
+    expect(feed.handleChat(selfTopic("+1", "1"), t(0))).toBe(true)
+    expect(feed.handleChat(echo("+1", "m2", "Grace Hopper"), t(500))).toBe(true)
+    expect(feed.chatSnapshot()).toHaveLength(2)
+  })
+
+  it("keeps a genuine re-send of the same text once the window has passed", () => {
+    const feed = new RtcFeed()
+    feed.handleChat(selfTopic("ok", "1"), t(0))
+    feed.handleChat(echo("ok", "m1"), t(1300))
+    expect(feed.handleChat(selfTopic("ok", "2"), t(10000))).toBe(true)
+    expect(feed.handleChat(echo("ok", "m2"), t(11300))).toBe(false)
+    expect(feed.chatSnapshot().map((m) => m.text)).toEqual(["ok", "ok"])
+  })
+
+  it("still teaches the roster the real device from a collapsed echo", () => {
+    const feed = new RtcFeed()
+    feed.handleChat(selfTopic("hi", "1"), t(0))
+    feed.handleChat(echo("hi", "m1"), t(1300))
+    feed.handleCaption(caption(MY_DEVICE, 1, 1, "hello"), t(2000))
+    expect(feed.transcriptSnapshot()[0].speaker).toBe(ME)
+  })
+})
+
 describe("RtcFeed.reset", () => {
   const AT = "2026-07-29T10:00:00.000Z"
   const AT2 = "2026-07-29T10:00:05.000Z"

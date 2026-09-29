@@ -4,6 +4,13 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+- **Your own chat messages are no longer written twice.** In some meetings Google
+  Meet sends a message you typed back to you a second later, on top of the copy
+  Plática Notes already had from the moment you pressed Enter, and the file then
+  listed it as two messages a second apart. The two are now recognised as one
+  send. A message you deliberately send twice, or someone else typing the same
+  words as you, is still kept.
+
 ## 1.17.0 - 2026-09-12
 
 - **You can now save the transcript without leaving the meeting.** Until now the

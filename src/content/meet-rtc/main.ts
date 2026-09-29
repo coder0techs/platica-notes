@@ -965,9 +965,10 @@ function install(): boolean {
         }
       } else {
         // Own outgoing chat (real feature, always on): the local user's message is
-        // never echoed back to this client (collections only carries OTHERS' chat),
-        // so we read it from the outgoing meet_messages send and attribute it to
-        // self. Read-only: we decode a view and call through to the real send.
+        // not reliably echoed back to this client (collections has been seen to echo
+        // it, and to stay silent), so we read it from the outgoing meet_messages send
+        // and attribute it to self. When the echo does arrive, the feed collapses it
+        // into this copy. Read-only: we decode a view and call through to the real send.
         if (this.label === "meet_messages" && (data instanceof ArrayBuffer || data instanceof Uint8Array)) {
           try {
             const own = decodeOutgoingChat(data instanceof Uint8Array ? data : new Uint8Array(data))
