@@ -4,6 +4,8 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+## 1.17.1 - 2026-09-29
+
 - **Your own chat messages are no longer written twice.** In some meetings Google
   Meet sends a message you typed back to you a second later, on top of the copy
   Plática Notes already had from the moment you pressed Enter, and the file then
