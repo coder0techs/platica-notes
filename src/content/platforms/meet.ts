@@ -29,6 +29,7 @@ import { RtcFeed } from "../meet-rtc/feed"
 import { parseOwnChatMessage } from "../chatgoogle/parse"
 import {
   finalAttendees,
+  isMeetingPath,
   isMidMeetingJoin,
   nextLeaveState,
   nextMediaZeroSince,
@@ -61,7 +62,8 @@ const MEETING_TITLE = ".u6vdEc"
 //   people panel    `.axUSnc`, `[jscontroller="izfDQc"]`
 // -------------------------------------------------------------------------------
 
-const MEETING_PATH = /^\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i
+// The meeting-URL check (isMeetingPath) is part of this contract too; it lives in
+// meet-lifecycle.ts so it can be unit-tested.
 // The leave icon flickers during toolbar re-renders; only this many consecutive
 // missing checks mean the user actually left the call.
 const LEAVE_GONE_CHECKS = 3
@@ -519,7 +521,7 @@ async function main(): Promise<void> {
   let lastMeetingPath = ""
   let lastMeetingEndedAt = 0
   for (;;) {
-    await waitFor(() => MEETING_PATH.test(location.pathname))
+    await waitFor(() => isMeetingPath(location.pathname))
     const meetingPath = location.pathname
     // Refuse to start a NEW session on the just-ended code while Meet is still
     // streaming the final caption tail (see CAPTION_TAIL_GRACE_MS). Drain it with

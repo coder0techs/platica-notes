@@ -4,6 +4,12 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+- **Meetings opened at the new Google Meet address are recorded again.** Google
+  is moving meetings from `meet.google.com/abc-defg-hij` to
+  `meet.google.com/meet/abc-defg-hij`, one account at a time. On the new address
+  Plática Notes did not recognise the page as a meeting, so nothing was captured
+  and no file was saved. Both addresses now work.
+
 ## 1.17.1 - 2026-09-29
 
 - **Your own chat messages are no longer written twice.** In some meetings Google
