@@ -4,6 +4,8 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+## 1.17.2 - 2026-10-21
+
 - **Meetings opened at the new Google Meet address are recorded again.** Google
   is moving meetings from `meet.google.com/abc-defg-hij` to
   `meet.google.com/meet/abc-defg-hij`, one account at a time. On the new address
