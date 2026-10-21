@@ -5,6 +5,16 @@ import { isSpeakerPlaceholder } from "../meet-rtc/feed"
 // touches the DOM/chrome). These encode the two historically-fragile rules: the
 // phantom-duplicate grace window and the leave-detection poller.
 
+// A meeting page is the meeting code at the root (/abc-defg-hij) or, since Meet
+// began rolling out a new URL scheme in October 2026, under /meet/
+// (/meet/abc-defg-hij). Both are live at once: the rollout is per account.
+// Part of the Meet DOM contract: re-verify against a real meeting URL.
+const MEETING_PATH = /^\/(?:meet\/)?[a-z]{3}-[a-z]{4}-[a-z]{3}/i
+
+export function isMeetingPath(pathname: string): boolean {
+  return MEETING_PATH.test(pathname)
+}
+
 // Phantom-duplicate guard: after a meeting ends, Meet keeps streaming the final
 // caption tail for a few seconds. Refuse to START a new session on the SAME code
 // within the grace window so that tail drains with no active session to catch it.

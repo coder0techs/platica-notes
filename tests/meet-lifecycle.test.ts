@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   finalAttendees,
+  isMeetingPath,
   isMidMeetingJoin,
   nextLeaveState,
   nextMediaZeroSince,
@@ -15,6 +16,21 @@ import {
 
 const GRACE = 8000
 const THRESHOLD = 3
+
+describe("isMeetingPath", () => {
+  it.each(["/abc-defg-hij", "/abc-defg-hij/", "/ABC-DEFG-HIJ", "/meet/abc-defg-hij", "/meet/abc-defg-hij/"])(
+    "recognises the meeting page %s",
+    (path) => {
+      expect(isMeetingPath(path)).toBe(true)
+    },
+  )
+  it.each(["/", "/landing", "/new", "/meet/", "/meet/landing", "/other/abc-defg-hij", "/abc-defg"])(
+    "does not start a meeting on %s",
+    (path) => {
+      expect(isMeetingPath(path)).toBe(false)
+    },
+  )
+})
 
 describe("isMidMeetingJoin", () => {
   const SETTLE = 10000
