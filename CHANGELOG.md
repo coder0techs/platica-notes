@@ -4,6 +4,13 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+- **Rejoining a meeting at the new Google Meet address adds to the same file
+  again.** 1.17.2 brought back recording at `meet.google.com/meet/abc-defg-hij`,
+  but did not read the meeting code from that address. Leaving and rejoining the
+  same call then saved a second file instead of continuing the first, and the
+  file name lost its meeting code. Both now work at either address, including a
+  rejoin that lands on the other one.
+
 ## 1.17.2 - 2026-10-21
 
 - **Meetings opened at the new Google Meet address are recorded again.** Google

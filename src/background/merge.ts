@@ -9,11 +9,12 @@ import type { Meeting } from "../shared/types"
 // across midnight.
 export const MERGE_GAP_MS = 40 * 60 * 1000
 
-// The Meet code (abc-defg-hij) carried in a meeting's join url. null when absent
+// The Meet code (abc-defg-hij) carried in a meeting's join url, at the root or
+// under the /meet/ prefix Meet began rolling out in October 2026. null when absent
 // or not that shape (e.g. a /lookup link), which disables merging for it.
 export function meetCodeFromUrl(url: string | undefined): string | null {
   if (!url) return null
-  const m = url.match(/meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})\b/i)
+  const m = url.match(/meet\.google\.com\/(?:meet\/)?([a-z]{3}-[a-z]{4}-[a-z]{3})\b/i)
   return m ? m[1].toLowerCase() : null
 }
 
