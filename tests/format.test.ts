@@ -506,6 +506,11 @@ describe("meetingFileName", () => {
     expect(name).toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_Sprint_sync_exb-zusa-qnc\.md$/)
   })
 
+  it("appends the Meet code from a /meet/ meeting url", () => {
+    const name = meetingFileName(makeMeeting({ meetingUrl: "https://meet.google.com/meet/exb-zusa-qnc" }))
+    expect(name).toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_Sprint_sync_exb-zusa-qnc\.md$/)
+  })
+
   it("omits the code when the url carries none (a /lookup link, or no url at all)", () => {
     expect(meetingFileName(makeMeeting({ meetingUrl: "https://meet.google.com/lookup/abcdef" })))
       .toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_Sprint_sync\.md$/)

@@ -25,8 +25,13 @@ describe("meetCodeFromUrl", () => {
   it("extracts the code ignoring trailing path/query", () => {
     expect(meetCodeFromUrl("https://meet.google.com/abc-defg-hij?authuser=0")).toBe("abc-defg-hij")
   })
+  it("extracts the code from the /meet/ url shape", () => {
+    expect(meetCodeFromUrl("https://meet.google.com/meet/abc-defg-hij")).toBe("abc-defg-hij")
+    expect(meetCodeFromUrl("https://meet.google.com/meet/ABC-DEFG-HIJ?authuser=0")).toBe("abc-defg-hij")
+  })
   it("returns null for a non-meeting url and for undefined", () => {
     expect(meetCodeFromUrl("https://meet.google.com/lookup/xyz")).toBeNull()
+    expect(meetCodeFromUrl("https://meet.google.com/meet/")).toBeNull()
     expect(meetCodeFromUrl(undefined)).toBeNull()
   })
 })
@@ -51,6 +56,13 @@ describe("shouldMerge", () => {
     const lateTarget = meeting({ startedAt: "2026-06-30T23:40:00.000Z", endedAt: "2026-06-30T23:55:00.000Z" })
     const incoming = meeting({ id: "m2", startedAt: "2026-07-01T00:05:00.000Z", endedAt: "2026-07-01T00:20:00.000Z" })
     expect(shouldMerge(lateTarget, incoming, MERGE_GAP_MS)).toBe(true)
+  })
+  it("merges a rejoin at the /meet/ url, and across the two url shapes", () => {
+    const meetTarget = meeting({ endedAt: "2026-06-30T10:30:00.000Z", meetingUrl: "https://meet.google.com/meet/abc-defg-hij" })
+    const rejoin = meeting({ id: "m2", startedAt: "2026-06-30T10:35:00.000Z", meetingUrl: "https://meet.google.com/meet/abc-defg-hij" })
+    expect(shouldMerge(meetTarget, rejoin, MERGE_GAP_MS)).toBe(true)
+    const rootRejoin = meeting({ id: "m3", startedAt: "2026-06-30T10:35:00.000Z" })
+    expect(shouldMerge(meetTarget, rootRejoin, MERGE_GAP_MS)).toBe(true)
   })
   it("does not merge a different code", () => {
     const incoming = meeting({ id: "m2", startedAt: "2026-06-30T10:35:00.000Z", meetingUrl: "https://meet.google.com/zzz-zzzz-zzz" })
