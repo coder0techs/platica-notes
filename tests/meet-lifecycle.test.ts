@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { meetKey } from "../src/shared/meet-url"
 import {
   finalAttendees,
   isMeetingPath,
@@ -18,13 +19,17 @@ const GRACE = 8000
 const THRESHOLD = 3
 
 describe("isMeetingPath", () => {
-  it.each(["/abc-defg-hij", "/abc-defg-hij/", "/ABC-DEFG-HIJ", "/meet/abc-defg-hij", "/meet/abc-defg-hij/"])(
+  it.each([
+    "/abc-defg-hij", "/abc-defg-hij/", "/ABC-DEFG-HIJ", "/meet/abc-defg-hij", "/meet/abc-defg-hij/",
+    // the prefix is Google's to change: any segments before the code
+    "/other/abc-defg-hij", "/v2/meet/abc-defg-hij", "/meet/abc-defg-hij?authuser=1",
+  ])(
     "recognises the meeting page %s",
     (path) => {
       expect(isMeetingPath(path)).toBe(true)
     },
   )
-  it.each(["/", "/landing", "/new", "/meet/", "/meet/landing", "/other/abc-defg-hij", "/abc-defg"])(
+  it.each(["/", "/landing", "/new", "/meet/", "/meet/landing", "/abc-defg", "/abc-defg-hijk", "/lookup/xyz"])(
     "does not start a meeting on %s",
     (path) => {
       expect(isMeetingPath(path)).toBe(false)
@@ -52,6 +57,20 @@ describe("isMidMeetingJoin", () => {
   })
 })
 const MEDIA_GRACE = 5000
+
+describe("meeting identity across url shapes", () => {
+  it("meetKey is the code for a meeting path and the path itself otherwise", () => {
+    expect(meetKey("/meet/ABC-defg-hij/")).toBe("abc-defg-hij")
+    expect(meetKey("/landing")).toBe("/landing")
+  })
+  it("a stored session under the old url shape resumes, not finalizes, on the new one", () => {
+    expect(shouldFinalizeStaleSession("/abc-defg-hij", "/meet/abc-defg-hij")).toBe(false)
+    expect(shouldFinalizeStaleSession("/abc-defg-hij", "/meet/xyz-abcd-efg")).toBe(true)
+  })
+  it("the tail drain matches the same code across shapes", () => {
+    expect(shouldDrainTail("/meet/abc-defg-hij", "/abc-defg-hij", 1000, 2000, 5000)).toBe(true)
+  })
+})
 
 describe("shouldDrainTail (phantom-duplicate grace)", () => {
   it("drains: same code re-entered within the grace window", () => {

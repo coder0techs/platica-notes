@@ -1,3 +1,4 @@
+import { meetCodeFromPath } from "../shared/meet-url"
 import { isCaptureFailure, type Meeting } from "../shared/types"
 
 // Two visits of the same Meet code merge only when the second starts within this
@@ -9,13 +10,17 @@ import { isCaptureFailure, type Meeting } from "../shared/types"
 // across midnight.
 export const MERGE_GAP_MS = 40 * 60 * 1000
 
-// The Meet code (abc-defg-hij) carried in a meeting's join url, at the root or
-// under the /meet/ prefix Meet began rolling out in October 2026. null when absent
-// or not that shape (e.g. a /lookup link), which disables merging for it.
+// The Meet code (abc-defg-hij) carried in a meeting's join url, wherever Meet puts
+// it in the path (see meet-url.ts). null when absent, not that shape (e.g. a
+// /lookup link) or on another host, which disables merging for it.
 export function meetCodeFromUrl(url: string | undefined): string | null {
   if (!url) return null
-  const m = url.match(/meet\.google\.com\/(?:meet\/)?([a-z]{3}-[a-z]{4}-[a-z]{3})\b/i)
-  return m ? m[1].toLowerCase() : null
+  try {
+    const u = new URL(url)
+    return u.hostname === "meet.google.com" ? meetCodeFromPath(u.pathname) : null
+  } catch {
+    return null
+  }
 }
 
 // True when `incoming` is a sequential rejoin of the same meeting as `target`:

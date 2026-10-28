@@ -41,6 +41,7 @@ import {
   shouldFinishRearmWait,
   captureFault,
 } from "./meet-lifecycle"
+import { meetKey } from "../../shared/meet-url"
 
 // --- Google Meet DOM contract. Verify on a live meeting before each release. ---
 const ICON_FONT = ".google-symbols"
@@ -588,7 +589,7 @@ async function runMeeting(tabId: number): Promise<void> {
   // Abort the lobby wait if the user backs out without joining.
   const joined = await waitForIcon(
     LEAVE_ICON_TEXT,
-    () => location.pathname !== meetingPath,
+    () => meetKey(location.pathname) !== meetKey(meetingPath),
   )
   if (!joined) return
   dlog("meeting started", { tab: tabId })
@@ -625,7 +626,10 @@ async function runMeeting(tabId: number): Promise<void> {
   // A mid-meeting reload of the SAME meeting continues its session (read above),
   // rather than erasing it. A different-meeting session was already finalized and
   // its key cleared just above, so it never resumes here.
-  const resumed = previous && previous.path === meetingPath ? previous : null
+  // Same meeting = same Meet code, so a session stored under the other url shape
+  // resumes too; shouldFinalizeStaleSession uses the same identity, and a session
+  // that is neither finalized nor resumed would be overwritten below.
+  const resumed = previous?.path !== undefined && meetKey(previous.path) === meetKey(meetingPath) ? previous : null
   if (resumed) dlog("resuming session after reload")
   // A full page reload resets the page-level roster/selfName, but Meet only
   // broadcasts the collections roster and fires GetUser at the initial join — not
@@ -1099,7 +1103,7 @@ async function runMeeting(tabId: number): Promise<void> {
       return
     }
     const decision = nextLeaveState(
-      location.pathname !== meetingPath,
+      meetKey(location.pathname) !== meetKey(meetingPath),
       !!findIcon(LEAVE_ICON_TEXT),
       leaveGoneCount,
       LEAVE_GONE_CHECKS,

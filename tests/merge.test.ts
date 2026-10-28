@@ -27,9 +27,14 @@ describe("meetCodeFromUrl", () => {
   it("extracts the code ignoring trailing path/query", () => {
     expect(meetCodeFromUrl("https://meet.google.com/abc-defg-hij?authuser=0")).toBe("abc-defg-hij")
   })
-  it("extracts the code from the /meet/ url shape", () => {
+  it("extracts the code from the /meet/ url shape and any future prefix", () => {
     expect(meetCodeFromUrl("https://meet.google.com/meet/abc-defg-hij")).toBe("abc-defg-hij")
     expect(meetCodeFromUrl("https://meet.google.com/meet/ABC-DEFG-HIJ?authuser=0")).toBe("abc-defg-hij")
+    expect(meetCodeFromUrl("https://meet.google.com/v2/call/abc-defg-hij#x")).toBe("abc-defg-hij")
+  })
+  it("ignores a code on another host and an unparsable url", () => {
+    expect(meetCodeFromUrl("https://example.com/abc-defg-hij")).toBeNull()
+    expect(meetCodeFromUrl("not a url")).toBeNull()
   })
   it("returns null for a non-meeting url and for undefined", () => {
     expect(meetCodeFromUrl("https://meet.google.com/lookup/xyz")).toBeNull()
