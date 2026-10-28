@@ -15,3 +15,15 @@ export function meetCodeFromPath(pathname: string): string | null {
 export function meetKey(pathname: string): string {
   return meetCodeFromPath(pathname) ?? pathname
 }
+
+/**
+ * The meeting's title from what the page shows (`raw`) and its pathname. Meet
+ * prefixes document.title with "Meet - " once you have been in the call; for the
+ * first seconds it reads just "Meet" or "Google Meet", which names no meeting, so
+ * the code stands in (the file name then carries the code once, not "Meet_<code>").
+ */
+export function meetingTitle(raw: string, pathname: string): string {
+  const title = raw.replace(/^Meet - /, "")
+  if (title !== "Meet" && title !== "Google Meet") return title
+  return meetCodeFromPath(pathname) ?? title
+}

@@ -41,7 +41,7 @@ import {
   shouldFinishRearmWait,
   captureFault,
 } from "./meet-lifecycle"
-import { meetKey } from "../../shared/meet-url"
+import { meetingTitle, meetKey } from "../../shared/meet-url"
 
 // --- Google Meet DOM contract. Verify on a live meeting before each release. ---
 const ICON_FONT = ".google-symbols"
@@ -1316,8 +1316,5 @@ function delay(ms: number): Promise<void> {
 
 function readMeetingTitle(): string {
   const titled = document.querySelector(MEETING_TITLE)?.textContent?.trim()
-  // Meet prefixes document.title with "Meet - " once you have been in the call
-  // (so rejoins and same-tab soft-nav meetings would otherwise be saved as
-  // "Meet - <code>"). Strip it so the title is the bare meeting name/code.
-  return (titled || document.title).replace(/^Meet - /, "")
+  return meetingTitle(titled || document.title, location.pathname)
 }

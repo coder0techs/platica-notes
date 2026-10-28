@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { meetKey } from "../src/shared/meet-url"
+import { meetingTitle, meetKey } from "../src/shared/meet-url"
 import {
   finalAttendees,
   isMeetingPath,
@@ -69,6 +69,26 @@ describe("meeting identity across url shapes", () => {
   })
   it("the tail drain matches the same code across shapes", () => {
     expect(shouldDrainTail("/meet/abc-defg-hij", "/abc-defg-hij", 1000, 2000, 5000)).toBe(true)
+  })
+})
+
+// For the first seconds of a call document.title is the bare product name.
+describe("meetingTitle", () => {
+  const PATH = "/abc-defg-hij"
+  it("the bare product name is no title: the Meet code stands in", () => {
+    expect(meetingTitle("Meet", PATH)).toBe("abc-defg-hij")
+    expect(meetingTitle("Google Meet", "/meet/ABC-defg-hij")).toBe("abc-defg-hij")
+  })
+  it("keeps the product name when the path carries no code", () => {
+    expect(meetingTitle("Google Meet", "/lookup/team-sync")).toBe("Google Meet")
+  })
+  it("strips the 'Meet - ' prefix Meet adds once you have been in the call", () => {
+    expect(meetingTitle("Meet - abc-defg-hij", PATH)).toBe("abc-defg-hij")
+    expect(meetingTitle("Meet - Weekly Sync", PATH)).toBe("Weekly Sync")
+  })
+  it("leaves a real title alone, even one that mentions Meet", () => {
+    expect(meetingTitle("Weekly Sync", PATH)).toBe("Weekly Sync")
+    expect(meetingTitle("Meet the team", PATH)).toBe("Meet the team")
   })
 })
 
