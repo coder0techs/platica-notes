@@ -4,6 +4,35 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+- **Closing Meet's own caption panel no longer stops the transcript.** On the
+  October 2026 Meet build, turning Meet's captions off also cancelled the
+  extension's caption stream, so the transcript went silent until the panel was
+  opened again. The extension now picks the stream back up half a second later.
+- **Presenting no longer doubles the transcript.** Sharing your screen opens a
+  second connection, and the extension subscribed to captions on it too: every
+  turn arrived twice, and some early turns were overwritten by later speech. Only
+  one connection carries captions at a time now.
+- **Chat messages that arrived together with a participant update are no longer
+  lost.**
+- **A second meeting in the same tab starts clean.** It no longer inherits the
+  attendee list and the Google Chat link of the meeting before it.
+- **Save writes exactly what you see.** Making a meeting private, or wiping it,
+  in the second before pressing Save is now in the saved file. Wipe also clears
+  the debug log, which kept the wiped captions.
+- **A meeting is recognised by its code wherever Meet puts it in the address.**
+  Reloading the tab after Meet switched the address format continues the same
+  meeting instead of starting a new one.
+- **A meeting joined in its first seconds is no longer named "Meet".** The file
+  takes the meeting code instead until the real title is known.
+- **The diagnostics log now carries caption delivery counts for every meeting**,
+  not only with the debug log on, so a meeting that captured nothing can be
+  explained. The counts hold no meeting content.
+- **Hardening.** A malformed participant response from Meet can no longer freeze
+  the tab; unusual line-break and control characters in names, titles and chat
+  can no longer break the saved file's structure; a failed recovery of one
+  unsaved meeting no longer blocks the others; Enter that confirms IME input no
+  longer submits a half-typed note.
+
 ## 1.17.3 - 2026-10-28
 
 - **Rejoining a meeting at the new Google Meet address adds to the same file
