@@ -1083,3 +1083,25 @@ describe("hostile input — truncated / oversized / garbage", () => {
     expect(() => decodeRoster(u8(outer))).not.toThrow()
   })
 })
+
+describe("decodeCollectionsChat — batched collections packet", () => {
+  it("finds the messages collection when a devices record precedes it at the same level", () => {
+    const leaf: number[] = []; lenField(1, strBytes("spaces/abc/devices/9"), leaf); lenField(2, strBytes("Grace Hopper"), leaf)
+    const devColl: number[] = []; lenField(2, leaf, devColl)
+    const dev13: number[] = []; lenField(1, devColl, dev13)              // f13.f1 = devices
+    const f4: number[] = []
+    lenField(2, buildLeafMessage({ messageId: "spaces/abc/messages/m1", deviceId: "spaces/abc/devices/9", text: "hola", sender: "Grace Hopper" }), f4)
+    const msg13: number[] = []; lenField(4, f4, msg13)                   // f13.f4 = messages
+    // Form A: two f13 siblings under one f2.
+    const b: number[] = []; lenField(13, dev13, b); lenField(13, msg13, b)
+    const a: number[] = []; lenField(2, b, a)
+    const rootA: number[] = []; lenField(1, a, rootA)
+    expect(decodeCollectionsChat(u8(rootA)).map((m) => m.text)).toEqual(["hola"])
+    // Form B: two f2 siblings under f1, devices first.
+    const b1: number[] = []; lenField(13, dev13, b1)
+    const b2: number[] = []; lenField(13, msg13, b2)
+    const a2: number[] = []; lenField(2, b1, a2); lenField(2, b2, a2)
+    const rootB: number[] = []; lenField(1, a2, rootB)
+    expect(decodeCollectionsChat(u8(rootB)).map((m) => m.text)).toEqual(["hola"])
+  })
+})

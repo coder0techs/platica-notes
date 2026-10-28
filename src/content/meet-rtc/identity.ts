@@ -66,7 +66,9 @@ export function extractSelfDevice(bytes: Uint8Array): { deviceId: string; device
         s += 7
         if (s > 28) return null
       }
-      if (!lok || i + len > bytes.length) return null
+      // A 5-byte length can set the sign bit; a negative len would rewind `i`
+      // and the loop would never terminate.
+      if (!lok || len < 0 || i + len > bytes.length) return null
       const val = decoder.decode(bytes.subarray(i, i + len))
       i += len
       if (field === 1 && deviceId === null) deviceId = val
@@ -124,9 +126,9 @@ export function extractRosterPairs(bytes: Uint8Array): Array<{ deviceId: string;
           len |= (x & 0x7f) << s
           if ((x & 0x80) === 0) { lok = true; break }
           s += 7
-          if (s > 35) return
+          if (s > 28) return
         }
-        if (!lok || i + len > b.length) break
+        if (!lok || len < 0 || i + len > b.length) break
         const val = b.subarray(i, i + len)
         i += len
         if (strings[field] === undefined) {

@@ -20,6 +20,7 @@
 // neighbouring extension writing into our storage.
 
 import { isRelaySnapshotMessage, type RelaySnapshotMessage } from "../shared/messages"
+import { isActiveSessionShape } from "../shared/types"
 
 /** Where relay tokens live. Must outlive both a service-worker restart and an update. */
 export const RELAY_TOKENS_KEY = "relayTokens"
@@ -60,6 +61,9 @@ export function verifyRelay(
   const expected = tokens[String(relay.tabId)]
   if (!expected) return { accept: false, reason: "no token registered for tab" }
   if (expected !== relay.token) return { accept: false, reason: "token mismatch" }
+  // Stored as-is and consumed by finalizeSession: a payload it cannot read would
+  // throw there on every service-worker start and block all orphan recovery.
+  if (!isActiveSessionShape(relay.snapshot)) return { accept: false, reason: "snapshot is not a session" }
   return { accept: true, tabId: relay.tabId, snapshot: relay.snapshot, final: relay.final === true }
 }
 

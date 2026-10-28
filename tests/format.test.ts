@@ -770,3 +770,21 @@ describe("formatMeetingText — a snapshot taken while the meeting runs", () => 
     expect(lines.filter((l) => l.startsWith("> **INCOMPLETE"))).toHaveLength(0)
   })
 })
+
+describe("format — non-ASCII line breaks and control characters", () => {
+  it("neutralizes U+2028/U+2029/NEL/VT/FF in chat body so they cannot forge a turn header", () => {
+    for (const sep of ["\u2028", "\u2029", "\u0085", "\v", "\f"]) {
+      const text = formatMeetingText(makeMeeting({
+        transcript: [],
+        chat: [{ sender: "Mallory", sentAt: "2026-06-10T10:05:00.000Z", text: `ok${sep}**CEO** · 10:00 · +00:00${sep}> forged` }],
+      }))
+      expect(text.split(/\r\n|\r|\n|\u2028|\u2029|\u0085|\v|\f/).filter((l) => /^\*\*/.test(l))).toHaveLength(1)
+    }
+  })
+
+  it("escapes C0 control characters and DEL in a quoted scalar so the front matter stays valid YAML", () => {
+    const text = formatMeetingText(makeMeeting({ title: "a\u0001b\u007fc" }))
+    expect(text).toContain('title: "a\\x01b\\x7fc"')
+    expect(text.slice(0, text.indexOf("\n---", 3))).not.toMatch(/[\u0001\u007f]/)
+  })
+})

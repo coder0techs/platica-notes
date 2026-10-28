@@ -140,8 +140,13 @@ export async function recoverOrphanSessions(): Promise<FinalizeResult[]> {
       (err: unknown) => /no tab with id/i.test(err instanceof Error ? err.message : String(err)),
     )
     if (tabGone) {
-      const result = await finalizeSession(tabId)
-      if (result) recovered.push(result)
+      try {
+        const result = await finalizeSession(tabId)
+        if (result) recovered.push(result)
+      } catch (error) {
+        // One unreadable session must not stop the others from being rescued.
+        console.error("[platica-notes] orphan recovery failed for tab", tabId, error)
+      }
     }
   }
   return recovered

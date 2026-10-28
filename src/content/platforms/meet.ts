@@ -487,10 +487,10 @@ async function main(): Promise<void> {
   // retransmit of the same send counts once.
   window.addEventListener("message", (event) => {
     if (event.origin !== "https://chat.google.com") return
-    // The frame carries its own URL (the chat conversation link); keep the first
-    // chat.google.com URL we see for the saved file's header.
+    // The frame carries its own URL (the chat conversation link); the newest
+    // chat.google.com URL wins, so a later meeting in this tab gets its own space.
     const data = event.data as { url?: unknown } | null
-    if (data && typeof data.url === "string" && data.url.startsWith("https://chat.google.com") && !chatUrl) {
+    if (data && typeof data.url === "string" && data.url.startsWith("https://chat.google.com")) {
       chatUrl = data.url
     }
     const own = parseOwnChatMessage(event.data)
@@ -602,7 +602,7 @@ async function runMeeting(tabId: number): Promise<void> {
   // the slice, which is why no saved log ever carried a build number. The header
   // below puts the service facts INSIDE the window instead of hoping an earlier
   // event survives.
-  const debugStart = debugEvents.length
+  let debugStart = debugEvents.length
   const liteStart = liteEvents.length
   dlog("meeting header", {
     extVersion: typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev",
@@ -982,6 +982,9 @@ async function runMeeting(tabId: number): Promise<void> {
   // reports the outcome, because a save that says nothing is a save the user has to
   // go and verify in their Downloads folder.
   async function saveSnapshot(): Promise<void> {
+    // The background reads the stored session: flush the debounced write first or
+    // a privacy toggle or wipe from the last second is missing from the file.
+    await writer.writeNow()
     const response = await sendToBackground<SnapshotResult>({ kind: "snapshotMeeting" })
     if (!response.ok) {
       showToast(response.invalidated ? "Plática Notes was updated. Reload the page to save." : response.error)
@@ -1009,6 +1012,10 @@ async function runMeeting(tabId: number): Promise<void> {
     session.rawVersions = []
     session.notes = []
     session.participantEvents = []
+    // The verbatim debug trail holds every wiped caption; drop it with the content.
+    debugStart = debugEvents.length
+    prefixDebug.length = 0
+    if (debugEnabled) session.debug = []
     panel.update(session.transcript, session.chat, session.notes, session.participantEvents)
     writer.requestWrite()
   }
@@ -1106,6 +1113,10 @@ async function runMeeting(tabId: number): Promise<void> {
   // when it's up, so the two don't stack on the same spot.
   if (!languagePrompt) showToast("Plática Notes is transcribing this meeting")
   await done
+  // Tab-level identity state is per meeting: without this the next meeting in
+  // this tab inherits the attendee list and chat link of the one that just ended.
+  roster.clear()
+  chatUrl = null
   return
 
   // ---------- closures ----------

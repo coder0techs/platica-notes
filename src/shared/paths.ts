@@ -17,6 +17,8 @@ export function sanitizeFileName(name: string): string {
     .replace(/^[.\s]+|[.\s]+$/g, "")
     .slice(0, MAX_NAME_LEN)
     .replace(/[.\s]+$/, "") // re-trim: the slice may have ended on a dot/space
+    // Windows refuses these as a base name whatever the extension.
+    .replace(/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?=\.|$)/i, "$1_")
   return cleaned || "Meeting"
 }
 

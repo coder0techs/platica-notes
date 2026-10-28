@@ -1,4 +1,4 @@
-import type { Meeting } from "../shared/types"
+import { isCaptureFailure, type Meeting } from "../shared/types"
 
 // Two visits of the same Meet code merge only when the second starts within this
 // window of the first's end. ~40 min targets the actual case — an accidental
@@ -24,6 +24,9 @@ export function meetCodeFromUrl(url: string | undefined): string | null {
 // visits overlapped (two simultaneous tabs) — not merged, which avoids tail dedup.
 export function shouldMerge(target: Meeting, incoming: Meeting, gapMs: number): boolean {
   if (target.platform !== "meet" || incoming.platform !== "meet") return false
+  // A visit that captured nothing is kept as a failure row; folding a rejoin into
+  // it would hide the failure that row exists to show.
+  if (isCaptureFailure(target)) return false
   if (target.isPrivate !== incoming.isPrivate) return false
   const code = meetCodeFromUrl(target.meetingUrl)
   const incomingCode = meetCodeFromUrl(incoming.meetingUrl)
@@ -48,6 +51,8 @@ export function mergeMeetings(target: Meeting, incoming: Meeting): Meeting {
     notes: [...(target.notes ?? []), ...(incoming.notes ?? [])],
     participantEvents: [...(target.participantEvents ?? []), ...(incoming.participantEvents ?? [])],
     participants: [...new Set([...target.participants, ...incoming.participants])],
+    ...(target.lite || incoming.lite ? { lite: [...(target.lite ?? []), ...(incoming.lite ?? [])] } : {}),
+    ...(target.language ?? incoming.language ? { language: target.language ?? incoming.language } : {}),
     visits: [...targetVisits, { startedAt: incoming.startedAt, endedAt: incoming.endedAt }],
   }
 }

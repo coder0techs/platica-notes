@@ -144,7 +144,8 @@ export function mountTranscriptPanel(opts: {
   noteInput.addEventListener("keydown", (event) => {
     // Keep keystrokes out of Meet's global shortcut handler while typing a note.
     event.stopPropagation()
-    if (event.key === "Enter") submitNote()
+    // An IME commits a composition with Enter too; that one is not a submit.
+    if (event.key === "Enter" && !event.isComposing) submitNote()
   })
   addNoteBtn.addEventListener("click", submitNote)
   footer.append(noteInput, addNoteBtn)
