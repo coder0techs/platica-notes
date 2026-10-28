@@ -9,6 +9,7 @@
 import {
   buildAck,
   buildSubscribe,
+  decodeCaptionsControl,
   decodeCollectionsChat,
   decodeOutgoingChat,
   decodeRoster,
@@ -37,7 +38,7 @@ import {
 import { adoptPeerConnection } from "./adopt"
 import { emptyFunnel } from "./funnel"
 import type { RtcConfig, RtcEvent } from "./bridge"
-import { makeChannelIdAllocator, shouldRecreateCaptions } from "./lifecycle"
+import { isLivePrimary, makeChannelIdAllocator, shouldRecreateCaptions } from "./lifecycle"
 import { extractMeetBuild } from "./build-probe"
 import { base64ToBytes, extractRosterPairs, extractSelfDevice, extractSelfName } from "./identity"
 import { DEFAULT_SETTINGS } from "../../shared/types"
@@ -48,6 +49,9 @@ const SUBSCRIBE_DELAY_MS = 1500
 // its readyState on this cadence and opening a fresh one (new id) if it drops
 // while the peer connection is still up.
 const CAPTIONS_WATCH_MS = 1000
+// How long after Meet's native-caption "off" command our re-subscribe goes out.
+// The cancel has to reach the server first, or it cancels the re-subscribe too.
+const NATIVE_OFF_RESUBSCRIBE_MS = 500
 
 // Every captions data channel we open gets a unique, monotonically increasing
 // id. Meet leaves the captions channel open when native captions are toggled
@@ -308,10 +312,14 @@ document.addEventListener(RTC_CONFIG_EVENT, (e: Event) => {
         meetBuild: lastMeetBuild,
         restamp: true,
       })
-      recordFunnel("config")
-      recordCaptureState("config")
-      armFunnelSnapshots()
     }
+    // Not debug-gated: these are counters and connection facts with no content,
+    // and the lite log exists so a meeting that captured nothing after minute
+    // one can still be read. Gated, every default-install log answered "where
+    // did the captions go" with silence.
+    recordFunnel("config")
+    recordCaptureState("config")
+    armFunnelSnapshots()
     if (changed) resubscribeAll()
   } catch (err) {
     record({ phase: "config-error", error: String(err) })
@@ -394,8 +402,21 @@ function sendSubscribe(s: MediaSession, label = "captions"): void {
   }
 }
 
+// One subscription at a time (see isLivePrimary): true when a session other
+// than `s` is carrying it. A skipped session is picked up by resubscribeAll
+// when the primary's media-session closes.
+function otherPrimaryLive(s: MediaSession): boolean {
+  return sessions.some(
+    (x) => x !== s && isLivePrimary({ subscribed: x.subscribed, channelState: x.channel.readyState, pcState: x.pc.connectionState }),
+  )
+}
+
 function trySubscribe(s: MediaSession): void {
   if (s.subscribed || s.channel.readyState !== "open") return
+  if (otherPrimaryLive(s)) {
+    record({ phase: "subscribe-skipped", reason: "primary-live", sessions: sessions.length })
+    return
+  }
   sendSubscribe(s)
 }
 
@@ -416,7 +437,9 @@ function watchCaptionsChannel(pc: RTCPeerConnection, ch: RTCDataChannel): void {
       if (!shouldRecreateCaptions(cs, pc.connectionState)) return
       const s = sessions.find((x) => x.pc === pc && x.channel.readyState === "open")
       record({ phase: "captions-recreate", id: ch.id, label: ch.label, pc: pc.connectionState, haveSession: !!s })
-      if (s) sendSubscribe(s, ch.label)
+      // Meet's own captions channel on a secondary pc dying must not hand that
+      // pc a subscription while the primary still streams.
+      if (s && !otherPrimaryLive(s)) sendSubscribe(s, ch.label)
       return
     }
     setTimeout(tick, CAPTIONS_WATCH_MS)
@@ -527,14 +550,17 @@ function armFunnelSnapshots(): void {
   }, FUNNEL_SNAPSHOT_MS)
 }
 
-function handleCaptions(bytes: Uint8Array): void {
-  consumeCaptions(decodeCaptions(bytes))
+function handleCaptions(bytes: Uint8Array, stream: number): void {
+  consumeCaptions(decodeCaptions(bytes), stream)
 }
 
 // Dispatch the captions one frame decoded into. A v2 frame can batch several, so
 // `decoded` and `dispatched` count captions while `wire` counts frames: the two
 // are no longer expected to match, and decoded > wire is normal on v2.
-function consumeCaptions(list: Transcript[]): void {
+// `stream` is the delivering channel's id: the feed keys captions by it, since
+// Meet restarts messageId per subscription (a second peer connection's stream
+// would otherwise revise the first stream's early turns).
+function consumeCaptions(list: Transcript[], stream: number): void {
   if (list.length === 0) {
     // Silent until now: a frame the decoder cannot use left no trace at all.
     funnel.dropped++
@@ -550,13 +576,14 @@ function consumeCaptions(list: Transcript[]): void {
       firstTranscript = false
       log("first transcript", { lang: captionLanguage })
     }
-    record({ phase: "transcript", text: m.text, deviceId: m.deviceId, messageId: m.messageId, langId: m.langId, lang: m.lang, final: m.final })
+    record({ phase: "transcript", text: m.text, deviceId: m.deviceId, messageId: m.messageId, messageVersion: m.messageVersion, langId: m.langId, lang: m.lang, final: m.final, stream })
     dispatch({
       type: "transcript",
       deviceId: m.deviceId!,
       messageId: m.messageId!,
       messageVersion: m.messageVersion!,
       text: m.text!,
+      stream,
     })
     funnel.dispatched++
   }
@@ -676,7 +703,7 @@ function attachUnknownChannel(ch: RTCDataChannel): void {
       try {
         const bytes = await toBytes(data)
         if (adopted) {
-          consumeCaptions(decodeCaptions(bytes))
+          consumeCaptions(decodeCaptions(bytes), ch.id ?? 0)
           return
         }
         recordFrameShape(ch.label, bytes)
@@ -695,7 +722,7 @@ function attachUnknownChannel(ch: RTCDataChannel): void {
         log("adopted an unnamed caption channel", ch.label)
         record({ phase: "captions-channel-adopted", label: ch.label, after: SNIFF_FRAMES - sniffLeft })
         funnel.wire++
-        consumeCaptions(decoded)
+        consumeCaptions(decoded, ch.id ?? 0)
       } catch {
         /* diagnostics must never affect capture */
       }
@@ -886,6 +913,16 @@ function handleChannel(ch: RTCDataChannel, pc: RTCPeerConnection): void {
     sessions.push(s)
     sessionByChannel.set(ch, s)
     record({ phase: "media-session-open", state: ch.readyState, sessions: sessions.length })
+    // Diagnostic (debug-gated at message time): the server's answers to caption
+    // subscribe/cancel ops arrive here, and nothing else reads this channel.
+    ch.addEventListener("message", (e: MessageEvent) => {
+      if (!debugEnabled || !(e.data instanceof ArrayBuffer || e.data instanceof Uint8Array)) return
+      void toBytes(e.data as ArrayBuffer)
+        .then((bytes) => record({ phase: "channel-raw", label: ch.label, bytes: bytes.length, hex: toHex(bytes, bytes.length) }))
+        .catch(() => {
+          /* diagnostics must never affect capture */
+        })
+    })
     // A new peer connection appeared — tell the adapter the media path is live so
     // it cancels any pending end (reconnect / a second meeting in the same tab).
     dispatchMedia(pc)
@@ -897,9 +934,15 @@ function handleChannel(ch: RTCDataChannel, pc: RTCPeerConnection): void {
       record({ phase: "media-session-closed", pc: pc.connectionState, sessions: sessions.length })
       // Count dropped — when it reaches zero the adapter arms the end grace.
       dispatchMedia(pc)
+      // The primary is gone: a session that trySubscribe skipped while it was
+      // live (the presenting connection outliving the original, a reconnect)
+      // takes the subscription over.
+      if (s.subscribed) resubscribeAll()
     })
   } else if (isCaptionsLabel(ch.label)) {
-    attachConsumer(ch, handleCaptions)
+    // ch.id is read per message, not here: an in-band channel has no id until it
+    // is open, and Meet's own captions channels are registered while connecting.
+    attachConsumer(ch, (bytes) => handleCaptions(bytes, ch.id ?? 0))
     // A captions channel opening while a media-session is already subscribed means
     // Meet recreated it (e.g. the user toggled native captions) or we just opened
     // our own. Re-assert the subscription so the stream resumes in our language.
@@ -954,6 +997,23 @@ function install(): boolean {
   const origSend = RTCDataChannel.prototype.send
   RTCDataChannel.prototype.send = function (this: RTCDataChannel, data: unknown) {
     try {
+      // Diagnostic (debug-gated): log every outgoing send, media-session included.
+      // Meet's native-caption toggle rides media-session, and on the 2026-10-19
+      // build its "off" cancels our subscription server-side; the log must show
+      // that message so the send hook can learn to answer it.
+      if (debugEnabled) {
+        const label = this.label
+        if (typeof data === "string") {
+          record({ phase: "send-str", label, len: data.length, text: data.slice(0, 500) })
+        } else if (data instanceof ArrayBuffer || data instanceof Uint8Array) {
+          const copy = data instanceof Uint8Array ? data.slice() : new Uint8Array(data.slice(0))
+          void toBytes(copy)
+            .then((bytes) => record({ phase: "send-raw", label, bytes: bytes.length, hex: toHex(bytes, bytes.length) }))
+            .catch(() => {
+              /* diagnostics must never affect the send */
+            })
+        }
+      }
       if (this.label === "media-session" && data instanceof ArrayBuffer) {
         const s = sessionByChannel.get(this)
         if (s) {
@@ -964,6 +1024,21 @@ function install(): boolean {
           if (seq !== undefined) s.seq = seq
         }
       } else {
+        // Native caption panel (real feature, always on): Meet's own on/off command
+        // on the captions channel. "Off" cancels our subscription on the server
+        // too (2026-10-19 build: the stream stops mid-word and stays stopped until
+        // the panel is reopened), so re-assert ours right after it. Read-only.
+        if (isCaptionsLabel(this.label) && (data instanceof ArrayBuffer || data instanceof Uint8Array)) {
+          try {
+            const ctl = decodeCaptionsControl(data instanceof Uint8Array ? data : new Uint8Array(data))
+            if (ctl) {
+              record({ phase: ctl.lang ? "native-captions-on" : "native-captions-off", op: ctl.op, lang: ctl.lang })
+              if (!ctl.lang) setTimeout(() => resubscribeForCaptions("native-captions-off"), NATIVE_OFF_RESUBSCRIBE_MS)
+            }
+          } catch {
+            /* diagnostics and recovery must never affect the send */
+          }
+        }
         // Own outgoing chat (real feature, always on): the local user's message is
         // not reliably echoed back to this client (collections has been seen to echo
         // it, and to stay silent), so we read it from the outgoing meet_messages send
@@ -986,21 +1061,6 @@ function install(): boolean {
             }
           } catch {
             /* own-chat capture must never affect the send */
-          }
-        }
-        // Diagnostic (debug-gated): log OUTGOING sends on non-media channels, so a
-        // future channel/format change is visible in the debug log.
-        if (debugEnabled && this.label !== "media-session") {
-          const label = this.label
-          if (typeof data === "string") {
-            record({ phase: "send-str", label, len: data.length, text: data.slice(0, 500) })
-          } else if (data instanceof ArrayBuffer || data instanceof Uint8Array) {
-            const copy = data instanceof Uint8Array ? data.slice() : new Uint8Array(data.slice(0))
-            void toBytes(copy)
-              .then((bytes) => record({ phase: "send-raw", label, bytes: bytes.length, hex: toHex(bytes, bytes.length) }))
-              .catch(() => {
-                /* diagnostics must never affect the send */
-              })
           }
         }
       }

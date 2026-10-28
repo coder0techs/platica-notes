@@ -508,6 +508,42 @@ function walkPathAll(buf: Uint8Array, path: number[]): Span[] {
   return level
 }
 
+// ---------- native-caption control (captions_v2) ----------
+
+// Meet's own client drives the native caption panel with a small command on the
+// captions_v2 channel itself (2026-10-19 build), not on media-session:
+//   root.f1 → f2 → { f1 = op; f2 → f1 → { f2 = lang, f3 = lang } }
+// Panel on carries the language pair; panel off sends the same command with an
+// EMPTY f2.f1, and the server then stops every caption stream of the client,
+// ours included. `lang` undefined is therefore the cancel. Anything that is not
+// this shape (caption acks, caption frames) decodes to null.
+export function decodeCaptionsControl(buf: Uint8Array): { op: number; lang?: string } | null {
+  try {
+    const [cmd] = walkPathAll(buf, [1, 2])
+    if (!cmd) return null
+    const c: Cursor = { buf, i: cmd.start }
+    let op: number | undefined
+    let config: Span | undefined
+    while (c.i < cmd.end) {
+      const { field, wire } = readTag(c)
+      if (field === 1 && wire === 0) op = readVarint(c)
+      else if (field === 2 && wire === 2) {
+        const l = readVarint(c)
+        config = { start: c.i, end: boundedEnd(c, l) }
+        c.i = config.end
+      } else skip(c, wire)
+    }
+    if (op === undefined || !config) return null
+    const [pair] = walkLenAll(buf, config.start, config.end)(1)
+    if (!pair) return null
+    const [lang] = walkLenAll(buf, pair.start, pair.end)(2)
+    if (!lang) return { op }
+    return { op, lang: new TextDecoder().decode(buf.subarray(lang.start, lang.end)) }
+  } catch {
+    return null
+  }
+}
+
 // ---------- collections-channel chat decoder ----------
 
 // Google Meet moved chat off the meet_messages data channel onto the collections

@@ -10,6 +10,7 @@ import {
   decodeRosterLeave,
   buildSubscribe,
   buildAck,
+  decodeCaptionsControl,
   readNestedOp,
   readNestedSeq,
   toBytes,
@@ -1103,5 +1104,31 @@ describe("decodeCollectionsChat — batched collections packet", () => {
     const a2: number[] = []; lenField(2, b1, a2); lenField(2, b2, a2)
     const rootB: number[] = []; lenField(1, a2, rootB)
     expect(decodeCollectionsChat(u8(rootB)).map((m) => m.text)).toEqual(["hola"])
+  })
+})
+
+// ---------- native-caption control on captions_v2 ----------
+
+const hex = (h: string): Uint8Array => new Uint8Array(h.match(/../g)!.map((b) => parseInt(b, 16)))
+
+describe("decodeCaptionsControl", () => {
+  it("reads the panel-on command with its language", () => {
+    // Live bytes, Meet build 20261019.04: op 2, lang ru-RU twice.
+    expect(decodeCaptionsControl(hex("0a161214080212100a0e120572752d52551a0572752d5255"))).toEqual({ op: 2, lang: "ru-RU" })
+  })
+
+  it("reads the panel-off command as op without language", () => {
+    expect(decodeCaptionsControl(hex("0a081206080312020a00"))).toEqual({ op: 3 })
+  })
+
+  it("ignores caption acks and caption frames", () => {
+    expect(decodeCaptionsControl(hex("0a080a06080210091801"))).toBeNull()
+    expect(decodeCaptionsControl(hex("0a100a060802100e18010a06080310011801"))).toBeNull()
+    expect(decodeCaptionsControl(buildAck(4))).toBeNull()
+  })
+
+  it("survives truncated and empty input", () => {
+    expect(decodeCaptionsControl(hex("0a1612140802"))).toBeNull()
+    expect(decodeCaptionsControl(new Uint8Array())).toBeNull()
   })
 })

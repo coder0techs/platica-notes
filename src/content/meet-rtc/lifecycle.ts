@@ -26,3 +26,18 @@ export function shouldRecreateCaptions(
   if (channelState !== "closing" && channelState !== "closed") return false
   return pcState !== "closed" && pcState !== "failed"
 }
+
+// Whether a media-session is the one carrying the caption subscription right
+// now. Meet numbers caption messages per device PER SUBSCRIPTION, so a second
+// subscription on another peer connection (the local user presenting opens one,
+// 2026-10-26) streams every caption twice with ids restarting at 1. Only one
+// session may be subscribed at a time: a new one waits while a live primary
+// exists and takes over when the primary's channel or pc goes.
+export function isLivePrimary(s: {
+  subscribed: boolean
+  channelState: RTCDataChannelState
+  pcState: RTCPeerConnectionState
+}): boolean {
+  if (!s.subscribed || s.channelState !== "open") return false
+  return s.pcState === "new" || s.pcState === "connecting" || s.pcState === "connected"
+}

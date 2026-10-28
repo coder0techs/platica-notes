@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { makeChannelIdAllocator, shouldRecreateCaptions } from "../src/content/meet-rtc/lifecycle"
+import { isLivePrimary, makeChannelIdAllocator, shouldRecreateCaptions } from "../src/content/meet-rtc/lifecycle"
 
 describe("makeChannelIdAllocator", () => {
   it("yields incrementing ids starting one past the seed", () => {
@@ -38,5 +38,28 @@ describe("shouldRecreateCaptions", () => {
   it("does not recreate once the pc is gone for good", () => {
     expect(shouldRecreateCaptions("closed", "closed")).toBe(false)
     expect(shouldRecreateCaptions("closing", "failed")).toBe(false)
+  })
+})
+
+describe("isLivePrimary", () => {
+  it("is true for a subscribed session whose channel and pc are both alive", () => {
+    expect(isLivePrimary({ subscribed: true, channelState: "open", pcState: "connected" })).toBe(true)
+    expect(isLivePrimary({ subscribed: true, channelState: "open", pcState: "connecting" })).toBe(true)
+    expect(isLivePrimary({ subscribed: true, channelState: "open", pcState: "new" })).toBe(true)
+  })
+
+  it("is false for a session that never subscribed", () => {
+    expect(isLivePrimary({ subscribed: false, channelState: "open", pcState: "connected" })).toBe(false)
+  })
+
+  it("is false once the media-session channel is gone", () => {
+    expect(isLivePrimary({ subscribed: true, channelState: "closing", pcState: "connected" })).toBe(false)
+    expect(isLivePrimary({ subscribed: true, channelState: "closed", pcState: "connected" })).toBe(false)
+  })
+
+  it("is false once the pc can no longer carry captions", () => {
+    expect(isLivePrimary({ subscribed: true, channelState: "open", pcState: "disconnected" })).toBe(false)
+    expect(isLivePrimary({ subscribed: true, channelState: "open", pcState: "failed" })).toBe(false)
+    expect(isLivePrimary({ subscribed: true, channelState: "open", pcState: "closed" })).toBe(false)
   })
 })
