@@ -41,6 +41,7 @@ import {
   shouldFinishRearmWait,
   captureFault,
 } from "./meet-lifecycle"
+import { meetingTitle, meetKey } from "../../shared/meet-url"
 
 // --- Google Meet DOM contract. Verify on a live meeting before each release. ---
 const ICON_FONT = ".google-symbols"
@@ -487,10 +488,10 @@ async function main(): Promise<void> {
   // retransmit of the same send counts once.
   window.addEventListener("message", (event) => {
     if (event.origin !== "https://chat.google.com") return
-    // The frame carries its own URL (the chat conversation link); keep the first
-    // chat.google.com URL we see for the saved file's header.
+    // The frame carries its own URL (the chat conversation link); the newest
+    // chat.google.com URL wins, so a later meeting in this tab gets its own space.
     const data = event.data as { url?: unknown } | null
-    if (data && typeof data.url === "string" && data.url.startsWith("https://chat.google.com") && !chatUrl) {
+    if (data && typeof data.url === "string" && data.url.startsWith("https://chat.google.com")) {
       chatUrl = data.url
     }
     const own = parseOwnChatMessage(event.data)
@@ -588,7 +589,7 @@ async function runMeeting(tabId: number): Promise<void> {
   // Abort the lobby wait if the user backs out without joining.
   const joined = await waitForIcon(
     LEAVE_ICON_TEXT,
-    () => location.pathname !== meetingPath,
+    () => meetKey(location.pathname) !== meetKey(meetingPath),
   )
   if (!joined) return
   dlog("meeting started", { tab: tabId })
@@ -602,7 +603,7 @@ async function runMeeting(tabId: number): Promise<void> {
   // the slice, which is why no saved log ever carried a build number. The header
   // below puts the service facts INSIDE the window instead of hoping an earlier
   // event survives.
-  const debugStart = debugEvents.length
+  let debugStart = debugEvents.length
   const liteStart = liteEvents.length
   dlog("meeting header", {
     extVersion: typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev",
@@ -625,7 +626,10 @@ async function runMeeting(tabId: number): Promise<void> {
   // A mid-meeting reload of the SAME meeting continues its session (read above),
   // rather than erasing it. A different-meeting session was already finalized and
   // its key cleared just above, so it never resumes here.
-  const resumed = previous && previous.path === meetingPath ? previous : null
+  // Same meeting = same Meet code, so a session stored under the other url shape
+  // resumes too; shouldFinalizeStaleSession uses the same identity, and a session
+  // that is neither finalized nor resumed would be overwritten below.
+  const resumed = previous?.path !== undefined && meetKey(previous.path) === meetKey(meetingPath) ? previous : null
   if (resumed) dlog("resuming session after reload")
   // A full page reload resets the page-level roster/selfName, but Meet only
   // broadcasts the collections roster and fires GetUser at the initial join — not
@@ -982,6 +986,9 @@ async function runMeeting(tabId: number): Promise<void> {
   // reports the outcome, because a save that says nothing is a save the user has to
   // go and verify in their Downloads folder.
   async function saveSnapshot(): Promise<void> {
+    // The background reads the stored session: flush the debounced write first or
+    // a privacy toggle or wipe from the last second is missing from the file.
+    await writer.writeNow()
     const response = await sendToBackground<SnapshotResult>({ kind: "snapshotMeeting" })
     if (!response.ok) {
       showToast(response.invalidated ? "Plática Notes was updated. Reload the page to save." : response.error)
@@ -1009,6 +1016,10 @@ async function runMeeting(tabId: number): Promise<void> {
     session.rawVersions = []
     session.notes = []
     session.participantEvents = []
+    // The verbatim debug trail holds every wiped caption; drop it with the content.
+    debugStart = debugEvents.length
+    prefixDebug.length = 0
+    if (debugEnabled) session.debug = []
     panel.update(session.transcript, session.chat, session.notes, session.participantEvents)
     writer.requestWrite()
   }
@@ -1092,7 +1103,7 @@ async function runMeeting(tabId: number): Promise<void> {
       return
     }
     const decision = nextLeaveState(
-      location.pathname !== meetingPath,
+      meetKey(location.pathname) !== meetKey(meetingPath),
       !!findIcon(LEAVE_ICON_TEXT),
       leaveGoneCount,
       LEAVE_GONE_CHECKS,
@@ -1106,6 +1117,10 @@ async function runMeeting(tabId: number): Promise<void> {
   // when it's up, so the two don't stack on the same spot.
   if (!languagePrompt) showToast("Plática Notes is transcribing this meeting")
   await done
+  // Tab-level identity state is per meeting: without this the next meeting in
+  // this tab inherits the attendee list and chat link of the one that just ended.
+  roster.clear()
+  chatUrl = null
   return
 
   // ---------- closures ----------
@@ -1301,8 +1316,5 @@ function delay(ms: number): Promise<void> {
 
 function readMeetingTitle(): string {
   const titled = document.querySelector(MEETING_TITLE)?.textContent?.trim()
-  // Meet prefixes document.title with "Meet - " once you have been in the call
-  // (so rejoins and same-tab soft-nav meetings would otherwise be saved as
-  // "Meet - <code>"). Strip it so the title is the bare meeting name/code.
-  return (titled || document.title).replace(/^Meet - /, "")
+  return meetingTitle(titled || document.title, location.pathname)
 }

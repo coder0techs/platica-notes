@@ -349,3 +349,14 @@ describe("finalizeSession — what a mid-meeting save left behind", () => {
     expect(await recoverOrphanSessions()).toEqual([])
   })
 })
+
+describe("recoverOrphanSessions: malformed session", () => {
+  it("skips a session it cannot finalize and still recovers the others", async () => {
+    chrome._store["session_5"] = {} // relayed garbage: no transcript/participants arrays
+    chrome._store["session_6"] = makeSession({ transcript: oneUtterance })
+    chrome._aliveTabs.clear()
+    const results = await recoverOrphanSessions()
+    expect(results.map((r) => r.meeting?.transcript.length)).toEqual([1])
+    expect(chrome._store["session_6"]).toBeUndefined()
+  })
+})

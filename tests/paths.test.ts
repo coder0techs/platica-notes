@@ -90,3 +90,23 @@ describe("meetingFolder", () => {
     ).toBe(`${DEFAULT_SETTINGS.folderPrivate}/2026-08`)
   })
 })
+
+describe("sanitizeFileName: Windows reserved names", () => {
+  it("suffixes a reserved device name so Windows does not refuse the download", () => {
+    expect(sanitizeFileName("aux")).toBe("aux_")
+    expect(sanitizeFileName("CON")).toBe("CON_")
+    expect(sanitizeFileName("com1")).toBe("com1_")
+    expect(sanitizeFileName("lpt9.md")).toBe("lpt9_.md")
+    expect(sanitizeFileName("nul.tar.gz")).toBe("nul_.tar.gz")
+  })
+
+  it("leaves names that merely start with a reserved word alone", () => {
+    expect(sanitizeFileName("console")).toBe("console")
+    expect(sanitizeFileName("auxiliary notes")).toBe("auxiliary notes")
+    expect(sanitizeFileName("com10")).toBe("com10")
+  })
+
+  it("applies per folder segment", () => {
+    expect(sanitizeFolder("meetings/aux/2026", "x")).toBe("meetings/aux_/2026")
+  })
+})

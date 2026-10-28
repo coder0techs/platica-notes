@@ -508,6 +508,42 @@ function walkPathAll(buf: Uint8Array, path: number[]): Span[] {
   return level
 }
 
+// ---------- native-caption control (captions_v2) ----------
+
+// Meet's own client drives the native caption panel with a small command on the
+// captions_v2 channel itself (2026-10-19 build), not on media-session:
+//   root.f1 → f2 → { f1 = op; f2 → f1 → { f2 = lang, f3 = lang } }
+// Panel on carries the language pair; panel off sends the same command with an
+// EMPTY f2.f1, and the server then stops every caption stream of the client,
+// ours included. `lang` undefined is therefore the cancel. Anything that is not
+// this shape (caption acks, caption frames) decodes to null.
+export function decodeCaptionsControl(buf: Uint8Array): { op: number; lang?: string } | null {
+  try {
+    const [cmd] = walkPathAll(buf, [1, 2])
+    if (!cmd) return null
+    const c: Cursor = { buf, i: cmd.start }
+    let op: number | undefined
+    let config: Span | undefined
+    while (c.i < cmd.end) {
+      const { field, wire } = readTag(c)
+      if (field === 1 && wire === 0) op = readVarint(c)
+      else if (field === 2 && wire === 2) {
+        const l = readVarint(c)
+        config = { start: c.i, end: boundedEnd(c, l) }
+        c.i = config.end
+      } else skip(c, wire)
+    }
+    if (op === undefined || !config) return null
+    const [pair] = walkLenAll(buf, config.start, config.end)(1)
+    if (!pair) return null
+    const [lang] = walkLenAll(buf, pair.start, pair.end)(2)
+    if (!lang) return { op }
+    return { op, lang: new TextDecoder().decode(buf.subarray(lang.start, lang.end)) }
+  } catch {
+    return null
+  }
+}
+
 // ---------- collections-channel chat decoder ----------
 
 // Google Meet moved chat off the meet_messages data channel onto the collections
@@ -522,28 +558,24 @@ function walkPathAll(buf: Uint8Array, path: number[]): Span[] {
 export function decodeCollectionsChat(buf: Uint8Array): ChatPayload[] {
   const out: ChatPayload[] = []
   try {
-    const c: Cursor = { buf, i: 0 }
-    const s1 = walkLen(c, buf.length, 1); if (!s1) return out
-    const c1: Cursor = { buf, i: s1.start }
-    const s2 = walkLen(c1, s1.end, 2); if (!s2) return out
-    const c2: Cursor = { buf, i: s2.start }
-    const s13 = walkLen(c2, s2.end, 13); if (!s13) return out
-    const c13: Cursor = { buf, i: s13.start }
-    const s4 = walkLen(c13, s13.end, 4); if (!s4) return out
-    // Read the repeated f2 message entries inside the messages collection.
-    const c4: Cursor = { buf, i: s4.start }
-    const safeEnd = Math.min(s4.end, buf.length)
-    while (c4.i < safeEnd) {
-      const { field, wire } = readTag(c4)
-      if (field === 2 && wire === 2) {
-        const l = readVarint(c4)
-        const end = boundedEnd(c4, l)
-        const msg = decodeChatMessage(buf, c4.i, end)
-        c4.i = end
-        // Drop entries lacking the essentials (matches the old chat guard).
-        if (msg.deviceId && msg.text) out.push(msg)
-      } else {
-        skip(c4, wire)
+    // Branch on every occurrence of each step (as decodeRoster does): a packet
+    // can carry the devices record (f13.f1) before the messages collection.
+    for (const s4 of walkPathAll(buf, [1, 2, 13, 4])) {
+      // Read the repeated f2 message entries inside the messages collection.
+      const c4: Cursor = { buf, i: s4.start }
+      const safeEnd = Math.min(s4.end, buf.length)
+      while (c4.i < safeEnd) {
+        const { field, wire } = readTag(c4)
+        if (field === 2 && wire === 2) {
+          const l = readVarint(c4)
+          const end = boundedEnd(c4, l)
+          const msg = decodeChatMessage(buf, c4.i, end)
+          c4.i = end
+          // Drop entries lacking the essentials (matches the old chat guard).
+          if (msg.deviceId && msg.text) out.push(msg)
+        } else {
+          skip(c4, wire)
+        }
       }
     }
   } catch {

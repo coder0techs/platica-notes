@@ -1,4 +1,5 @@
-import type { Meeting } from "../shared/types"
+import { meetCodeFromPath } from "../shared/meet-url"
+import { isCaptureFailure, type Meeting } from "../shared/types"
 
 // Two visits of the same Meet code merge only when the second starts within this
 // window of the first's end. ~40 min targets the actual case — an accidental
@@ -9,13 +10,17 @@ import type { Meeting } from "../shared/types"
 // across midnight.
 export const MERGE_GAP_MS = 40 * 60 * 1000
 
-// The Meet code (abc-defg-hij) carried in a meeting's join url, at the root or
-// under the /meet/ prefix Meet began rolling out in October 2026. null when absent
-// or not that shape (e.g. a /lookup link), which disables merging for it.
+// The Meet code (abc-defg-hij) carried in a meeting's join url, wherever Meet puts
+// it in the path (see meet-url.ts). null when absent, not that shape (e.g. a
+// /lookup link) or on another host, which disables merging for it.
 export function meetCodeFromUrl(url: string | undefined): string | null {
   if (!url) return null
-  const m = url.match(/meet\.google\.com\/(?:meet\/)?([a-z]{3}-[a-z]{4}-[a-z]{3})\b/i)
-  return m ? m[1].toLowerCase() : null
+  try {
+    const u = new URL(url)
+    return u.hostname === "meet.google.com" ? meetCodeFromPath(u.pathname) : null
+  } catch {
+    return null
+  }
 }
 
 // True when `incoming` is a sequential rejoin of the same meeting as `target`:
@@ -24,6 +29,9 @@ export function meetCodeFromUrl(url: string | undefined): string | null {
 // visits overlapped (two simultaneous tabs) — not merged, which avoids tail dedup.
 export function shouldMerge(target: Meeting, incoming: Meeting, gapMs: number): boolean {
   if (target.platform !== "meet" || incoming.platform !== "meet") return false
+  // A visit that captured nothing is kept as a failure row; folding a rejoin into
+  // it would hide the failure that row exists to show.
+  if (isCaptureFailure(target)) return false
   if (target.isPrivate !== incoming.isPrivate) return false
   const code = meetCodeFromUrl(target.meetingUrl)
   const incomingCode = meetCodeFromUrl(incoming.meetingUrl)
@@ -48,6 +56,8 @@ export function mergeMeetings(target: Meeting, incoming: Meeting): Meeting {
     notes: [...(target.notes ?? []), ...(incoming.notes ?? [])],
     participantEvents: [...(target.participantEvents ?? []), ...(incoming.participantEvents ?? [])],
     participants: [...new Set([...target.participants, ...incoming.participants])],
+    ...(target.lite || incoming.lite ? { lite: [...(target.lite ?? []), ...(incoming.lite ?? [])] } : {}),
+    ...(target.language ?? incoming.language ? { language: target.language ?? incoming.language } : {}),
     visits: [...targetVisits, { startedAt: incoming.startedAt, endedAt: incoming.endedAt }],
   }
 }

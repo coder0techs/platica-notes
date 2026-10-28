@@ -29,6 +29,10 @@ const HOSTILE: Array<[string, Uint8Array]> = [
   ["never-terminating varint", u8(Array(40).fill(0x80))],
   ["wire-2 length overruns buffer", u8([...varint((1 << 3) | 2), 0x7f, 0x01, 0x02])],
   ["random garbage", u8([0x12, 0x03, 0x61, 0x08, 0xff, 0x2a, 0x99, 0x00, 0x37])],
+  // A 5-byte length whose top bits set the Int32 sign: a negative length must be
+  // rejected, or `i += len` walks backwards and the parser never terminates.
+  ["negative wire-2 length", u8([0x0a, 0xfa, 0xff, 0xff, 0xff, 0x0f])],
+  ["six-byte wire-2 length", u8([0x0a, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01, 0x41])],
 ]
 
 describe("looksLikeName", () => {

@@ -33,6 +33,10 @@ export interface RtcCaptionEvent {
   messageId: number
   messageVersion: number
   text: string
+  // The data channel that delivered the caption. Meet restarts messageId per
+  // subscription, so the same (deviceId, messageId) on another channel is a
+  // different message. Absent (0) for events from before this field existed.
+  stream?: number
 }
 
 // No timestamp here: Meet's wire timestamp unit is unverified, so the adapter

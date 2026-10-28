@@ -64,7 +64,18 @@ const PLATFORM_SOURCES: Record<Meeting["platform"], string> = {
 // Minimal YAML double-quoted scalar: safe for free-text values (title, names)
 // that may contain ":" or quotes.
 function yamlScalar(s: string): string {
-  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r")}"`
+  const escaped = s
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    // YAML line breaks beyond CR/LF, and the C0/DEL controls a strict parser
+    // rejects inside a double-quoted scalar.
+    .replace(/\u0085/g, "\\N")
+    .replace(/\u2028/g, "\\L")
+    .replace(/\u2029/g, "\\P")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, "0")}`)
+  return `"${escaped}"`
 }
 
 // Body text occupies one physical line per turn. Collapse any newline so a value
@@ -72,7 +83,9 @@ function yamlScalar(s: string): string {
 // second line that mimics a record header ([tN] …), an "  alt:" line, or a "---"
 // fence in the v2 grid and get parsed as a forged, mis-attributed turn.
 function inlineText(s: string): string {
-  return s.replace(/\r\n?|\n/g, " ")
+  // Every code point a line-aware reader (Python splitlines, most editors) treats
+  // as a break, not only CR/LF: NEL, VT, FF, U+2028, U+2029.
+  return s.replace(/\r\n?|[\n\v\f\u0085\u2028\u2029]/g, " ")
 }
 
 // feed.ts labels a device with no roster entry as `Speaker <tail>`. Surfacing it

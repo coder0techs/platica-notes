@@ -15,12 +15,14 @@ import {
 const TAB = 42
 const TOKEN = "a".repeat(32)
 const tokens: RelayTokens = { [String(TAB)]: TOKEN }
+// The smallest thing finalizeSession can consume without throwing.
+const SNAPSHOT = { platform: "meet", title: "t", startedAt: "2026-06-18T10:00:00.000Z", isPrivate: false, transcript: [], chat: [], participants: [] }
 
 const message = (over: Record<string, unknown> = {}) => ({
   kind: "relaySnapshot",
   token: TOKEN,
   tabId: TAB,
-  snapshot: { transcript: [] },
+  snapshot: SNAPSHOT,
   ...over,
 })
 
@@ -33,7 +35,7 @@ const sender = (over: Record<string, unknown> = {}) => ({
 describe("verifyRelay", () => {
   it("accepts a well-formed message from the right tab with the right token", () => {
     const verdict = verifyRelay(message(), sender(), tokens)
-    expect(verdict).toEqual({ accept: true, tabId: TAB, snapshot: { transcript: [] }, final: false })
+    expect(verdict).toEqual({ accept: true, tabId: TAB, snapshot: SNAPSHOT, final: false })
   })
 
   it("carries the final flag through, so a relayed meeting still ends normally", () => {
@@ -124,5 +126,22 @@ describe("relay tokens", () => {
     // A second meeting in the same tab must not leave the first meeting's token
     // usable: that would outlive the meeting it was minted for.
     expect(withToken({ "1": "old" }, 1, "new")).toEqual({ "1": "new" })
+  })
+})
+
+describe("verifyRelay: snapshot shape", () => {
+  it("rejects a snapshot finalizeSession could not consume, so a bad relay cannot wedge recovery", () => {
+    const bad = [
+      {},
+      null,
+      "snapshot",
+      { ...SNAPSHOT, transcript: "x" },
+      { ...SNAPSHOT, chat: undefined },
+      { ...SNAPSHOT, participants: {} },
+      { ...SNAPSHOT, startedAt: 1 },
+      { ...SNAPSHOT, title: undefined },
+      { ...SNAPSHOT, isPrivate: "no" },
+    ]
+    for (const snapshot of bad) expect(verifyRelay(message({ snapshot }), sender(), tokens).accept).toBe(false)
   })
 })

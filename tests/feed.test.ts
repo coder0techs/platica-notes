@@ -111,6 +111,40 @@ describe("RtcFeed transcript", () => {
   })
 })
 
+describe("RtcFeed caption streams", () => {
+  // Meet numbers caption messages per device PER SUBSCRIPTION. A second peer
+  // connection (the local user presenting, 2026-10-26) opens a second stream whose
+  // ids restart at 1, so its (deviceId, messageId) pairs collide with the first
+  // stream's early turns. The channel that delivered a caption is part of the key.
+  const onStream = (stream: number, deviceId: string, messageId: number, messageVersion: number, text: string): RtcCaptionEvent =>
+    ({ ...caption(deviceId, messageId, messageVersion, text), stream })
+
+  it("keeps the same message id on another stream as a separate turn", () => {
+    const feed = new RtcFeed()
+    expect(feed.handleCaption(onStream(1, ALICE, 1, 1, "Good morning everyone"), at)).toBe(true)
+    expect(feed.handleCaption(onStream(2, ALICE, 1, 5, "Let me share my screen"), t(600_000))).toBe(true)
+    const turns = feed.transcriptSnapshot()
+    expect(turns).toHaveLength(2)
+    expect(turns[0]).toMatchObject({ text: "Good morning everyone", startedAt: at, endedAt: at })
+    expect(turns[1]).toMatchObject({ text: "Let me share my screen", startedAt: t(600_000) })
+  })
+
+  it("still revises a message within its own stream", () => {
+    const feed = new RtcFeed()
+    feed.handleCaption(onStream(2, ALICE, 1, 1, "Let me"), at)
+    expect(feed.handleCaption(onStream(2, ALICE, 1, 2, "Let me share my screen"), later)).toBe(true)
+    expect(feed.handleCaption(onStream(2, ALICE, 1, 2, "Let me share my screen"), later)).toBe(false)
+    expect(feed.transcriptSnapshot()).toHaveLength(1)
+  })
+
+  it("treats a caption without a stream as stream 0", () => {
+    const feed = new RtcFeed()
+    feed.handleCaption(caption(ALICE, 7, 1, "Hello"), at)
+    expect(feed.handleCaption(onStream(0, ALICE, 7, 2, "Hello world"), later)).toBe(true)
+    expect(feed.transcriptSnapshot()).toHaveLength(1)
+  })
+})
+
 describe("RtcFeed chat", () => {
   it("drops consecutive duplicates and keeps non-consecutive repeats", () => {
     const feed = new RtcFeed()
