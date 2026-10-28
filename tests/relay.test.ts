@@ -129,7 +129,7 @@ describe("relay tokens", () => {
   })
 })
 
-describe("verifyRelay — snapshot shape", () => {
+describe("verifyRelay: snapshot shape", () => {
   it("rejects a snapshot finalizeSession could not consume, so a bad relay cannot wedge recovery", () => {
     const bad = [
       {},

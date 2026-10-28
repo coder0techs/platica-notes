@@ -91,7 +91,7 @@ describe("meetingFolder", () => {
   })
 })
 
-describe("sanitizeFileName — Windows reserved names", () => {
+describe("sanitizeFileName: Windows reserved names", () => {
   it("suffixes a reserved device name so Windows does not refuse the download", () => {
     expect(sanitizeFileName("aux")).toBe("aux_")
     expect(sanitizeFileName("CON")).toBe("CON_")

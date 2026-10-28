@@ -1085,7 +1085,7 @@ describe("hostile input — truncated / oversized / garbage", () => {
   })
 })
 
-describe("decodeCollectionsChat — batched collections packet", () => {
+describe("decodeCollectionsChat: batched collections packet", () => {
   it("finds the messages collection when a devices record precedes it at the same level", () => {
     const leaf: number[] = []; lenField(1, strBytes("spaces/abc/devices/9"), leaf); lenField(2, strBytes("Grace Hopper"), leaf)
     const devColl: number[] = []; lenField(2, leaf, devColl)

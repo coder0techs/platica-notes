@@ -771,7 +771,7 @@ describe("formatMeetingText — a snapshot taken while the meeting runs", () => 
   })
 })
 
-describe("format — non-ASCII line breaks and control characters", () => {
+describe("format: non-ASCII line breaks and control characters", () => {
   it("neutralizes U+2028/U+2029/NEL/VT/FF in chat body so they cannot forge a turn header", () => {
     for (const sep of ["\u2028", "\u2029", "\u0085", "\v", "\f"]) {
       const text = formatMeetingText(makeMeeting({

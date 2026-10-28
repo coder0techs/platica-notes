@@ -141,7 +141,7 @@ describe("mergeMeetings", () => {
   })
 })
 
-describe("mergeMeetings — diagnostics", () => {
+describe("mergeMeetings: diagnostics", () => {
   it("concatenates the lite log of both visits so the rejoin's diagnostics are not lost", () => {
     const a = meeting({ lite: [{ t: "2026-06-30T10:01:00.000Z", ctx: "rtc", phase: "channel" }] })
     const b = meeting({ id: "m2", startedAt: "2026-06-30T10:35:00.000Z", endedAt: "2026-06-30T11:00:00.000Z",
@@ -157,7 +157,7 @@ describe("mergeMeetings — diagnostics", () => {
   })
 })
 
-describe("shouldMerge — capture failure", () => {
+describe("shouldMerge: capture failure", () => {
   it("never folds a rejoin into a visit that captured nothing, so the failure row stays visible", () => {
     const failed = meeting({ transcript: [], participants: ["Ada", "Grace"] }) // nothing captured
     const rejoin = meeting({ id: "m2", startedAt: "2026-06-30T10:35:00.000Z", endedAt: "2026-06-30T11:00:00.000Z",
