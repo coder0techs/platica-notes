@@ -4,6 +4,8 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+## 1.17.3 - 2026-10-28
+
 - **Rejoining a meeting at the new Google Meet address adds to the same file
   again.** 1.17.2 brought back recording at `meet.google.com/meet/abc-defg-hij`,
   but did not read the meeting code from that address. Leaving and rejoining the
