@@ -38,7 +38,7 @@ import {
 import { adoptPeerConnection } from "./adopt"
 import { emptyFunnel } from "./funnel"
 import type { RtcConfig, RtcEvent } from "./bridge"
-import { isLivePrimary, makeChannelIdAllocator, shouldRecreateCaptions } from "./lifecycle"
+import { isLivePrimary, makeChannelIdAllocator, makeStreamIds, shouldRecreateCaptions } from "./lifecycle"
 import { extractMeetBuild } from "./build-probe"
 import { base64ToBytes, extractRosterPairs, extractSelfDevice, extractSelfName } from "./identity"
 import { DEFAULT_SETTINGS } from "../../shared/types"
@@ -58,6 +58,8 @@ const NATIVE_OFF_RESUBSCRIBE_MS = 500
 // off, so reusing a fixed id would throw "id in use" on recreate and silently
 // leave us on a dead channel. A fresh id per channel keeps recreation reliable.
 const nextCaptionChannelId = makeChannelIdAllocator()
+// The feed tells caption streams apart by the delivering channel (see makeStreamIds).
+const streamOf = makeStreamIds()
 
 // ---------- diagnostics ----------
 
@@ -557,7 +559,7 @@ function handleCaptions(bytes: Uint8Array, stream: number): void {
 // Dispatch the captions one frame decoded into. A v2 frame can batch several, so
 // `decoded` and `dispatched` count captions while `wire` counts frames: the two
 // are no longer expected to match, and decoded > wire is normal on v2.
-// `stream` is the delivering channel's id: the feed keys captions by it, since
+// `stream` numbers the delivering channel: the feed keys captions by it, since
 // Meet restarts messageId per subscription (a second peer connection's stream
 // would otherwise revise the first stream's early turns).
 function consumeCaptions(list: Transcript[], stream: number): void {
@@ -703,7 +705,7 @@ function attachUnknownChannel(ch: RTCDataChannel): void {
       try {
         const bytes = await toBytes(data)
         if (adopted) {
-          consumeCaptions(decodeCaptions(bytes), ch.id ?? 0)
+          consumeCaptions(decodeCaptions(bytes), streamOf(ch))
           return
         }
         recordFrameShape(ch.label, bytes)
@@ -722,7 +724,7 @@ function attachUnknownChannel(ch: RTCDataChannel): void {
         log("adopted an unnamed caption channel", ch.label)
         record({ phase: "captions-channel-adopted", label: ch.label, after: SNIFF_FRAMES - sniffLeft })
         funnel.wire++
-        consumeCaptions(decoded, ch.id ?? 0)
+        consumeCaptions(decoded, streamOf(ch))
       } catch {
         /* diagnostics must never affect capture */
       }
@@ -940,9 +942,7 @@ function handleChannel(ch: RTCDataChannel, pc: RTCPeerConnection): void {
       if (s.subscribed) resubscribeAll()
     })
   } else if (isCaptionsLabel(ch.label)) {
-    // ch.id is read per message, not here: an in-band channel has no id until it
-    // is open, and Meet's own captions channels are registered while connecting.
-    attachConsumer(ch, (bytes) => handleCaptions(bytes, ch.id ?? 0))
+    attachConsumer(ch, (bytes) => handleCaptions(bytes, streamOf(ch)))
     // A captions channel opening while a media-session is already subscribed means
     // Meet recreated it (e.g. the user toggled native captions) or we just opened
     // our own. Re-assert the subscription so the stream resumes in our language.

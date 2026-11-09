@@ -15,6 +15,24 @@ export function makeChannelIdAllocator(start = 50000): () => number {
   return () => ++id
 }
 
+// Numbers each caption-delivering channel for the feed's caption key. The SCTP
+// id cannot do it: Meet gives the captions channel the same id on every peer
+// connection (125 on both while presenting, 2026-11-09), so two subscriptions
+// would share a key. The number is tied to the channel object and starts at 1,
+// leaving 0 for a caption that arrived without one.
+export function makeStreamIds(): (channel: object) => number {
+  const ids = new WeakMap<object, number>()
+  let last = 0
+  return (channel) => {
+    let id = ids.get(channel)
+    if (id === undefined) {
+      id = ++last
+      ids.set(channel, id)
+    }
+    return id
+  }
+}
+
 // Recreate the captions channel only when it is actually gone (closing/closed)
 // AND the peer connection can still host a replacement. While the channel is
 // alive we leave it be; once the pc is closed/failed the meeting is over and

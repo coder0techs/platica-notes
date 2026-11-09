@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { isLivePrimary, makeChannelIdAllocator, shouldRecreateCaptions } from "../src/content/meet-rtc/lifecycle"
+import { isLivePrimary, makeChannelIdAllocator, makeStreamIds, shouldRecreateCaptions } from "../src/content/meet-rtc/lifecycle"
 
 describe("makeChannelIdAllocator", () => {
   it("yields incrementing ids starting one past the seed", () => {
@@ -61,5 +61,30 @@ describe("isLivePrimary", () => {
     expect(isLivePrimary({ subscribed: true, channelState: "open", pcState: "disconnected" })).toBe(false)
     expect(isLivePrimary({ subscribed: true, channelState: "open", pcState: "failed" })).toBe(false)
     expect(isLivePrimary({ subscribed: true, channelState: "open", pcState: "closed" })).toBe(false)
+  })
+})
+
+describe("makeStreamIds", () => {
+  // Meet gives the captions channel the same SCTP id on every peer connection
+  // (125 on both connections while presenting, 2026-11-09), so the id cannot tell
+  // two caption streams apart. The stream number belongs to the channel object.
+  it("tells apart two channels that carry the same id", () => {
+    const streamOf = makeStreamIds()
+    const a = { id: 125 }
+    const b = { id: 125 }
+    expect(streamOf(a)).not.toBe(streamOf(b))
+  })
+
+  it("keeps one number for one channel", () => {
+    const streamOf = makeStreamIds()
+    const a = { id: 125 }
+    const first = streamOf(a)
+    streamOf({ id: 4 })
+    expect(streamOf(a)).toBe(first)
+  })
+
+  it("never hands out 0, the number of a caption without a stream", () => {
+    const streamOf = makeStreamIds()
+    expect(streamOf({})).toBeGreaterThan(0)
   })
 })
