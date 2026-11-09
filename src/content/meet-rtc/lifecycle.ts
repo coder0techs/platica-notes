@@ -15,6 +15,24 @@ export function makeChannelIdAllocator(start = 50000): () => number {
   return () => ++id
 }
 
+// Numbers each caption-delivering channel for the feed's caption key. The SCTP
+// id cannot do it: Meet gives the captions channel the same id on every peer
+// connection (125 on both while presenting, 2026-11-09), so two subscriptions
+// would share a key. The number is tied to the channel object and starts at 1,
+// leaving 0 for a caption that arrived without one.
+export function makeStreamIds(): (channel: object) => number {
+  const ids = new WeakMap<object, number>()
+  let last = 0
+  return (channel) => {
+    let id = ids.get(channel)
+    if (id === undefined) {
+      id = ++last
+      ids.set(channel, id)
+    }
+    return id
+  }
+}
+
 // Recreate the captions channel only when it is actually gone (closing/closed)
 // AND the peer connection can still host a replacement. While the channel is
 // alive we leave it be; once the pc is closed/failed the meeting is over and
@@ -25,4 +43,19 @@ export function shouldRecreateCaptions(
 ): boolean {
   if (channelState !== "closing" && channelState !== "closed") return false
   return pcState !== "closed" && pcState !== "failed"
+}
+
+// Whether a media-session is the one carrying the caption subscription right
+// now. Meet numbers caption messages per device PER SUBSCRIPTION, so a second
+// subscription on another peer connection (the local user presenting opens one,
+// 2026-10-26) streams every caption twice with ids restarting at 1. Only one
+// session may be subscribed at a time: a new one waits while a live primary
+// exists and takes over when the primary's channel or pc goes.
+export function isLivePrimary(s: {
+  subscribed: boolean
+  channelState: RTCDataChannelState
+  pcState: RTCPeerConnectionState
+}): boolean {
+  if (!s.subscribed || s.channelState !== "open") return false
+  return s.pcState === "new" || s.pcState === "connecting" || s.pcState === "connected"
 }

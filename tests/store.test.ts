@@ -46,7 +46,8 @@ function meetMeeting(over: Partial<Meeting> = {}): Meeting {
   return {
     id: "m1", platform: "meet", title: "Daily",
     startedAt: "2026-06-30T10:00:00.000Z", endedAt: "2026-06-30T10:30:00.000Z",
-    isPrivate: false, transcript: [], chat: [], participants: [],
+    // One turn: a stored meeting with nothing captured is a failure row, never a merge target.
+    isPrivate: false, transcript: [{ speaker: "A", startedAt: "2026-06-30T10:01:00.000Z", text: "hi" }], chat: [], participants: [],
     meetingUrl: "https://meet.google.com/abc-defg-hij", ...over,
   }
 }

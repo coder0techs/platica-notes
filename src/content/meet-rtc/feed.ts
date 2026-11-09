@@ -97,7 +97,8 @@ interface CaptionState {
 }
 
 export class RtcFeed {
-  // Keyed by deviceId + "/" + messageId: messageId alone is only unique per device.
+  // Keyed by stream + "/" + deviceId + "/" + messageId: messageId is only unique
+  // per device and per subscription (a second peer connection restarts it at 1).
   private captions = new Map<string, CaptionState>()
   private nextOrder = 0
   // The deviceId of the most recently accepted caption event. Between two revisions
@@ -139,7 +140,7 @@ export class RtcFeed {
 
   /** Returns true if the revision was accepted (not stale). */
   handleCaption(ev: RtcCaptionEvent, at: string): boolean {
-    const key = `${ev.deviceId}/${ev.messageId}`
+    const key = `${ev.stream ?? 0}/${ev.deviceId}/${ev.messageId}`
     const existing = this.captions.get(key)
     if (existing) {
       if (ev.messageVersion <= existing.version) return false

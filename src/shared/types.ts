@@ -138,6 +138,22 @@ export interface Meeting {
   visits?: VisitSpan[]
 }
 
+/** The fields finalizeSession dereferences; anything else is rejected at the relay door. */
+export function isActiveSessionShape(value: unknown): value is ActiveSession {
+  const s = value as Partial<ActiveSession> | null
+  return (
+    typeof s === "object" &&
+    s !== null &&
+    typeof s.platform === "string" &&
+    typeof s.title === "string" &&
+    typeof s.startedAt === "string" &&
+    typeof s.isPrivate === "boolean" &&
+    Array.isArray(s.transcript) &&
+    Array.isArray(s.chat) &&
+    Array.isArray(s.participants)
+  )
+}
+
 /**
  * A meeting that ran but captured nothing at all.
  *

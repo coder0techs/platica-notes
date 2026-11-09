@@ -135,8 +135,9 @@ use), and the content-to-background message contract.
     button still carries this icon ligature; confirm leaving the call is detected.
   - `MEETING_TITLE` (`.u6vdEc`) — still resolves the human title; if it breaks,
     capture still works but the file is named from `document.title` (the code).
-  - `MEETING_PATH` (in `meet-lifecycle.ts`, behind `isMeetingPath`) still matches
-    a real meeting URL, both `/abc-defg-hij` and the newer `/meet/abc-defg-hij`.
+  - `meetCodeFromPath` (`src/shared/meet-url.ts`, behind `isMeetingPath` and
+    `meetKey`) still finds the code in a real meeting URL. A meeting is identified
+    by its code wherever it sits in the path (`/abc-defg-hij`, `/meet/abc-defg-hij`).
   - Channel labels in `meet-rtc/main.ts` (`media-session`, `captions`,
     `collections`, `meet_messages`) still route; the debug log's `channel` phases
     list what Meet actually opened, and `meet-build` records the Meet build tested.

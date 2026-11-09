@@ -10,7 +10,9 @@ function meeting(over: Partial<Meeting> = {}): Meeting {
     startedAt: "2026-06-30T10:00:00.000Z",
     endedAt: "2026-06-30T10:30:00.000Z",
     isPrivate: false,
-    transcript: [],
+    // A stored meeting with nothing captured is a failure row and never a merge
+    // target, so the mergeable default carries one turn.
+    transcript: [{ speaker: "A", startedAt: "2026-06-30T10:01:00.000Z", text: "hi" }],
     chat: [],
     participants: [],
     meetingUrl: "https://meet.google.com/abc-defg-hij",
@@ -25,9 +27,14 @@ describe("meetCodeFromUrl", () => {
   it("extracts the code ignoring trailing path/query", () => {
     expect(meetCodeFromUrl("https://meet.google.com/abc-defg-hij?authuser=0")).toBe("abc-defg-hij")
   })
-  it("extracts the code from the /meet/ url shape", () => {
+  it("extracts the code from the /meet/ url shape and any future prefix", () => {
     expect(meetCodeFromUrl("https://meet.google.com/meet/abc-defg-hij")).toBe("abc-defg-hij")
     expect(meetCodeFromUrl("https://meet.google.com/meet/ABC-DEFG-HIJ?authuser=0")).toBe("abc-defg-hij")
+    expect(meetCodeFromUrl("https://meet.google.com/v2/call/abc-defg-hij#x")).toBe("abc-defg-hij")
+  })
+  it("ignores a code on another host and an unparsable url", () => {
+    expect(meetCodeFromUrl("https://example.com/abc-defg-hij")).toBeNull()
+    expect(meetCodeFromUrl("not a url")).toBeNull()
   })
   it("returns null for a non-meeting url and for undefined", () => {
     expect(meetCodeFromUrl("https://meet.google.com/lookup/xyz")).toBeNull()
@@ -131,5 +138,30 @@ describe("mergeMeetings", () => {
       { at: "2026-06-30T10:10:00.000Z", name: "Grace", kind: "join" },
       { at: "2026-06-30T10:40:00.000Z", name: "Linus", kind: "join" },
     ])
+  })
+})
+
+describe("mergeMeetings: diagnostics", () => {
+  it("concatenates the lite log of both visits so the rejoin's diagnostics are not lost", () => {
+    const a = meeting({ lite: [{ t: "2026-06-30T10:01:00.000Z", ctx: "rtc", phase: "channel" }] })
+    const b = meeting({ id: "m2", startedAt: "2026-06-30T10:35:00.000Z", endedAt: "2026-06-30T11:00:00.000Z",
+      lite: [{ t: "2026-06-30T10:36:00.000Z", ctx: "rtc", phase: "funnel" }] })
+    expect(mergeMeetings(a, b).lite?.map((e) => e.phase)).toEqual(["channel", "funnel"])
+  })
+
+  it("keeps the incoming language when the target had none", () => {
+    const a = meeting({})
+    const b = meeting({ id: "m2", startedAt: "2026-06-30T10:35:00.000Z", endedAt: "2026-06-30T11:00:00.000Z", language: "es-MX" })
+    expect(mergeMeetings(a, b).language).toBe("es-MX")
+    expect(mergeMeetings(meeting({ language: "en-US" }), b).language).toBe("en-US")
+  })
+})
+
+describe("shouldMerge: capture failure", () => {
+  it("never folds a rejoin into a visit that captured nothing, so the failure row stays visible", () => {
+    const failed = meeting({ transcript: [], participants: ["Ada", "Grace"] }) // nothing captured
+    const rejoin = meeting({ id: "m2", startedAt: "2026-06-30T10:35:00.000Z", endedAt: "2026-06-30T11:00:00.000Z",
+      transcript: [{ speaker: "A", startedAt: "2026-06-30T10:40:00.000Z", text: "hi" }] })
+    expect(shouldMerge(failed, rejoin, MERGE_GAP_MS)).toBe(false)
   })
 })

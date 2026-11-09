@@ -10,6 +10,7 @@ import {
   decodeRosterLeave,
   buildSubscribe,
   buildAck,
+  decodeCaptionsControl,
   readNestedOp,
   readNestedSeq,
   toBytes,
@@ -1081,5 +1082,53 @@ describe("hostile input — truncated / oversized / garbage", () => {
     const l1: number[] = []; lenField(2, l2, l1)
     const outer: number[] = []; lenField(2, l1, outer)
     expect(() => decodeRoster(u8(outer))).not.toThrow()
+  })
+})
+
+describe("decodeCollectionsChat: batched collections packet", () => {
+  it("finds the messages collection when a devices record precedes it at the same level", () => {
+    const leaf: number[] = []; lenField(1, strBytes("spaces/abc/devices/9"), leaf); lenField(2, strBytes("Grace Hopper"), leaf)
+    const devColl: number[] = []; lenField(2, leaf, devColl)
+    const dev13: number[] = []; lenField(1, devColl, dev13)              // f13.f1 = devices
+    const f4: number[] = []
+    lenField(2, buildLeafMessage({ messageId: "spaces/abc/messages/m1", deviceId: "spaces/abc/devices/9", text: "hola", sender: "Grace Hopper" }), f4)
+    const msg13: number[] = []; lenField(4, f4, msg13)                   // f13.f4 = messages
+    // Form A: two f13 siblings under one f2.
+    const b: number[] = []; lenField(13, dev13, b); lenField(13, msg13, b)
+    const a: number[] = []; lenField(2, b, a)
+    const rootA: number[] = []; lenField(1, a, rootA)
+    expect(decodeCollectionsChat(u8(rootA)).map((m) => m.text)).toEqual(["hola"])
+    // Form B: two f2 siblings under f1, devices first.
+    const b1: number[] = []; lenField(13, dev13, b1)
+    const b2: number[] = []; lenField(13, msg13, b2)
+    const a2: number[] = []; lenField(2, b1, a2); lenField(2, b2, a2)
+    const rootB: number[] = []; lenField(1, a2, rootB)
+    expect(decodeCollectionsChat(u8(rootB)).map((m) => m.text)).toEqual(["hola"])
+  })
+})
+
+// ---------- native-caption control on captions_v2 ----------
+
+const hex = (h: string): Uint8Array => new Uint8Array(h.match(/../g)!.map((b) => parseInt(b, 16)))
+
+describe("decodeCaptionsControl", () => {
+  it("reads the panel-on command with its language", () => {
+    // Live bytes, Meet build 20261019.04: op 2, lang ru-RU twice.
+    expect(decodeCaptionsControl(hex("0a161214080212100a0e120572752d52551a0572752d5255"))).toEqual({ op: 2, lang: "ru-RU" })
+  })
+
+  it("reads the panel-off command as op without language", () => {
+    expect(decodeCaptionsControl(hex("0a081206080312020a00"))).toEqual({ op: 3 })
+  })
+
+  it("ignores caption acks and caption frames", () => {
+    expect(decodeCaptionsControl(hex("0a080a06080210091801"))).toBeNull()
+    expect(decodeCaptionsControl(hex("0a100a060802100e18010a06080310011801"))).toBeNull()
+    expect(decodeCaptionsControl(buildAck(4))).toBeNull()
+  })
+
+  it("survives truncated and empty input", () => {
+    expect(decodeCaptionsControl(hex("0a1612140802"))).toBeNull()
+    expect(decodeCaptionsControl(new Uint8Array())).toBeNull()
   })
 })

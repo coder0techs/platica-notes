@@ -1,18 +1,16 @@
 import { isSpeakerPlaceholder } from "../meet-rtc/feed"
+import { meetCodeFromPath, meetKey } from "../../shared/meet-url"
 
 // Pure lifecycle decisions for the Meet adapter, split out of meet.ts so they can
 // be unit-tested without meet.ts's import-time side effects (it calls main() and
 // touches the DOM/chrome). These encode the two historically-fragile rules: the
 // phantom-duplicate grace window and the leave-detection poller.
 
-// A meeting page is the meeting code at the root (/abc-defg-hij) or, since Meet
-// began rolling out a new URL scheme in October 2026, under /meet/
-// (/meet/abc-defg-hij). Both are live at once: the rollout is per account.
-// Part of the Meet DOM contract: re-verify against a real meeting URL.
-const MEETING_PATH = /^\/(?:meet\/)?[a-z]{3}-[a-z]{4}-[a-z]{3}/i
-
+// A meeting page is any path carrying a Meet code (/abc-defg-hij, /meet/abc-defg-hij,
+// whatever prefix comes next); the prefix is Google's to change. Part of the Meet
+// DOM contract: re-verify against a real meeting URL.
 export function isMeetingPath(pathname: string): boolean {
-  return MEETING_PATH.test(pathname)
+  return meetCodeFromPath(pathname) !== null
 }
 
 // Phantom-duplicate guard: after a meeting ends, Meet keeps streaming the final
@@ -27,7 +25,7 @@ export function shouldDrainTail(
   now: number,
   graceMs: number,
 ): boolean {
-  return meetingPath === lastMeetingPath && now - lastEndedAt < graceMs
+  return meetKey(meetingPath) === meetKey(lastMeetingPath) && now - lastEndedAt < graceMs
 }
 
 // A tab's storage key (session-<tabId>) holds at most one active session. When a
@@ -37,10 +35,11 @@ export function shouldDrainTail(
 // — that prior session is still sitting under the tab key with its transcript
 // intact. The new meeting's first write would overwrite it, silently losing it
 // (it is never finalized, never reaches history or disk). So when the stored
-// session is for a DIFFERENT path, finalize it FIRST. A same-path stored session
-// is a genuine reload-resume of the very same meeting and must NOT be finalized.
+// session is for a DIFFERENT meeting, finalize it FIRST. A stored session for the
+// same meeting is a genuine reload-resume and must NOT be finalized. Identity is
+// the Meet code, so a url-shape change under a live session still resumes it.
 export function shouldFinalizeStaleSession(previousPath: string | null, meetingPath: string): boolean {
-  return previousPath !== null && previousPath !== meetingPath
+  return previousPath !== null && meetKey(previousPath) !== meetKey(meetingPath)
 }
 
 // After a meeting ends, the loop waits for the residual leave icon to clear
