@@ -4,6 +4,8 @@ All notable changes to Plática Notes, newest first.
 
 ## Unreleased
 
+## 1.17.4 - 2026-11-09
+
 - **Closing Meet's own caption panel no longer stops the transcript.** On the
   October 2026 Meet build, turning Meet's captions off also cancelled the
   extension's caption stream, so the transcript went silent until the panel was
